@@ -60,11 +60,15 @@ func (s *stockScheduler) run(ctx context.Context, hour, minute int) {
 
 		select {
 		case <-time.After(wait):
-			if isWeekday(time.Now()) {
-				s.scanAndConsume(ctx)
-			} else {
+			if !isWeekday(time.Now()) {
 				log.Println("[scheduler] skipped: not a weekday")
+				continue
 			}
+			if s.guard.isRunning() {
+				log.Println("[scheduler] skipped: manual task is running")
+				continue
+			}
+			s.scanAndConsume(ctx)
 		case <-s.stopCh:
 			return
 		case <-ctx.Done():

@@ -22,6 +22,10 @@ func (tg *triggerGuard) markDone() {
 	tg.running.Store(false)
 }
 
+func (tg *triggerGuard) isRunning() bool {
+	return tg.running.Load()
+}
+
 // concurrentWorker executes a handler over a slice of items with a limiter.
 type concurrentWorker struct {
 	limiter *indicator.Limiter
