@@ -66,6 +66,30 @@ func TestProfitGrowthFilterNotEnoughConsecutive(t *testing.T) {
 	}
 }
 
+// TestProfitGrowthFilterNegativeProfit 净利润为负即使增长达标也不通过
+// 亏损从 -20% 收窄到 -10% 不可取，净利润必须为正
+func TestProfitGrowthFilterNegativeProfit(t *testing.T) {
+	reports := []*model.FinancialReport{
+		{ReportDate: "20230331", ReportType: 1, NetProfit: -100},
+		{ReportDate: "20230630", ReportType: 2, NetProfit: -250},
+		{ReportDate: "20230930", ReportType: 3, NetProfit: -450},
+		{ReportDate: "20231231", ReportType: 4, NetProfit: -700},
+		{ReportDate: "20240331", ReportType: 1, NetProfit: -80},  // Q1: -80 vs -100, yoy +20%
+		{ReportDate: "20240630", ReportType: 2, NetProfit: -200}, // Q2: -120 vs -150, yoy +20%
+		{ReportDate: "20240930", ReportType: 3, NetProfit: -360}, // Q3: -160 vs -200, yoy +20%
+		{ReportDate: "20241231", ReportType: 4, NetProfit: -560}, // Q4: -200 vs -250, yoy +20%
+	}
+
+	f := NewProfitGrowthFilter().WithThreshold(0.1).WithQuarterCount(4)
+	results := f.Filter(reports)
+
+	for i, r := range results {
+		if r.Valid {
+			t.Fatalf("expected results[%d].Valid = false (negative profit), got true", i)
+		}
+	}
+}
+
 func TestProfitGrowthFilterEmpty(t *testing.T) {
 	f := NewProfitGrowthFilter()
 	results := f.Filter(nil)

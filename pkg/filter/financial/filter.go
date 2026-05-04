@@ -80,7 +80,7 @@ func computeGrowthFilter(reports []*model.FinancialReport, threshold float64, qu
 		prevVal, ok := quarterly[prevK]
 
 		var valid bool
-		if ok && prevVal != 0 {
+		if ok && prevVal != 0 && currVal > 0 {
 			growth := (currVal - prevVal) / prevVal
 			if growth >= threshold {
 				valid = true
