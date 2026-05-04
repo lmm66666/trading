@@ -44,6 +44,16 @@ curl -X POST http://localhost:8080/api/stocks/historical \
   -d '{"code": "600312"}'
 ```
 
+#### 成功响应
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": null
+}
+```
+
 ---
 
 ### 2. 补全股票数据
@@ -57,6 +67,16 @@ curl -X POST http://localhost:8080/api/stocks/historical \
 
 ```bash
 curl -X POST http://localhost:8080/api/stocks/append
+```
+
+#### 成功响应
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": null
+}
 ```
 
 ---
@@ -81,6 +101,16 @@ curl -X POST http://localhost:8080/api/stocks/append
 curl -X POST http://localhost:8080/api/stocks/financial-report \
   -H "Content-Type: application/json" \
   -d '{"code": "600312"}'
+```
+
+#### 成功响应
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": null
+}
 ```
 
 ---
@@ -163,6 +193,50 @@ curl "http://localhost:8080/api/stocks/price?code=600312"
 curl "http://localhost:8080/api/stocks/price?code=600312&cycle=weekly&pagesize=10&pagenum=2"
 ```
 
+#### 成功响应
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "code": "600312",
+    "cycle": "daily",
+    "data": [
+      {
+        "code": "600312",
+        "date": "2022-01-22",
+        "open": 10.5000,
+        "high": 11.2000,
+        "low": 10.3000,
+        "close": 10.8000,
+        "volume": 1234567
+      }
+    ]
+  }
+}
+```
+
+#### 响应字段说明
+
+| 字段     | 类型     | 说明                   |
+|----------|----------|------------------------|
+| code     | string   | 股票代码               |
+| cycle    | string   | 数据周期：daily 或 weekly |
+| data     | []object | K 线数据列表           |
+
+**data 数组元素字段：**
+
+| 字段   | 类型    | 说明           |
+|--------|---------|----------------|
+| code   | string  | 股票代码       |
+| date   | string  | 日期，格式 YYYY-MM-DD |
+| open   | float64 | 开盘价         |
+| high   | float64 | 最高价         |
+| low    | float64 | 最低价         |
+| close  | float64 | 收盘价         |
+| volume | int64   | 成交量（股）   |
+
 ---
 
 ### 6. 补全财报数据
@@ -176,6 +250,16 @@ curl "http://localhost:8080/api/stocks/price?code=600312&cycle=weekly&pagesize=1
 
 ```bash
 curl -X POST http://localhost:8080/api/stocks/financial-report/append
+```
+
+#### 成功响应
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": null
+}
 ```
 
 ---
@@ -204,3 +288,81 @@ curl "http://localhost:8080/api/stocks/financial-report?code=600312"
 # 每页 5 条，第 2 页
 curl "http://localhost:8080/api/stocks/financial-report?code=600312&pagesize=5&pagenum=2"
 ```
+
+#### 成功响应
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "code": "600312",
+    "data": [
+      {
+        "code": "600312",
+        "report_date": "20250930",
+        "report_type": 4,
+        "total_revenue": 300000000000.0000,
+        "total_cost": 250000000000.0000,
+        "net_profit": 15000000000.0000,
+        "net_profit_cut": 14000000000.0000,
+        "gross_margin": 0.1667,
+        "net_margin": 0.0500,
+        "operating_margin": 0.0667,
+        "ebit_margin": 0.0700,
+        "cost_profit_ratio": 0.0800,
+        "roe": 0.1200,
+        "roa": 0.0800,
+        "asset_liability_ratio": 0.4500,
+        "current_ratio": 1.5000,
+        "quick_ratio": 1.2000,
+        "total_asset_turnover": 0.6000,
+        "inventory_turnover": 4.0000,
+        "receivables_turnover": 8.0000,
+        "operating_cash_flow": 20000000000.0000,
+        "operating_cash_flow_per_share": 2.5000,
+        "eps": 1.8000,
+        "bps": 15.0000
+      }
+    ]
+  }
+}
+```
+
+#### 响应字段说明
+
+| 字段     | 类型     | 说明                   |
+|----------|----------|------------------------|
+| code     | string   | 股票代码               |
+| data     | []object | 财报数据列表           |
+
+**data 数组元素字段：**
+
+| 字段                          | 类型    | 说明                       |
+|-------------------------------|---------|----------------------------|
+| code                          | string  | 股票代码                   |
+| report_date                   | string  | 报告期，格式 YYYYMMDD      |
+| report_type                   | int     | 报告类型：1一季报 2半年报 3三季报 4年报 |
+| total_revenue                 | float64 | 营业总收入                 |
+| total_cost                    | float64 | 营业成本                   |
+| net_profit                    | float64 | 归母净利润                 |
+| net_profit_cut                | float64 | 扣非净利润                 |
+| gross_margin                  | float64 | 毛利率                     |
+| net_margin                    | float64 | 销售净利率                 |
+| operating_margin              | float64 | 营业利润率                 |
+| ebit_margin                   | float64 | 息税前利润率               |
+| cost_profit_ratio             | float64 | 成本费用利润率             |
+| roe                           | float64 | 净资产收益率               |
+| roa                           | float64 | 总资产报酬率               |
+| asset_liability_ratio         | float64 | 资产负债率                 |
+| current_ratio                 | float64 | 流动比率                   |
+| quick_ratio                   | float64 | 速动比率                   |
+| total_asset_turnover          | float64 | 总资产周转率               |
+| inventory_turnover            | float64 | 存货周转率                 |
+| receivables_turnover          | float64 | 应收账款周转率             |
+| operating_cash_flow           | float64 | 经营现金流量净额           |
+| operating_cash_flow_per_share | float64 | 每股经营现金流             |
+| eps                           | float64 | 基本每股收益               |
+| bps                           | float64 | 每股净资产                 |
+
+---
