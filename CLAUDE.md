@@ -5,7 +5,7 @@
 - **行情数据**：日线/周线历史 K 线拉取与存储
 - **财报数据**：季度财报核心指标（利润表、盈利能力、偿债能力、运营效率、现金流）
 - **增量更新**：对比数据库已有数据，只补充缺失部分
-- **策略扫描**：基于 MA、MACD、KDJ、成交量等指标的全市场买点扫描
+- **策略扫描**：基于 MA、MACD、KDJ、成交量等指标的全市场买点扫描，以及基于财报数据的净利润连续增长筛选
 - **HTTP API**：数据写入、数据查询、策略扫描的统一 RESTful 接口
 - **批量脚本**：Shell 脚本批量拉取多只股票数据
 
@@ -14,8 +14,8 @@
 四层分离：
 ```
 pkg/indicator/  → 纯计算（MA、MACD、KDJ）
-pkg/filter/     → 技术指标过滤器，输入 K 线返回每天的日期+布尔结果
-pkg/strategy/   → 策略层，组合多个 filter 取交集，支持 Scan / ScanAll
+pkg/filter/     → 技术指标过滤器（K 线）和财报过滤器（FinancialReport），返回日期+布尔结果
+pkg/strategy/   → 策略层，组合 K 线 filter 或财报 filter 取交集，支持 Scan / ScanAll
 business/       → 数据拉取（StockDataService / FinancialReportService）、策略扫描（SignalService）、数据查询（QueryService）、定时调度（stock_scheduler / financial_scheduler）
 api/            → HTTP 接口层（gin）
 ```
@@ -77,7 +77,9 @@ trading/
 │   ├── get_stock_price.go               # GET /api/stocks/price
 │   ├── get_stock_price_test.go
 │   ├── get_financial_report.go          # GET /api/stocks/financial-report
-│   └── get_financial_report_test.go
+│   ├── get_financial_report_test.go
+│   ├── get_financial_report_signal.go   # GET /api/stocks/financial-report/signal
+│   └── get_financial_report_signal_test.go
 ├── pkg/
 │   ├── broker/              # 行情数据提供者
 │   │   ├── broker.go        # IBroker 统一接口
@@ -93,8 +95,8 @@ trading/
 │   │   ├── volume_ma_test.go
 │   │   ├── limiter.go
 │   │   └── limiter_test.go
-│   ├── filter/              # 过滤器层（每个 filter = 一个条件，返回每天 bool）
-│   │   ├── filter.go        # IFilter 接口、Result 定义
+│   ├── filter/              # 过滤器层
+│   │   ├── filter.go        # IFilter 接口、Result 定义（K 线）
 │   │   ├── filter_test.go
 │   │   ├── kdj.go           # KDJ 超买/超卖过滤器
 │   │   ├── kdj_test.go
@@ -103,10 +105,18 @@ trading/
 │   │   ├── volume_surge.go  # 放量上涨后回调过滤器
 │   │   ├── volume_surge_test.go
 │   │   ├── date.go          # 持有天数过滤器
-│   │   └── date_test.go
+│   │   ├── date_test.go
+│   │   └── financial/       # 财报过滤器
+│   │       ├── filter.go    # IFinancialFilter 接口、通用 computeGrowthFilter
+│   │       ├── profit_growth.go   # 净利润同比增长过滤器
+│   │       ├── profit_growth_test.go
+│   │       ├── revenue_growth.go  # 营收同比增长过滤器
+│   │       └── revenue_growth_test.go
 │   └── strategy/            # 策略层（组合多个 filter）
-│       ├── strategy.go      # Strategy 结构体、Signal、Scan / ScanAll
+│       ├── strategy.go      # Strategy 结构体、Signal、Scan / ScanAll（K 线）
 │       ├── strategy_test.go
+│       ├── financial.go     # FinancialStrategy（财报 filter 组合）
+│       ├── financial_test.go
 │       ├── buy.go           # 预定义买入策略（如 B1）
 │       └── sell.go          # 预定义卖出策略
 ├── .claude/
