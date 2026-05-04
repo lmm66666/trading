@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"trading/data"
+	"trading/pkg/filter/financial"
 	"trading/pkg/strategy"
 )
 
@@ -20,16 +21,19 @@ type SignalService interface {
 	FindBuySignals(ctx context.Context) ([]StrategySignal, error)
 	// FindBuySignalsByStrategy 按策略名称扫描，只返回该策略的结果
 	FindBuySignalsByStrategy(ctx context.Context, name string) (*StrategySignal, error)
+	// FindFinancialReportSignals 扫描所有有财报数据的股票，返回满足财报策略的股票列表
+	FindFinancialReportSignals(ctx context.Context, profitThreshold float64, quarterCount int) (*StrategySignal, error)
 }
 
 type signalService struct {
-	dailyRepo  data.StockKlineDailyRepo
-	weeklyRepo data.StockKlineWeeklyRepo
+	dailyRepo     data.StockKlineDailyRepo
+	weeklyRepo    data.StockKlineWeeklyRepo
+	financialRepo data.FinancialReportRepo
 }
 
 // NewSignalService 创建 SignalService 实例
-func NewSignalService(dailyRepo data.StockKlineDailyRepo, weeklyRepo data.StockKlineWeeklyRepo) SignalService {
-	return &signalService{dailyRepo: dailyRepo, weeklyRepo: weeklyRepo}
+func NewSignalService(dailyRepo data.StockKlineDailyRepo, weeklyRepo data.StockKlineWeeklyRepo, financialRepo data.FinancialReportRepo) SignalService {
+	return &signalService{dailyRepo: dailyRepo, weeklyRepo: weeklyRepo, financialRepo: financialRepo}
 }
 
 func (s *signalService) FindBuySignals(ctx context.Context) ([]StrategySignal, error) {
@@ -107,6 +111,33 @@ func (s *signalService) scanWeeklyStrategy(ctx context.Context, st *strategy.Str
 		klines := weeklyToKlines(weeklies)
 		signals := st.ScanAll(klines)
 		if len(signals) > 0 && signals[len(signals)-1].Date == lastDate {
+			matched = append(matched, code)
+		}
+	}
+
+	if len(matched) == 0 {
+		return nil, nil
+	}
+	return &StrategySignal{Name: st.Name(), Codes: matched}, nil
+}
+
+func (s *signalService) FindFinancialReportSignals(ctx context.Context, profitThreshold float64, quarterCount int) (*StrategySignal, error) {
+	st := strategy.NewFinancialStrategy("financial_profit_growth").
+		AddFilter(financial.NewProfitGrowthFilter().WithThreshold(profitThreshold).WithQuarterCount(quarterCount))
+
+	codes, err := s.financialRepo.FindAllCodes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("find all financial report codes failed: %w", err)
+	}
+
+	var matched []string
+	for _, code := range codes {
+		reports, findErr := s.financialRepo.FindByCode(ctx, code)
+		if findErr != nil || len(reports) == 0 {
+			continue
+		}
+		sig := st.Scan(reports)
+		if sig != nil {
 			matched = append(matched, code)
 		}
 	}

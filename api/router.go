@@ -18,5 +18,6 @@ func NewRouter(svc business.StockDataService, financialSvc business.FinancialRep
 	r.GET("/api/stocks/signal", h.GetStockBuySignals)
 	r.GET("/api/stocks/price", h.GetStockPrice)
 	r.GET("/api/stocks/financial-report", h.GetFinancialReport)
+	r.GET("/api/stocks/financial-report/signal", h.GetFinancialReportSignal)
 	return r
 }

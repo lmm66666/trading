@@ -36,7 +36,7 @@ func main() {
 
 	financialScheduler := business.NewFinancialScheduler(financialSvc, d.FinancialReport())
 
-	signalSvc := business.NewSignalService(d.StockKlineDaily(), d.StockKlineWeekly())
+	signalSvc := business.NewSignalService(d.StockKlineDaily(), d.StockKlineWeekly(), d.FinancialReport())
 	querySvc := business.NewQueryService(d.StockKlineDaily(), d.StockKlineWeekly(), d.FinancialReport())
 	r := api.NewRouter(svc, financialSvc, scheduler, financialScheduler, signalSvc, querySvc)
 

@@ -73,6 +73,10 @@ func (m *mockSignalService) FindBuySignalsByStrategy(ctx context.Context, name s
 	return m.signal, m.signalErr
 }
 
+func (m *mockSignalService) FindFinancialReportSignals(ctx context.Context, profitThreshold float64, quarterCount int) (*business.StrategySignal, error) {
+	return m.signal, m.signalErr
+}
+
 // mockQueryService 模拟查询服务
 type mockQueryService struct {
 	prices     []*model.StockKlineDaily
@@ -100,5 +104,6 @@ func setupTestRouter(svc business.StockDataService, financialSvc business.Financ
 	r.POST("/api/stocks/financial-report/append", h.AppendFinancialReportData)
 	r.GET("/api/stocks/price", h.GetStockPrice)
 	r.GET("/api/stocks/financial-report", h.GetFinancialReport)
+	r.GET("/api/stocks/financial-report/signal", h.GetFinancialReportSignal)
 	return r
 }

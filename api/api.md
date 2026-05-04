@@ -366,3 +366,53 @@ curl "http://localhost:8080/api/stocks/financial-report?code=600312&pagesize=5&p
 | bps                           | float64 | 每股净资产                 |
 
 ---
+
+### 8. 财报信号扫描
+
+扫描数据库中所有有财报数据的股票，筛选出连续多个季度净利润同比增长超过指定阈值的股票。
+
+- **Method**: `GET`
+- **Path**: `/api/stocks/financial-report/signal`
+
+#### 请求参数
+
+| 字段              | 类型    | 必填 | 默认值 | 说明                                    |
+|-------------------|---------|------|--------|-----------------------------------------|
+| profit_threshold  | float64 | 否   | `0.1`  | 净利润最低同比增长率，如 `0.1` 表示 10%  |
+| quarter_count     | int     | 否   | `4`    | 需要连续满足的季度数                    |
+
+#### 请求示例
+
+```bash
+# 默认参数：连续 4 个季度净利润同比增长 >= 10%
+curl "http://localhost:8080/api/stocks/financial-report/signal"
+
+# 自定义参数：连续 3 个季度净利润同比增长 >= 15%
+curl "http://localhost:8080/api/stocks/financial-report/signal?profit_threshold=0.15&quarter_count=3"
+```
+
+#### 成功响应
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "strategy": "financial_profit_growth",
+    "profit_threshold": 0.1,
+    "quarter_count": 4,
+    "codes": ["600312", "000001"]
+  }
+}
+```
+
+#### 响应字段说明
+
+| 字段             | 类型     | 说明                           |
+|------------------|----------|--------------------------------|
+| strategy         | string   | 策略名称                       |
+| profit_threshold | float64  | 净利润同比增长率阈值           |
+| quarter_count    | int      | 连续季度数                     |
+| codes            | []string | 符合条件的股票代码列表         |
+
+---
