@@ -38,7 +38,7 @@ func (s *financialScheduler) TriggerNow(ctx context.Context) error {
 	log.Println("[financial-scheduler] manual trigger started")
 	go func() {
 		defer s.guard.markDone()
-		if err := s.scanAndConsume(ctx); err != nil {
+		if err := s.scanAndConsume(context.Background()); err != nil {
 			log.Printf("[financial-scheduler] scan failed: %v", err)
 		}
 	}()
