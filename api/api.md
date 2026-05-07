@@ -62,6 +62,7 @@ curl -X POST http://localhost:8080/api/stocks/historical \
 
 - **Method**: `POST`
 - **Path**: `/api/stocks/append`
+- **说明**: 异步执行，同一时间只能执行一个任务
 
 #### 请求示例
 
@@ -121,6 +122,7 @@ curl -X POST http://localhost:8080/api/stocks/financial-report \
 
 - **Method**: `GET`
 - **Path**: `/api/stocks/signal`
+- **说明**: 需要扫描数据库，耗时较长，建议超时时间 30s
 
 #### 请求参数
 
@@ -245,6 +247,7 @@ curl "http://localhost:8080/api/stocks/price?code=600312&cycle=weekly&pagesize=1
 
 - **Method**: `POST`
 - **Path**: `/api/stocks/financial-report/append`
+- **说明**: 异步执行，同一时间只能执行一个任务
 
 #### 请求示例
 
@@ -373,6 +376,7 @@ curl "http://localhost:8080/api/stocks/financial-report?code=600312&pagesize=5&p
 
 - **Method**: `GET`
 - **Path**: `/api/stocks/financial-report/signal`
+- **说明**: 需要扫描数据库，耗时较长，建议超时时间 30s
 
 #### 请求参数
 
