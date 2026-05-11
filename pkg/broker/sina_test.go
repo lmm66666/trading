@@ -69,9 +69,9 @@ func TestSinaBrokerGetStockHistorical(t *testing.T) {
 	t.Logf("Total data points: %d", len(data))
 }
 
-// TestSinaBrokerImplementsInterface 验证 SinaBroker 实现了 IBroker 接口
+// TestSinaBrokerImplementsInterface 验证 SinaBroker 实现了 Broker 接口
 func TestSinaBrokerImplementsInterface(t *testing.T) {
-	var _ IBroker = (*SinaBroker)(nil)
+	var _ Broker = (*SinaBroker)(nil)
 }
 
 // TestSinaBrokerRealtimeToKline 测试实时数据解析为 Kline

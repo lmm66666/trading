@@ -11,13 +11,13 @@ type Signal struct {
 
 type Strategy struct {
 	name    string
-	filters []filter.IFilter
+	filters []filter.Filter
 }
 
 func NewStrategy(name string) *Strategy {
 	return &Strategy{
 		name:    name,
-		filters: []filter.IFilter{},
+		filters: []filter.Filter{},
 	}
 }
 
@@ -25,7 +25,7 @@ func (s *Strategy) Name() string {
 	return s.name
 }
 
-func (s *Strategy) AddFilter(f filter.IFilter) *Strategy {
+func (s *Strategy) AddFilter(f filter.Filter) *Strategy {
 	s.filters = append(s.filters, f)
 	return s
 }

@@ -8,14 +8,14 @@ import (
 // FinancialStrategy 财报策略，组合多个财报 filter
 type FinancialStrategy struct {
 	name    string
-	filters []financial.IFinancialFilter
+	filters []financial.FinancialFilter
 }
 
 // NewFinancialStrategy 创建财报策略
 func NewFinancialStrategy(name string) *FinancialStrategy {
 	return &FinancialStrategy{
 		name:    name,
-		filters: []financial.IFinancialFilter{},
+		filters: []financial.FinancialFilter{},
 	}
 }
 
@@ -25,7 +25,7 @@ func (s *FinancialStrategy) Name() string {
 }
 
 // AddFilter 添加 filter，支持链式调用
-func (s *FinancialStrategy) AddFilter(f financial.IFinancialFilter) *FinancialStrategy {
+func (s *FinancialStrategy) AddFilter(f financial.FinancialFilter) *FinancialStrategy {
 	s.filters = append(s.filters, f)
 	return s
 }

@@ -6,8 +6,8 @@ import (
 	"trading/model"
 )
 
-// IBroker 定义行情数据提供者的统一接口
-type IBroker interface {
+// Broker 定义行情数据提供者的统一接口
+type Broker interface {
 	// GetStockTodayInBatch 批量获取今日行情数据
 	// codes: 代码列表，如 ["sh000001"]
 	// 返回: map[code] => StockKline

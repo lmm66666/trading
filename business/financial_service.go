@@ -19,12 +19,12 @@ type FinancialReportService interface {
 }
 
 type financialReportService struct {
-	broker        broker.IBroker
+	broker        broker.Broker
 	financialRepo data.FinancialReportRepo
 }
 
 // NewFinancialReportService 创建 FinancialReportService 实例
-func NewFinancialReportService(b broker.IBroker, financialRepo data.FinancialReportRepo) FinancialReportService {
+func NewFinancialReportService(b broker.Broker, financialRepo data.FinancialReportRepo) FinancialReportService {
 	return &financialReportService{broker: b, financialRepo: financialRepo}
 }
 

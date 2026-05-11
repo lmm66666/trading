@@ -16,7 +16,7 @@ type Signal struct {
 	ReportDate string
 }
 
-type IFinancialFilter interface {
+type FinancialFilter interface {
 	Filter(reports []*model.FinancialReport) []Result
 }
 

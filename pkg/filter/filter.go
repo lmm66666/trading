@@ -9,6 +9,6 @@ type Result struct {
 	Valid bool
 }
 
-type IFilter interface {
+type Filter interface {
 	Filter(klines []*model.StockKline) []Result
 }

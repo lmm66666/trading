@@ -83,7 +83,6 @@ trading/
 │   │   ├── macd_test.go
 │   │   ├── kdj.go           # KDJ 计算
 │   │   ├── kdj_test.go
-│   │   ├── volume_ma_test.go
 │   │   ├── limiter.go
 │   │   └── limiter_test.go
 │   ├── filter/              # 过滤器层
@@ -153,11 +152,15 @@ docker run -d --name trading -p 8080:8080 trading:latest
 
 # 开发规范
 ## 强制要求
+- 本项目除本文档外，还遵循全局 `~/.claude/CLAUDE.md`
 - 在读取或分析任何目录下的代码时，**如果该目录下存在 README.md，必须先读取 README.md**，以了解该目录的规范、约束和上下文，避免误读代码
 - 复杂需求完成后，启动子 agent 调用 /simplify 复查可优化点，并调用 /code-review 审查代码
 - 需求交付前，检查并同步更新 CLAUDE.md、README.md 及相关注释
 
 ## 代码风格
 - 遵循 Go 标准编码规范
-- 接口名称以 I 打头
+
+## 测试要求
+- 新增业务逻辑必须配套单元测试
+- 测试覆盖率保持 80% 以上（继承全局规范） 
 

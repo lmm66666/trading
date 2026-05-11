@@ -14,13 +14,13 @@ type StockDataService interface {
 }
 
 type stockDataService struct {
-	broker     broker.IBroker
+	broker     broker.Broker
 	dailyRepo  data.StockKlineDailyRepo
 	weeklyRepo data.StockKlineWeeklyRepo
 }
 
 // NewStockDataService 创建 StockDataService 实例
-func NewStockDataService(b broker.IBroker, dailyRepo data.StockKlineDailyRepo, weeklyRepo data.StockKlineWeeklyRepo) StockDataService {
+func NewStockDataService(b broker.Broker, dailyRepo data.StockKlineDailyRepo, weeklyRepo data.StockKlineWeeklyRepo) StockDataService {
 	return &stockDataService{broker: b, dailyRepo: dailyRepo, weeklyRepo: weeklyRepo}
 }
 
