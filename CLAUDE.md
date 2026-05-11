@@ -154,7 +154,6 @@ docker run -d --name trading -p 8080:8080 trading:latest
 # 开发规范
 ## 强制要求
 - 在读取或分析任何目录下的代码时，**如果该目录下存在 README.md，必须先读取 README.md**，以了解该目录的规范、约束和上下文，避免误读代码
-- 以 andrej-karpathy-skills 作为开发准则
 - 复杂需求完成后，启动子 agent 调用 /simplify 复查可优化点，并调用 /code-review 审查代码
 - 需求交付前，检查并同步更新 CLAUDE.md、README.md 及相关注释
 
@@ -162,6 +161,3 @@ docker run -d --name trading -p 8080:8080 trading:latest
 - 遵循 Go 标准编码规范
 - 接口名称以 I 打头
 
-## Git 提交
-- 一个 commit 负责一件事，多件事拆分到多个 commit 中
-- 调用 /commit-commands:commit 提交 commit
