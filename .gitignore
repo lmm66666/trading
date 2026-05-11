@@ -1,3 +1,6 @@
 .idea/
 config.yaml
+config-nas.yaml
 docs/trading
+trading
+*.tar
