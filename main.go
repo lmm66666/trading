@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -16,7 +17,10 @@ import (
 )
 
 func main() {
-	cfg, err := loadConfig()
+	configPath := flag.String("config", "config.yaml", "path to config file")
+	flag.Parse()
+
+	cfg, err := loadConfig(*configPath)
 	if err != nil {
 		log.Fatalf("load config failed: %v", err)
 	}
@@ -46,17 +50,8 @@ func main() {
 	}
 }
 
-func loadConfig() (*config.Config, error) {
-	paths := []string{"../config.yaml", "config.yaml"}
-
-	var raw []byte
-	var err error
-	for _, p := range paths {
-		raw, err = os.ReadFile(p)
-		if err == nil {
-			break
-		}
-	}
+func loadConfig(configPath string) (*config.Config, error) {
+	raw, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, err
 	}
