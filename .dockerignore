@@ -1,0 +1,30 @@
+.git
+.gitignore
+.idea
+.claude
+.vscode
+
+# Local build artifact
+trading
+
+# Local config (mount at runtime)
+config.yaml
+
+# Docs and meta
+docs
+*.md
+
+# Shell helper scripts (not needed in image)
+shell
+
+# Test files
+**/*_test.go
+**/testdata
+
+# OS / editor
+.DS_Store
+*.swp
+
+# Dockerfile itself
+Dockerfile
+.dockerignore

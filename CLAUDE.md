@@ -30,6 +30,8 @@ trading/
 ├── config.yaml              # 应用配置文件（DB 连接等）
 ├── config.example.yaml      # 配置模板（复制后修改使用）
 ├── .gitignore               # Git 忽略规则
+├── Dockerfile               # 容器镜像构建（多阶段，固定 linux/amd64）
+├── .dockerignore            # Docker 构建上下文忽略规则
 ├── config/
 │   └── config.go            # 配置结构体定义与加载
 ├── model/                   # 数据模型层
@@ -144,6 +146,24 @@ trading/
 4. 启动服务：`go run .`
 
 服务默认监听 `:8080`，启动后会自动执行 `AutoMigrate` 创建数据表。
+
+## Docker 启动
+
+**1. 构建镜像**
+
+```bash
+# 需显式指定平台(例如使用 buildx)
+docker buildx build --platform linux/amd64 -t trading:latest --load .
+```
+
+**2. 运行容器**
+
+```bash
+docker run -d --name trading \
+  -p 8080:8080 \
+  -v "$(pwd)/config.yaml":/app/config.yaml:ro \
+  trading:latest
+```
 
 # 开发规范
 ## 强制要求
