@@ -18,7 +18,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM --platform=$BUILDPLATFORM  alpine:3.20
 
-RUN apk add --no-cache ca-certificates tzdata \
+RUN apk add --no-cache ca-certificates tzdata bash curl \
     && addgroup -S app && adduser -S -G app app
 
 ENV TZ=Asia/Shanghai
