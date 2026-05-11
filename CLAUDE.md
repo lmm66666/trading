@@ -165,7 +165,7 @@ docker run -d --name trading -p 8080:8080 trading:latest
 # 开发规范
 ## 强制要求
 - 在读取或分析任何目录下的代码时，**如果该目录下存在 README.md，必须先读取 README.md**，以了解该目录的规范、约束和上下文，避免误读代码
-- 代码修改完之后调用 code-simplifier 插件，自己检查一下有没有可以优化的地方
+- 以 andrej-karpathy-skills 作为开发准则
 - 需求开发完成后，最后一步必须判断是否需要更新 CLAUDE.md, 对应的 README.md, 和代码中相关的注释，保持文档正确
 
 ## 代码风格
