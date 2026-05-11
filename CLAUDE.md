@@ -9,17 +9,6 @@
 - **HTTP API**：数据写入、数据查询、策略扫描的统一 RESTful 接口
 - **批量脚本**：Shell 脚本批量拉取多只股票数据
 
-# 项目架构
-
-四层分离：
-```
-pkg/indicator/  → 纯计算（MA、MACD、KDJ）
-pkg/filter/     → 技术指标过滤器（K 线）和财报过滤器（FinancialReport），返回日期+布尔结果
-pkg/strategy/   → 策略层，组合 K 线 filter 或财报 filter 取交集，支持 Scan / ScanAll
-business/       → 数据拉取（StockDataService / FinancialReportService）、策略扫描（SignalService）、数据查询（QueryService）、定时调度（stock_scheduler / financial_scheduler）
-api/            → HTTP 接口层（gin）
-```
-
 # 项目结构
 
 ```
@@ -166,17 +155,13 @@ docker run -d --name trading -p 8080:8080 trading:latest
 ## 强制要求
 - 在读取或分析任何目录下的代码时，**如果该目录下存在 README.md，必须先读取 README.md**，以了解该目录的规范、约束和上下文，避免误读代码
 - 以 andrej-karpathy-skills 作为开发准则
-- 需求开发完成后，最后一步必须判断是否需要更新 CLAUDE.md, 对应的 README.md, 和代码中相关的注释，保持文档正确
+- 复杂需求完成后，启动子 agent 调用 /simplify 复查可优化点，并调用 /code-review 审查代码
+- 需求交付前，检查并同步更新 CLAUDE.md、README.md 及相关注释
 
 ## 代码风格
-- 函数不超过 50 行，文件不超过 800 行
 - 遵循 Go 标准编码规范
 - 接口名称以 I 打头
 
 ## Git 提交
-- 遵循 Conventional Commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`
-- 必须使用英文，禁止中文
-- 冒号后必须加空格
-- 句尾不加标点
-- 一个 commit 等于一件事，多件事拆分到多个 commit 中
-- 简短清晰，不超过 50 字符
+- 一个 commit 负责一件事，多件事拆分到多个 commit 中
+- 调用 /commit-commands:commit 提交 commit
