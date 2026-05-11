@@ -143,7 +143,7 @@ trading/
 1. 创建数据库：`CREATE DATABASE trading CHARACTER SET utf8mb4;`
 2. 复制配置文件：`cp config.example.yaml config.yaml` 并修改数据库连接信息
 3. 安装依赖：`go mod download`
-4. 启动服务：`go run .`
+4. 启动服务：`go run .`（默认读取 `config.yaml`，也可通过 `-config` 指定路径）
 
 服务默认监听 `:8080`，启动后会自动执行 `AutoMigrate` 创建数据表。
 
@@ -159,10 +159,7 @@ docker buildx build --platform linux/amd64 -t trading:latest --load .
 **2. 运行容器**
 
 ```bash
-docker run -d --name trading \
-  -p 8080:8080 \
-  -v "$(pwd)/config.yaml":/app/config.yaml:ro \
-  trading:latest
+docker run -d --name trading -p 8080:8080 trading:latest
 ```
 
 # 开发规范

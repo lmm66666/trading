@@ -26,9 +26,10 @@ ENV TZ=Asia/Shanghai
 WORKDIR /app
 
 COPY --from=builder /out/trading /app/trading
+COPY config-nas.yaml /app/config.yaml
 
 USER app
 
 EXPOSE 8080
 
-ENTRYPOINT ["/app/trading"]
+ENTRYPOINT ["/app/trading", "-config", "/app/config.yaml"]
