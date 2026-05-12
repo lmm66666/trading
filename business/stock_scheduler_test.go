@@ -268,3 +268,154 @@ func TestSchedulerProcessError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
+
+func TestSchedulerTriggerNowBeforeStart(t *testing.T) {
+	sched := NewScheduler(&mockSvcForScheduler{}, &mockDailyRepoForScheduler{}, &mockWeeklyRepoForScheduler{})
+	if err := sched.TriggerNow(context.Background()); !errors.Is(err, ErrSchedulerNotStarted) {
+		t.Fatalf("expected ErrSchedulerNotStarted, got %v", err)
+	}
+}
+
+func TestSchedulerStopIdempotent(t *testing.T) {
+	sched := NewScheduler(&mockSvcForScheduler{}, &mockDailyRepoForScheduler{}, &mockWeeklyRepoForScheduler{}).(*stockScheduler)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sched.Start(ctx, 23, 59)
+
+	// 多次调用 Stop 不应 panic
+	sched.Stop()
+	sched.Stop()
+	sched.Stop()
+}
+
+func TestSchedulerTriggerBusyReturnsErrSchedulerBusy(t *testing.T) {
+	sched := NewScheduler(&mockSvcForScheduler{}, &mockDailyRepoForScheduler{}, &mockWeeklyRepoForScheduler{}).(*stockScheduler)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sched.Start(ctx, 23, 59)
+	defer sched.Stop()
+
+	// 占用 guard 模拟已有任务运行
+	if !sched.guard.tryStart() {
+		t.Fatal("failed to occupy guard")
+	}
+	defer sched.guard.markDone()
+
+	err := sched.TriggerNow(context.Background())
+	if !errors.Is(err, ErrSchedulerBusy) {
+		t.Fatalf("expected ErrSchedulerBusy, got %v", err)
+	}
+}
+
+func TestSchedulerStopCancelsLifeCtx(t *testing.T) {
+	sched := NewScheduler(&mockSvcForScheduler{}, &mockDailyRepoForScheduler{}, &mockWeeklyRepoForScheduler{}).(*stockScheduler)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sched.Start(ctx, 23, 59)
+
+	sched.Stop()
+
+	select {
+	case <-sched.lifeCtx.Done():
+	default:
+		t.Fatal("expected lifeCtx to be cancelled after Stop")
+	}
+}
+
+func TestSchedulerScanAndConsumeNoTasks(t *testing.T) {
+	today := time.Now().Format("2006-01-02")
+	lastFriday := lastFridayDate(time.Now())
+
+	dailyRepo := &mockDailyRepoForScheduler{
+		codes: []string{"000001"},
+		latest: map[string]*model.StockKlineDaily{
+			"000001": {Code: "000001", Date: today},
+		},
+	}
+	weeklyRepo := &mockWeeklyRepoForScheduler{
+		codes: []string{"000001"},
+		latest: map[string]*model.StockKlineWeekly{
+			"000001": {Code: "000001", Date: lastFriday},
+		},
+	}
+
+	sched := NewScheduler(&mockSvcForScheduler{}, dailyRepo, weeklyRepo).(*stockScheduler)
+	// 直接调用 scanAndConsume 不需要 Start
+	sched.scanAndConsume(context.Background())
+}
+
+func TestSchedulerScanAndConsumeWithTasks(t *testing.T) {
+	dailyRepo := &mockDailyRepoForScheduler{
+		codes: []string{"000001"},
+		latest: map[string]*model.StockKlineDaily{
+			"000001": {Code: "000001", Date: "2020-01-01"},
+		},
+	}
+	weeklyRepo := &mockWeeklyRepoForScheduler{
+		codes:  []string{"000001"},
+		latest: map[string]*model.StockKlineWeekly{},
+	}
+
+	sched := NewScheduler(&mockSvcForScheduler{}, dailyRepo, weeklyRepo).(*stockScheduler)
+	sched.interval = 0 // 跳过 task 间 sleep 加快测试
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sched.scanAndConsume(ctx)
+}
+
+func TestSchedulerScanAndConsumeCancelStops(t *testing.T) {
+	dailyRepo := &mockDailyRepoForScheduler{
+		codes: []string{"000001", "000002", "000003"},
+		latest: map[string]*model.StockKlineDaily{
+			"000001": {Code: "000001", Date: "2020-01-01"},
+			"000002": {Code: "000002", Date: "2020-01-01"},
+			"000003": {Code: "000003", Date: "2020-01-01"},
+		},
+	}
+	weeklyRepo := &mockWeeklyRepoForScheduler{
+		codes:  []string{"000001"},
+		latest: map[string]*model.StockKlineWeekly{},
+	}
+
+	sched := NewScheduler(&mockSvcForScheduler{}, dailyRepo, weeklyRepo).(*stockScheduler)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // 立即取消，scanAndConsume 应当尽快退出
+
+	sched.scanAndConsume(ctx)
+}
+
+func TestSchedulerTriggerNowExecutes(t *testing.T) {
+	dailyRepo := &mockDailyRepoForScheduler{codes: nil}
+	weeklyRepo := &mockWeeklyRepoForScheduler{codes: nil}
+	sched := NewScheduler(&mockSvcForScheduler{}, dailyRepo, weeklyRepo).(*stockScheduler)
+	sched.Start(context.Background(), 23, 59)
+	defer sched.Stop()
+
+	if err := sched.TriggerNow(context.Background()); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+
+	// 等待 trigger goroutine 完成（通过 guard.tryStart 释放检测）
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if sched.guard.tryStart() {
+			sched.guard.markDone()
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("TriggerNow goroutine did not release guard in time")
+}
+
+func TestSchedulerStartIsIdempotent(t *testing.T) {
+	sched := NewScheduler(&mockSvcForScheduler{}, &mockDailyRepoForScheduler{}, &mockWeeklyRepoForScheduler{}).(*stockScheduler)
+	sched.Start(context.Background(), 23, 59)
+	first := sched.lifeCtx
+	sched.Start(context.Background(), 23, 59) // 第二次调用应当无副作用
+	if sched.lifeCtx != first {
+		t.Fatal("Start should be a no-op when scheduler is already started")
+	}
+	sched.Stop()
+}

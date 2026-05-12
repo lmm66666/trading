@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"trading/business"
 )
 
 // mockFinancialSchedulerWithErr 支持控制 TriggerNow 返回错误的 mock
@@ -16,9 +18,11 @@ type mockFinancialSchedulerWithErr struct {
 	alreadyRunning bool
 }
 
+func (m *mockFinancialSchedulerWithErr) Start(ctx context.Context) {}
+func (m *mockFinancialSchedulerWithErr) Stop()                     {}
 func (m *mockFinancialSchedulerWithErr) TriggerNow(ctx context.Context) error {
 	if m.alreadyRunning {
-		return errors.New("another task is already running")
+		return business.ErrSchedulerBusy
 	}
 	return m.triggerErr
 }

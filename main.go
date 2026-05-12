@@ -39,6 +39,7 @@ func main() {
 	scheduler.Start(context.Background(), 16, 0)
 
 	financialScheduler := business.NewFinancialScheduler(financialSvc, d.FinancialReport())
+	financialScheduler.Start(context.Background())
 
 	signalSvc := business.NewSignalService(d.StockKlineDaily(), d.StockKlineWeekly(), d.FinancialReport())
 	querySvc := business.NewQueryService(d.StockKlineDaily(), d.StockKlineWeekly(), d.FinancialReport())

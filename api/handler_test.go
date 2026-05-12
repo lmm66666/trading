@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 
 	"github.com/gin-gonic/gin"
 
@@ -43,10 +42,10 @@ type mockScheduler struct {
 }
 
 func (m *mockScheduler) Start(ctx context.Context, hour, minute int) {}
-func (m *mockScheduler) Stop()                                      {}
+func (m *mockScheduler) Stop()                                       {}
 func (m *mockScheduler) TriggerNow(ctx context.Context) error {
 	if m.alreadyRunning {
-		return errors.New("another task is already running")
+		return business.ErrSchedulerBusy
 	}
 	return m.triggerErr
 }
@@ -54,6 +53,8 @@ func (m *mockScheduler) TriggerNow(ctx context.Context) error {
 // mockFinancialScheduler 模拟财报调度器
 type mockFinancialScheduler struct{}
 
+func (m *mockFinancialScheduler) Start(ctx context.Context)            {}
+func (m *mockFinancialScheduler) Stop()                                {}
 func (m *mockFinancialScheduler) TriggerNow(ctx context.Context) error { return nil }
 
 // mockSignalService 模拟信号扫描服务

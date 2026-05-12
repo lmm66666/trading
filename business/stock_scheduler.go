@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -9,6 +10,12 @@ import (
 
 	"trading/data"
 )
+
+// ErrSchedulerNotStarted 调度器未启动时手动触发返回此错误
+var ErrSchedulerNotStarted = errors.New("scheduler not started")
+
+// ErrSchedulerBusy 已有任务在运行时再次触发返回此错误
+var ErrSchedulerBusy = errors.New("another task is already running")
 
 // Scheduler 调度器接口
 type Scheduler interface {
@@ -22,11 +29,15 @@ type stockScheduler struct {
 	svc        StockDataService
 	dailyRepo  data.StockKlineDailyRepo
 	weeklyRepo data.StockKlineWeeklyRepo
-	stopCh     chan struct{}
 	interval   time.Duration
 	guard      triggerGuard
 	worker     *concurrentWorker
-	bgCtx      context.Context
+
+	mu          sync.Mutex
+	lifeCtx     context.Context
+	lifeCancel  context.CancelFunc
+	stopOnce    sync.Once
+	wg          sync.WaitGroup
 }
 
 // NewScheduler 创建 Scheduler 实例
@@ -35,7 +46,6 @@ func NewScheduler(svc StockDataService, dailyRepo data.StockKlineDailyRepo, week
 		svc:        svc,
 		dailyRepo:  dailyRepo,
 		weeklyRepo: weeklyRepo,
-		stopCh:     make(chan struct{}),
 		interval:   5 * time.Second,
 		worker:     newConcurrentWorker(100),
 	}
@@ -43,16 +53,33 @@ func NewScheduler(svc StockDataService, dailyRepo data.StockKlineDailyRepo, week
 
 // Start 启动调度器，按指定时间每天执行扫描
 func (s *stockScheduler) Start(ctx context.Context, hour, minute int) {
-	s.bgCtx = ctx
-	go s.run(ctx, hour, minute)
+	s.mu.Lock()
+	if s.lifeCtx != nil {
+		s.mu.Unlock()
+		return
+	}
+	s.lifeCtx, s.lifeCancel = context.WithCancel(ctx)
+	s.mu.Unlock()
+
+	s.wg.Add(1)
+	go s.run(hour, minute)
 }
 
-// Stop 停止调度器
+// Stop 停止调度器；可重复调用（幂等），并等待所有后台 goroutine 退出
 func (s *stockScheduler) Stop() {
-	close(s.stopCh)
+	s.stopOnce.Do(func() {
+		s.mu.Lock()
+		cancel := s.lifeCancel
+		s.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+	})
+	s.wg.Wait()
 }
 
-func (s *stockScheduler) run(ctx context.Context, hour, minute int) {
+func (s *stockScheduler) run(hour, minute int) {
+	defer s.wg.Done()
 	for {
 		nextRun := nextDailyTime(hour, minute)
 		wait := time.Until(nextRun)
@@ -64,31 +91,37 @@ func (s *stockScheduler) run(ctx context.Context, hour, minute int) {
 				log.Println("[scheduler] skipped: not a weekday")
 				continue
 			}
-			if s.guard.isRunning() {
+			if !s.guard.tryStart() {
 				log.Println("[scheduler] skipped: manual task is running")
 				continue
 			}
-			s.scanAndConsume(ctx)
-		case <-s.stopCh:
-			return
-		case <-ctx.Done():
+			s.scanAndConsume(s.lifeCtx)
+			s.guard.markDone()
+		case <-s.lifeCtx.Done():
 			return
 		}
 	}
 }
 
 // TriggerNow 手动触发一次扫描（供 API 调用）
-func (s *stockScheduler) TriggerNow(ctx context.Context) error {
+func (s *stockScheduler) TriggerNow(_ context.Context) error {
+	s.mu.Lock()
+	lifeCtx := s.lifeCtx
+	s.mu.Unlock()
+	if lifeCtx == nil {
+		return ErrSchedulerNotStarted
+	}
 	if !s.guard.tryStart() {
-		return fmt.Errorf("another task is already running")
+		return ErrSchedulerBusy
 	}
 
 	log.Println("[scheduler] manual trigger started")
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
 		defer s.guard.markDone()
-		s.scanAndConsume(s.bgCtx)
+		s.scanAndConsume(lifeCtx)
 	}()
-
 	return nil
 }
 
@@ -107,23 +140,23 @@ func (s *stockScheduler) scanAndConsume(ctx context.Context) {
 	log.Printf("[scheduler] %d tasks queued, consuming one every %v", len(tasks), s.interval)
 
 	for i, t := range tasks {
-		select {
-		case <-s.stopCh:
+		if err := ctx.Err(); err != nil {
 			return
-		case <-ctx.Done():
-			return
-		default:
 		}
 
 		log.Printf("[scheduler] [%d/%d] processing %s (daily=%v weekly=%v)", i+1, len(tasks), t.code, t.needDaily, t.needWeekly)
-		if err = s.process(ctx, t); err != nil {
+		if err := s.process(ctx, t); err != nil {
 			log.Printf("[scheduler] [%d/%d] failed %s: %v", i+1, len(tasks), t.code, err)
 		} else {
 			log.Printf("[scheduler] [%d/%d] success %s", i+1, len(tasks), t.code)
 		}
 
 		if i < len(tasks)-1 {
-			time.Sleep(s.interval)
+			select {
+			case <-time.After(s.interval):
+			case <-ctx.Done():
+				return
+			}
 		}
 	}
 
