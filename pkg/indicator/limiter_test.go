@@ -89,3 +89,13 @@ func TestLimiterContextCancel(t *testing.T) {
 		t.Fatalf("expected Canceled, got %v", err)
 	}
 }
+
+func TestLimiterReleaseWithoutAcquirePanics(t *testing.T) {
+	l := NewLimiter(2)
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic on unpaired Release, got none")
+		}
+	}()
+	l.Release()
+}

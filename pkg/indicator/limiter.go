@@ -25,10 +25,12 @@ func (l *Limiter) Acquire(ctx context.Context) error {
 	}
 }
 
-// Release 释放一个执行槽位
+// Release 释放一个执行槽位。必须与成功的 Acquire 配对调用；
+// 若在没有未配对 Acquire 的情况下被调用，会 panic 以暴露调用方 bug，避免计数错乱后续 Acquire 永久阻塞。
 func (l *Limiter) Release() {
 	select {
 	case <-l.ch:
 	default:
+		panic("indicator: Limiter.Release called without paired Acquire")
 	}
 }
