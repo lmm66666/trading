@@ -2,6 +2,7 @@ package data
 
 import (
 	"fmt"
+	"time"
 
 	"trading/config"
 	"trading/model"
@@ -10,11 +11,17 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	defaultMaxOpenConns           = 25
+	defaultMaxIdleConns           = 5
+	defaultConnMaxLifetimeMinutes = 30
+)
+
 type Data struct {
 	db *gorm.DB
 }
 
-// New 创建 Data 实例，内部根据配置初始化 gorm.DB 连接
+// New 创建 Data 实例，内部根据配置初始化 gorm.DB 连接与连接池
 func New(cfg config.DB) (*Data, error) {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName)
@@ -23,6 +30,28 @@ func New(cfg config.DB) (*Data, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open mysql failed: %w", err)
 	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("get sql.DB failed: %w", err)
+	}
+
+	maxOpen := cfg.MaxOpenConns
+	if maxOpen <= 0 {
+		maxOpen = defaultMaxOpenConns
+	}
+	maxIdle := cfg.MaxIdleConns
+	if maxIdle <= 0 {
+		maxIdle = defaultMaxIdleConns
+	}
+	lifetimeMin := cfg.ConnMaxLifetimeMinutes
+	if lifetimeMin <= 0 {
+		lifetimeMin = defaultConnMaxLifetimeMinutes
+	}
+
+	sqlDB.SetMaxOpenConns(maxOpen)
+	sqlDB.SetMaxIdleConns(maxIdle)
+	sqlDB.SetConnMaxLifetime(time.Duration(lifetimeMin) * time.Minute)
 
 	if err := db.AutoMigrate(&model.StockKlineDaily{}, &model.StockKlineWeekly{}, &model.FinancialReport{}); err != nil {
 		return nil, fmt.Errorf("auto migrate failed: %w", err)

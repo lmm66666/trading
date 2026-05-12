@@ -5,3 +5,7 @@ Config:
     User: root
     Password: your_password
     DBName: trading
+    # 连接池参数（留空或 <=0 即使用默认值：25 / 5 / 30）
+    MaxOpenConns: 25
+    MaxIdleConns: 5
+    ConnMaxLifetimeMinutes: 30
