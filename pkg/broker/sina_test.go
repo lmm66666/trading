@@ -2,6 +2,10 @@ package broker
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -318,5 +322,69 @@ func TestSinaBrokerGetFinancialReportHistorical(t *testing.T) {
 	for _, r := range reports {
 		t.Logf("Report: %s type=%d, Revenue=%.2f, NetProfit=%.2f, GrossMargin=%.2f, NetMargin=%.2f, ROE=%.2f",
 			r.ReportDate, r.ReportType, r.TotalRevenue, r.NetProfit, r.GrossMargin, r.NetMargin, r.ROE)
+	}
+}
+
+// TestSinaBrokerRetryHonorsCtxCancel 验证 retry backoff 阶段响应 ctx 取消，不会跑满所有重试。
+func TestSinaBrokerRetryHonorsCtxCancel(t *testing.T) {
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	b := &SinaBroker{
+		client:     &http.Client{Timeout: 2 * time.Second},
+		baseURL:    srv.URL,
+		maxRetries: 5,
+		retryDelay: 500 * time.Millisecond,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := b.getBytesURL(ctx, srv.URL, nil)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error after ctx timeout")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected context.DeadlineExceeded, got %v", err)
+	}
+	// 5 次 retry 的累计 backoff 约 7.5s，ctx 80ms 超时后应立刻返回
+	if elapsed > 800*time.Millisecond {
+		t.Fatalf("expected fast exit on ctx cancel, took %v", elapsed)
+	}
+	if got := attempts.Load(); got == 0 {
+		t.Fatalf("expected at least one server hit before cancel, got %d", got)
+	}
+}
+
+// TestSinaBrokerRetryAlreadyCancelledCtx 验证已取消的 ctx 直接返回错误。
+func TestSinaBrokerRetryAlreadyCancelledCtx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	b := &SinaBroker{
+		client:     &http.Client{Timeout: 2 * time.Second},
+		baseURL:    srv.URL,
+		maxRetries: 3,
+		retryDelay: 500 * time.Millisecond,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := b.getBytesURL(ctx, srv.URL, nil)
+	if err == nil {
+		t.Fatal("expected error from cancelled ctx")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
 	}
 }

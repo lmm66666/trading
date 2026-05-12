@@ -50,7 +50,13 @@ func (p *SinaBroker) getBytesURL(ctx context.Context, rawURL string, headers map
 	var lastErr error
 	for attempt := 0; attempt <= p.maxRetries; attempt++ {
 		if attempt > 0 {
-			time.Sleep(p.retryDelay * time.Duration(attempt))
+			timer := time.NewTimer(p.retryDelay * time.Duration(attempt))
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			}
 		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -63,13 +69,19 @@ func (p *SinaBroker) getBytesURL(ctx context.Context, rawURL string, headers map
 
 		resp, err := p.client.Do(req)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 			lastErr = err
 			continue
 		}
 
 		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 			lastErr = err
 			continue
 		}
