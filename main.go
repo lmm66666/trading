@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 
@@ -24,7 +23,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config failed: %v", err)
 	}
-	fmt.Printf("%+v\n", cfg)
+	log.Printf("config loaded: db=%s@%s:%d/%s", cfg.DB.User, cfg.DB.Host, cfg.DB.Port, cfg.DB.DBName)
 
 	d, err := data.New(cfg.DB)
 	if err != nil {

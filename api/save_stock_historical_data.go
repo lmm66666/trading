@@ -20,7 +20,7 @@ func (h *StockHandler) SaveStockHistoricalData(c *gin.Context) {
 	}
 
 	if err := h.svc.SaveHistoricalData(c.Request.Context(), req.Code); err != nil {
-		respondError(c, http.StatusInternalServerError, err.Error())
+		respondInternalError(c, "save historical data", err)
 		return
 	}
 

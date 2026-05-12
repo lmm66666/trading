@@ -17,7 +17,7 @@ func (h *StockHandler) GetStockBuySignals(c *gin.Context) {
 
 	signal, err := h.signalSvc.FindBuySignalsByStrategy(c.Request.Context(), strategyName)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, err.Error())
+		respondInternalError(c, "find buy signals", err)
 		return
 	}
 

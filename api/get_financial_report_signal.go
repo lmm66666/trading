@@ -24,7 +24,7 @@ func (h *StockHandler) GetFinancialReportSignal(c *gin.Context) {
 
 	signal, err := h.signalSvc.FindFinancialReportSignals(c.Request.Context(), profitThreshold, quarterCount)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, err.Error())
+		respondInternalError(c, "find financial report signals", err)
 		return
 	}
 

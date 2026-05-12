@@ -34,7 +34,7 @@ func (h *StockHandler) GetStockPrice(c *gin.Context) {
 
 	data, err := h.querySvc.FindStockPricesByCode(c.Request.Context(), code, cycle, pageSize, offset)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, err.Error())
+		respondInternalError(c, "find stock prices", err)
 		return
 	}
 

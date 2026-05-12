@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -36,4 +37,15 @@ func respondSuccess(c *gin.Context, data any) {
 
 func respondError(c *gin.Context, status int, message string) {
 	c.JSON(status, response{Code: status, Message: message, Data: nil})
+}
+
+// respondInternalError 记录详细错误到服务端日志，向客户端返回脱敏的通用 500 响应，
+// 避免泄漏数据库结构、SQL 语句、内部文件路径等敏感信息。
+func respondInternalError(c *gin.Context, op string, err error) {
+	log.Printf("[api] %s failed: method=%s path=%s err=%v", op, c.Request.Method, c.Request.URL.Path, err)
+	c.JSON(http.StatusInternalServerError, response{
+		Code:    http.StatusInternalServerError,
+		Message: "internal server error",
+		Data:    nil,
+	})
 }
