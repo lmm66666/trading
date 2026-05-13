@@ -420,3 +420,142 @@ curl "http://localhost:8080/api/stocks/financial-report/signal?profit_threshold=
 | codes            | []string | 符合条件的股票代码列表         |
 
 ---
+
+### 9. 查询 Shibor 利率
+
+获取 Shibor 利率数据，支持按期限筛选。
+
+- **Method**: `GET`
+- **Path**: `/api/macro/shibor`
+
+#### 请求参数
+
+| 字段   | 类型   | 必填 | 默认值 | 说明                          |
+|--------|--------|------|--------|-------------------------------|
+| period | string | 否   | -      | 期限ID：001=隔夜, 002=1周, 003=2周, 004=1月, 005=3月, 006=6月, 007=9月, 008=1年；不传返回所有期限 |
+
+#### 请求示例
+
+```bash
+# 查询隔夜 Shibor
+curl "http://localhost:8080/api/macro/shibor?period=001"
+
+# 查询所有期限
+curl "http://localhost:8080/api/macro/shibor"
+```
+
+#### 成功响应
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "period": "001",
+    "data": [
+      {
+        "report_date": "2026-05-12",
+        "report_period": "隔夜(O/N)",
+        "ir_rate": 1.2380,
+        "change_rate": -3.30,
+        "indicator_id": "001"
+      }
+    ]
+  }
+}
+```
+
+#### 响应字段说明
+
+| 字段          | 类型    | 说明           |
+|---------------|---------|----------------|
+| period        | string  | 请求的期限ID   |
+| data          | []object| Shibor 数据列表 |
+
+**data 数组元素字段：**
+
+| 字段           | 类型    | 说明               |
+|----------------|---------|--------------------|
+| report_date    | string  | 报告日期           |
+| report_period  | string  | 期限描述           |
+| ir_rate        | float64 | 利率值             |
+| change_rate    | float64 | 变化点数（基点）   |
+| indicator_id   | string  | 指标ID             |
+
+---
+
+### 10. 查询汇率
+
+获取汇率实时数据，支持按代码筛选。
+
+- **Method**: `GET`
+- **Path**: `/api/macro/exchange-rate`
+
+#### 请求参数
+
+| 字段 | 类型   | 必填 | 默认值 | 说明                              |
+|------|--------|------|--------|-----------------------------------|
+| code | string | 否   | -      | 汇率代码；不传返回所有预设汇率 |
+
+**常见汇率代码：**
+
+| 代码     | 说明        |
+|----------|-------------|
+| USDCNY   | 美元/人民币 |
+| USDJPY   | 美元/日元   |
+| DINIW    | 美元指数    |
+| EURUSD   | 欧元/美元   |
+| GBPUSD   | 英镑/美元   |
+| USDCNH   | 美元/离岸人民币 |
+| AUDUSD   | 澳元/美元   |
+| USDCAD   | 美元/加元   |
+
+#### 请求示例
+
+```bash
+# 查询美元/人民币汇率
+curl "http://localhost:8080/api/macro/exchange-rate?code=USDCNY"
+
+# 查询所有预设汇率
+curl "http://localhost:8080/api/macro/exchange-rate"
+```
+
+#### 成功响应
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "code": "USDCNY",
+    "data": [
+      {
+        "code": "USDCNY",
+        "name": "",
+        "open": 7.2000,
+        "now": 7.2150,
+        "change_percent": 0.21
+      }
+    ]
+  }
+}
+```
+
+#### 响应字段说明
+
+| 字段     | 类型     | 说明           |
+|----------|----------|----------------|
+| code     | string   | 请求的汇率代码 |
+| data     | []object | 汇率数据列表   |
+
+**data 数组元素字段：**
+
+| 字段           | 类型    | 说明               |
+|----------------|---------|--------------------|
+| code           | string  | 汇率代码           |
+| name           | string  | 显示名称           |
+| open           | float64 | 开盘价             |
+| now            | float64 | 最新价             |
+| change_percent | float64 | 涨跌幅（百分比）   |
+
+---
