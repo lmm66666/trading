@@ -297,6 +297,69 @@ func parseKLineResponse(symbol, body string) ([]model.StockKline, error) {
 	return result, nil
 }
 
+// GetExchangeRate 获取单个汇率实时数据
+func (p *SinaBroker) GetExchangeRate(ctx context.Context, code string) (*model.ExchangeRate, error) {
+	result, err := p.GetExchangeRateBatch(ctx, []string{code})
+	if err != nil {
+		return nil, err
+	}
+	rate, ok := result[code]
+	if !ok {
+		return nil, fmt.Errorf("no data for code: %s", code)
+	}
+	return rate, nil
+}
+
+// GetExchangeRateBatch 批量获取汇率实时数据
+func (p *SinaBroker) GetExchangeRateBatch(ctx context.Context, codes []string) (map[string]*model.ExchangeRate, error) {
+	if len(codes) == 0 {
+		return nil, nil
+	}
+
+	body, err := p.getBytes(ctx, fmt.Sprintf("/list=%s", strings.Join(codes, ",")), map[string]string{
+		"Referer": "https://finance.sina.com.cn/",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("fetch exchange rate batch failed: %w", err)
+	}
+
+	utf8Body, err := gbkToUTF8(body)
+	if err != nil {
+		return nil, fmt.Errorf("gbk to utf8 conversion failed: %w", err)
+	}
+
+	rawMap := parseRealtimeResponse(string(utf8Body))
+	result := make(map[string]*model.ExchangeRate, len(rawMap))
+	for code, content := range rawMap {
+		if rate := parseExchangeRate(code, content); rate != nil {
+			result[code] = rate
+		}
+	}
+	return result, nil
+}
+
+func parseExchangeRate(code, content string) *model.ExchangeRate {
+	fields := strings.Split(content, ",")
+	if len(fields) < 10 {
+		return nil
+	}
+
+	open, _ := strconv.ParseFloat(fields[1], 64)
+	now, _ := strconv.ParseFloat(fields[8], 64)
+
+	var changePercent float64
+	if open > 0 {
+		changePercent = (now - open) / open * 100
+	}
+
+	return &model.ExchangeRate{
+		Code:          code,
+		Open:          open,
+		Now:           now,
+		ChangePercent: changePercent,
+	}
+}
+
 // GetFinancialReportHistorical 获取历史财报数据
 func (p *SinaBroker) GetFinancialReportHistorical(ctx context.Context, symbol string, page, num int) ([]*model.FinancialReport, int, error) {
 	if page < 1 {

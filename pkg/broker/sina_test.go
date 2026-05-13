@@ -3,6 +3,7 @@ package broker
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -386,5 +387,106 @@ func TestSinaBrokerRetryAlreadyCancelledCtx(t *testing.T) {
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+// TestSinaBrokerGetExchangeRate 测试获取单个汇率
+func TestSinaBrokerGetExchangeRate(t *testing.T) {
+	broker := NewSinaBroker()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	rate, err := broker.GetExchangeRate(ctx, "USDCNY")
+	if err != nil {
+		t.Fatalf("fetch exchange rate failed: %v", err)
+	}
+
+	t.Logf("USDCNY: Open=%.4f Now=%.4f ChangePercent=%.2f%%",
+		rate.Open, rate.Now, rate.ChangePercent)
+}
+
+// TestSinaBrokerGetExchangeRateBatch 测试批量获取汇率
+func TestSinaBrokerGetExchangeRateBatch(t *testing.T) {
+	broker := NewSinaBroker()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	codes := []string{"USDCNY", "USDJPY"}
+	result, err := broker.GetExchangeRateBatch(ctx, codes)
+	if err != nil {
+		t.Fatalf("fetch exchange rate batch failed: %v", err)
+	}
+
+	if len(result) == 0 {
+		t.Fatal("expected at least one result")
+	}
+
+	for code, rate := range result {
+		t.Logf("%s: Open=%.4f Now=%.4f ChangePercent=%.2f%%",
+			code, rate.Open, rate.Now, rate.ChangePercent)
+	}
+}
+
+// TestParseExchangeRate 测试汇率解析
+func TestParseExchangeRate(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    *model.ExchangeRate
+	}{
+		{
+			name:    "valid usdcny",
+			content: "16:30:00,7.0000,7.0700,7.0500,1000,7.0800,7.0900,7.1000,7.0700,美元人民币,2025-04-22",
+			want: &model.ExchangeRate{
+				Code:          "USDCNY",
+				Open:          7.0,
+				Now:           7.07,
+				ChangePercent: 1.0,
+			},
+		},
+		{
+			name:    "insufficient fields",
+			content: "16:30:00,7.2000,7.2100",
+			want:    nil,
+		},
+		{
+			name:    "zero open",
+			content: "16:30:00,0,7.2100,7.2050,1000,7.2150,7.2200,7.2250,7.2100,美元人民币,2025-04-22",
+			want: &model.ExchangeRate{
+				Code:          "USDCNY",
+				Open:          0,
+				Now:           7.21,
+				ChangePercent: 0,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseExchangeRate("USDCNY", tt.content)
+			if tt.want == nil {
+				if got != nil {
+					t.Fatalf("expected nil, got %+v", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("expected non-nil rate")
+			}
+			if got.Code != tt.want.Code {
+				t.Errorf("Code = %s, want %s", got.Code, tt.want.Code)
+			}
+			if got.Open != tt.want.Open {
+				t.Errorf("Open = %.4f, want %.4f", got.Open, tt.want.Open)
+			}
+			if got.Now != tt.want.Now {
+				t.Errorf("Now = %.4f, want %.4f", got.Now, tt.want.Now)
+			}
+			if math.Abs(got.ChangePercent-tt.want.ChangePercent) > 0.0001 {
+				t.Errorf("ChangePercent = %.4f, want %.4f", got.ChangePercent, tt.want.ChangePercent)
+			}
+		})
 	}
 }
