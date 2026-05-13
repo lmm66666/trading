@@ -42,7 +42,8 @@ func main() {
 
 	signalSvc := business.NewSignalService(d.StockKlineDaily(), d.StockKlineWeekly(), d.FinancialReport())
 	querySvc := business.NewQueryService(d.StockKlineDaily(), d.StockKlineWeekly(), d.FinancialReport())
-	r := api.NewRouter(svc, financialSvc, scheduler, financialScheduler, signalSvc, querySvc)
+	macroSvc := business.NewMacroService(broker.NewEastMoneyBroker(), broker.NewSinaBroker())
+	r := api.NewRouter(svc, financialSvc, scheduler, financialScheduler, signalSvc, querySvc, macroSvc)
 
 	log.Println("Server starting on :8080")
 	if err := r.Run(":8080"); err != nil {

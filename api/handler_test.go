@@ -97,7 +97,7 @@ func (m *mockQueryService) FindFinancialReportsByCode(ctx context.Context, code 
 func setupTestRouter(svc business.StockDataService, financialSvc business.FinancialReportService, scheduler business.Scheduler, signalSvc business.SignalService, querySvc business.QueryService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	h := NewStockHandler(svc, financialSvc, scheduler, &mockFinancialScheduler{}, signalSvc, querySvc)
+	h := NewStockHandler(svc, financialSvc, scheduler, &mockFinancialScheduler{}, signalSvc, querySvc, nil)
 	r.POST("/api/stocks/historical", h.SaveStockHistoricalData)
 	r.GET("/api/stocks/signal", h.GetStockBuySignals)
 	r.POST("/api/stocks/append", h.AppendStockData)

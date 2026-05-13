@@ -29,7 +29,7 @@ func (m *mockFinancialSchedulerWithErr) TriggerNow(ctx context.Context) error {
 
 func TestAppendFinancialReportDataSuccess(t *testing.T) {
 	r := gin.New()
-	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialSchedulerWithErr{}, nil, nil)
+	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialSchedulerWithErr{}, nil, nil, nil)
 	r.POST("/api/stocks/financial-report/append", h.AppendFinancialReportData)
 
 	w := httptest.NewRecorder()
@@ -43,7 +43,7 @@ func TestAppendFinancialReportDataSuccess(t *testing.T) {
 
 func TestAppendFinancialReportDataAlreadyRunning(t *testing.T) {
 	r := gin.New()
-	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialSchedulerWithErr{alreadyRunning: true}, nil, nil)
+	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialSchedulerWithErr{alreadyRunning: true}, nil, nil, nil)
 	r.POST("/api/stocks/financial-report/append", h.AppendFinancialReportData)
 
 	w := httptest.NewRecorder()
@@ -57,7 +57,7 @@ func TestAppendFinancialReportDataAlreadyRunning(t *testing.T) {
 
 func TestAppendFinancialReportDataError(t *testing.T) {
 	r := gin.New()
-	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialSchedulerWithErr{triggerErr: errors.New("scheduler error")}, nil, nil)
+	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialSchedulerWithErr{triggerErr: errors.New("scheduler error")}, nil, nil, nil)
 	r.POST("/api/stocks/financial-report/append", h.AppendFinancialReportData)
 
 	w := httptest.NewRecorder()
