@@ -3,8 +3,10 @@ package business
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"trading/data"
+	"trading/model"
 	"trading/pkg/filter/financial"
 	"trading/pkg/strategy"
 )
@@ -71,30 +73,17 @@ func (s *signalService) FindBuySignalsByStrategy(ctx context.Context, name strin
 	}
 }
 
+const (
+	scanConcurrency = 20 // 并发扫描 goroutine 数
+)
+
 func (s *signalService) scanDailyStrategy(ctx context.Context, st *strategy.Strategy) (*StrategySignal, error) {
 	codes, err := s.dailyRepo.FindAllCodes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("find all daily codes failed: %w", err)
 	}
 
-	var matched []string
-	for _, code := range codes {
-		dailies, findErr := s.dailyRepo.FindByCode(ctx, code, 70)
-		if findErr != nil || len(dailies) == 0 {
-			continue
-		}
-		lastDate := dailies[len(dailies)-1].Date
-		klines := dailyToKlines(dailies)
-		signals := st.ScanAll(klines)
-		if len(signals) > 0 && signals[len(signals)-1].Date == lastDate {
-			matched = append(matched, code)
-		}
-	}
-
-	if len(matched) == 0 {
-		return nil, nil
-	}
-	return &StrategySignal{Name: st.Name(), Codes: matched}, nil
+	return s.scanCodes(ctx, st, codes, s.dailyRepo)
 }
 
 func (s *signalService) scanWeeklyStrategy(ctx context.Context, st *strategy.Strategy) (*StrategySignal, error) {
@@ -103,24 +92,82 @@ func (s *signalService) scanWeeklyStrategy(ctx context.Context, st *strategy.Str
 		return nil, fmt.Errorf("find all weekly codes failed: %w", err)
 	}
 
-	var matched []string
+	return s.scanCodes(ctx, st, codes, s.weeklyRepo)
+}
+
+type klineRepo interface {
+	FindByCode(ctx context.Context, code string, limit int) ([]*model.StockKlineDaily, error)
+}
+
+type weeklyKlineRepo interface {
+	FindByCode(ctx context.Context, code string, limit int) ([]*model.StockKlineWeekly, error)
+}
+
+func (s *signalService) scanCodes(ctx context.Context, st *strategy.Strategy, codes []string, repo any) (*StrategySignal, error) {
+	var (
+		matched []string
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+	)
+
+	sem := make(chan struct{}, scanConcurrency)
+
 	for _, code := range codes {
-		weeklies, findErr := s.weeklyRepo.FindByCode(ctx, code, 70)
-		if findErr != nil || len(weeklies) == 0 {
-			continue
+		select {
+		case <-ctx.Done():
+			wg.Wait()
+			return nil, ctx.Err()
+		case sem <- struct{}{}:
 		}
-		lastDate := weeklies[len(weeklies)-1].Date
-		klines := weeklyToKlines(weeklies)
-		signals := st.ScanAll(klines)
-		if len(signals) > 0 && signals[len(signals)-1].Date == lastDate {
-			matched = append(matched, code)
-		}
+
+		wg.Add(1)
+		go func(c string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			klines, sigs, lastDate := s.scanSingleCode(ctx, c, repo, st)
+			if len(klines) == 0 {
+				return
+			}
+			if len(sigs) > 0 && sigs[len(sigs)-1].Date == lastDate {
+				mu.Lock()
+				matched = append(matched, c)
+				mu.Unlock()
+			}
+		}(code)
 	}
+
+	wg.Wait()
 
 	if len(matched) == 0 {
 		return nil, nil
 	}
 	return &StrategySignal{Name: st.Name(), Codes: matched}, nil
+}
+
+func (s *signalService) scanSingleCode(ctx context.Context, code string, repo any, st *strategy.Strategy) ([]*model.StockKline, []strategy.Signal, string) {
+	switch r := repo.(type) {
+	case data.StockKlineDailyRepo:
+		dailies, err := r.FindByCode(ctx, code, 70)
+		if err != nil || len(dailies) == 0 {
+			return nil, nil, ""
+		}
+		lastDate := dailies[len(dailies)-1].Date
+		klines := dailyToKlines(dailies)
+		sigs := st.ScanAll(klines)
+		return klines, sigs, lastDate
+	case data.StockKlineWeeklyRepo:
+		weeklies, err := r.FindByCode(ctx, code, 70)
+		if err != nil || len(weeklies) == 0 {
+			return nil, nil, ""
+		}
+		lastDate := weeklies[len(weeklies)-1].Date
+		klines := weeklyToKlines(weeklies)
+		sigs := st.ScanAll(klines)
+		return klines, sigs, lastDate
+	default:
+		return nil, nil, ""
+	}
 }
 
 func (s *signalService) FindFinancialReportSignals(ctx context.Context, profitThreshold float64, quarterCount int) (*StrategySignal, error) {
