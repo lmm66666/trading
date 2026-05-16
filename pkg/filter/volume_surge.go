@@ -6,12 +6,16 @@ import (
 )
 
 type VolumeSurgeConfig struct {
-	VolumeMAPeriod      int
-	MinVolumeRatio      float64
-	MinRallyPct         float64
-	MaxPullbackPct      float64
-	MaxPullbackDays     int
-	MaxPullbackVolRatio float64 // 回调期最大成交量比例（相对拉升期均量），0 表示不检查
+	VolumeMAPeriod        int
+	MinVolumeRatio        float64
+	MinRallyPct           float64
+	MaxPullbackPct        float64
+	MaxPullbackDays       int
+	MaxPullbackVolRatio   float64 // 回调期最大成交量比例（相对拉升期均量），0 表示不检查
+	NearLowPeriod         int     // 底部确认周期（0=不检查），如 60
+	NearLowMaxRatio       float64 // 底部确认最大上浮比例（0=不检查），如 0.15
+	SurgeWindowDays       int     // 拉升窗口：允许两个放量日之间间隔的最大天数（0=当前行为，即不合并）
+	MaxPullbackToVMARatio float64 // 回调均量相对 peak 处 VMA20 的最大比例（0=不检查）
 }
 
 func DefaultVolumeSurgeConfig() VolumeSurgeConfig {
@@ -52,11 +56,29 @@ func (v *VolumeSurgeFilter) Filter(klines []*model.StockKline) []Result {
 	}
 
 	vma := indicator.ComputeMA(volumes, cfg.VolumeMAPeriod)
-	windows := findPullbackWindows(klines, volumes, vma, cfg.VolumeMAPeriod, cfg.MinVolumeRatio, cfg.MinRallyPct)
+	windows := findPullbackWindows(klines, volumes, vma, cfg.VolumeMAPeriod, cfg.MinVolumeRatio, cfg.MinRallyPct, cfg.SurgeWindowDays)
 
 	windowByDay := make(map[int]*pullbackWindow)
 	for i := range windows {
 		w := &windows[i]
+
+		// NearLow 底部确认：检查窗口起点（第一个放量日）的 Open 是否在底部
+		if cfg.NearLowPeriod > 0 && cfg.NearLowMaxRatio > 0 {
+			start := 0
+			if w.surgeIdx >= cfg.NearLowPeriod {
+				start = w.surgeIdx - cfg.NearLowPeriod + 1
+			}
+			lowMin := klines[start].Low
+			for j := start + 1; j <= w.surgeIdx; j++ {
+				if klines[j].Low < lowMin {
+					lowMin = klines[j].Low
+				}
+			}
+			maxAllowed := lowMin * (1 + cfg.NearLowMaxRatio)
+			if klines[w.surgeIdx].Open > maxAllowed {
+				continue
+			}
+		}
 
 		// 计算拉升期均量（用于缩量检查）
 		var surgeAvgVol float64
@@ -91,6 +113,18 @@ func (v *VolumeSurgeFilter) Filter(klines []*model.StockKline) []Result {
 				}
 			}
 
+			// 缩量检查（VMA20 基准）：回调期均量 <= peak 处 VMA20 * MaxPullbackToVMARatio
+			if cfg.MaxPullbackToVMARatio > 0 && vma[w.peakIdx] > 0 {
+				var pullbackVolSum int64
+				for pd := w.peakIdx + 1; pd <= d; pd++ {
+					pullbackVolSum += volumes[pd]
+				}
+				pullbackAvgVol := float64(pullbackVolSum) / float64(days)
+				if pullbackAvgVol > vma[w.peakIdx]*cfg.MaxPullbackToVMARatio {
+					continue
+				}
+			}
+
 			if existing, ok := windowByDay[d]; !ok || w.peakPrice > existing.peakPrice {
 				windowByDay[d] = w
 			}
@@ -114,6 +148,7 @@ func findPullbackWindows(
 	vma []float64,
 	volumeMAPeriod int,
 	minVolumeRatio, minRallyPct float64,
+	surgeWindowDays int,
 ) []pullbackWindow {
 	n := len(klines)
 	var windows []pullbackWindow
@@ -128,9 +163,23 @@ func findPullbackWindows(
 			continue
 		}
 
-		peakIdx := i
-		peakPrice := klines[i].Close
-		for j := i + 1; j < n; j++ {
+		lastSurgeDay := i
+		if surgeWindowDays > 0 {
+			for j := i + 1; j < n && (j-lastSurgeDay) <= surgeWindowDays; j++ {
+				if vma[j] == 0 {
+					continue
+				}
+				vr := float64(volumes[j]) / vma[j]
+				rp := (klines[j].Close - klines[j].Open) / klines[j].Open * 100
+				if vr >= minVolumeRatio && rp >= minRallyPct {
+					lastSurgeDay = j
+				}
+			}
+		}
+
+		peakIdx := lastSurgeDay
+		peakPrice := klines[lastSurgeDay].Close
+		for j := lastSurgeDay + 1; j < n; j++ {
 			if klines[j].Close >= peakPrice {
 				peakIdx = j
 				peakPrice = klines[j].Close
