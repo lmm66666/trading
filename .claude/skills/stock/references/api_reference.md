@@ -16,6 +16,9 @@ curl "http://192.168.31.85:41027/api/stocks/signal?strategy=daily_b1_buy"
 
 # 周线 B1
 curl "http://192.168.31.85:41027/api/stocks/signal?strategy=weekly_b1_buy"
+
+# 底部倍量回调
+curl "http://192.168.31.85:41027/api/stocks/signal?strategy=bottom_surge_pullback"
 ```
 
 | 参数     | 说明                          |

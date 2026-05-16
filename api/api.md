@@ -138,6 +138,9 @@ curl "http://localhost:8080/api/stocks/signal?strategy=daily_b1_buy"
 
 # 周线 B1 策略
 curl "http://localhost:8080/api/stocks/signal?strategy=weekly_b1_buy"
+
+# 底部倍量回调策略
+curl "http://localhost:8080/api/stocks/signal?strategy=bottom_surge_pullback"
 ```
 
 #### 成功响应
@@ -162,10 +165,11 @@ curl "http://localhost:8080/api/stocks/signal?strategy=weekly_b1_buy"
 
 #### 支持的策略名称
 
-| 策略名称        | 说明                          |
-|-----------------|-------------------------------|
-| daily_b1_buy   | 日线 B1：放量回调 + KDJ超卖 + MA20向上 |
-| weekly_b1_buy  | 周线 B1：KDJ超卖 + MA20向上          |
+| 策略名称                 | 说明                                                         |
+|--------------------------|--------------------------------------------------------------|
+| `daily_b1_buy`          | 日线 B1：倍量拉升（量比≥2.0，涨幅≥5%）+ 缩量回调 + KDJ低位（<40）+ MA20向上 |
+| `weekly_b1_buy`         | 周线 B1：KDJ超卖（<10）+ MA20向上                                        |
+| `bottom_surge_pullback` | 底部倍量回调：底部确认 + 倍量拉升 + 缩量50%+回调 + 不破MA20 + KDJ低位（5~40） |
 
 ---
 
