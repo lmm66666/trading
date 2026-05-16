@@ -150,6 +150,12 @@ docker buildx build --platform linux/amd64 -t trading:latest --load .
 docker run -d --name trading -p 8080:8080 trading:latest
 ```
 
+**3. 导出镜像**
+
+```bash
+docker save -o trading.tar trading:latest  
+```
+
 # 开发规范
 ## 强制要求
 - 本项目除本文档外，还遵循全局 `~/.claude/CLAUDE.md`
