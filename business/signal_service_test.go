@@ -163,3 +163,110 @@ func TestSignalServiceScanDailyStrategyRepoError(t *testing.T) {
 		t.Fatal("expected no codes when FindByCode fails")
 	}
 }
+
+// TestBacktestUnknownStrategy 未知策略返回错误
+func TestBacktestUnknownStrategy(t *testing.T) {
+	svc := NewSignalService(&mockDailyRepo{}, &mockWeeklyRepo{}, &mockFinancialRepo{})
+	_, err := svc.Backtest(context.Background(), "600150", "unknown", "daily")
+	if err == nil {
+		t.Fatal("expected error for unknown strategy")
+	}
+}
+
+// TestBacktestUnsupportedCycle 不支持的周期返回错误
+func TestBacktestUnsupportedCycle(t *testing.T) {
+	svc := NewSignalService(&mockDailyRepo{}, &mockWeeklyRepo{}, &mockFinancialRepo{})
+	_, err := svc.Backtest(context.Background(), "600150", "daily_b1_buy", "monthly")
+	if err == nil {
+		t.Fatal("expected error for unsupported cycle")
+	}
+}
+
+// TestBacktestDaily 日线回测返回结果
+func TestBacktestDaily(t *testing.T) {
+	k := make([]*model.StockKlineDaily, 70)
+	for i := range 70 {
+		price := 10.0 + float64(i)*0.01
+		k[i] = &model.StockKlineDaily{
+			Code: "600312", Date: fmt.Sprintf("2026-%02d-%02d", (i/30)+1, (i%30)+1),
+			Open: price - 0.05, High: price + 0.1, Low: price - 0.1, Close: price, Volume: 100000,
+		}
+	}
+	dailyRepo := &mockDailyRepo{k: k}
+	svc := NewSignalService(dailyRepo, &mockWeeklyRepo{}, &mockFinancialRepo{})
+
+	result, err := svc.Backtest(context.Background(), "600312", "daily_b1_buy", "daily")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Code != "600312" {
+		t.Fatalf("expected code 600312, got %s", result.Code)
+	}
+	if result.Strategy != "daily_b1_buy" {
+		t.Fatalf("expected strategy daily_b1_buy, got %s", result.Strategy)
+	}
+	if result.Cycle != "daily" {
+		t.Fatalf("expected cycle daily, got %s", result.Cycle)
+	}
+}
+
+// TestBacktestWeekly 周线回测返回结果
+func TestBacktestWeekly(t *testing.T) {
+	k := make([]*model.StockKlineWeekly, 30)
+	for i := range 30 {
+		price := 10.0 + float64(i)*0.01
+		k[i] = &model.StockKlineWeekly{
+			Code: "600312", Date: fmt.Sprintf("2026-%02d-%02d", (i/4)+1, (i%4)*7+1),
+			Open: price - 0.05, High: price + 0.1, Low: price - 0.1, Close: price, Volume: 100000,
+		}
+	}
+	weeklyRepo := &mockWeeklyRepo{k: k}
+	svc := NewSignalService(&mockDailyRepo{}, weeklyRepo, &mockFinancialRepo{})
+
+	result, err := svc.Backtest(context.Background(), "600312", "weekly_b1_buy", "weekly")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Cycle != "weekly" {
+		t.Fatalf("expected cycle weekly, got %s", result.Cycle)
+	}
+}
+
+// TestBacktestEmptyData 无数据时返回空信号
+func TestBacktestEmptyData(t *testing.T) {
+	dailyRepo := &mockDailyRepo{k: []*model.StockKlineDaily{}}
+	svc := NewSignalService(dailyRepo, &mockWeeklyRepo{}, &mockFinancialRepo{})
+
+	result, err := svc.Backtest(context.Background(), "000001", "daily_b1_buy", "daily")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if len(result.Signals) != 0 {
+		t.Fatalf("expected 0 signals, got %d", len(result.Signals))
+	}
+}
+
+// TestBacktestDefaultCycle 不传 cycle 使用策略默认周期
+func TestBacktestDefaultCycle(t *testing.T) {
+	k := make([]*model.StockKlineDaily, 70)
+	for i := range 70 {
+		price := 10.0 + float64(i)*0.01
+		k[i] = &model.StockKlineDaily{
+			Code: "600312", Date: fmt.Sprintf("2026-%02d-%02d", (i/30)+1, (i%30)+1),
+			Open: price - 0.05, High: price + 0.1, Low: price - 0.1, Close: price, Volume: 100000,
+		}
+	}
+	dailyRepo := &mockDailyRepo{k: k}
+	svc := NewSignalService(dailyRepo, &mockWeeklyRepo{}, &mockFinancialRepo{})
+
+	result, err := svc.Backtest(context.Background(), "600312", "daily_b1_buy", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Cycle != "daily" {
+		t.Fatalf("expected default cycle daily, got %s", result.Cycle)
+	}
+}

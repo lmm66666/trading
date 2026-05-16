@@ -169,7 +169,71 @@ curl "http://localhost:8080/api/stocks/signal?strategy=bottom_surge_pullback"
 |--------------------------|--------------------------------------------------------------|
 | `daily_b1_buy`          | 日线 B1：倍量拉升（量比≥2.0，涨幅≥5%）+ 缩量回调 + KDJ低位（<40）+ MA20向上 |
 | `weekly_b1_buy`         | 周线 B1：KDJ超卖（<10）+ MA20向上                                        |
-| `bottom_surge_pullback` | 底部倍量回调：底部确认 + 倍量拉升 + 缩量50%+回调 + 不破MA20 + KDJ低位（5~40） |
+| `bottom_surge_pullback` | 底部倍量回调：底部确认（放量日Open在60日低点上浮15%内）+ 倍量拉升（允许间隔3天）+ 缩量回调（量能回归VMA20*1.5内）+ 不破MA20 + KDJ低位（5~40） |
+
+---
+
+### 5. 策略回测
+
+对单只股票进行策略回测，返回历史上所有满足该策略的买入信号日期。
+
+- **Method**: `GET`
+- **Path**: `/api/stocks/backtest`
+
+#### 请求参数
+
+| 字段     | 类型   | 必填 | 默认值   | 说明                                 |
+|----------|--------|------|----------|--------------------------------------|
+| code     | string | 是   | -        | 股票代码，如 `600150`               |
+| strategy | string | 是   | -        | 策略名称，同买点扫描接口             |
+| cycle    | string | 否   | 策略默认 | 周期：`daily`（日线）或 `weekly`（周线）|
+
+#### 请求示例
+
+```bash
+# 回测中国船舶的底部倍量回调策略
+curl "http://localhost:8080/api/stocks/backtest?code=600150&strategy=bottom_surge_pullback"
+
+# 回测日线 B1 策略
+curl "http://localhost:8080/api/stocks/backtest?code=600150&strategy=daily_b1_buy"
+
+# 回测周线 B1 策略（显式指定周期）
+curl "http://localhost:8080/api/stocks/backtest?code=600150&strategy=weekly_b1_buy&cycle=weekly"
+```
+
+#### 成功响应
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "code": "600150",
+    "strategy": "bottom_surge_pullback",
+    "cycle": "daily",
+    "signals": [
+      { "date": "2026-04-29" },
+      { "date": "2026-05-14" },
+      { "date": "2026-05-15" }
+    ]
+  }
+}
+```
+
+#### 响应字段说明
+
+| 字段     | 类型     | 说明                   |
+|----------|----------|------------------------|
+| code     | string   | 股票代码               |
+| strategy | string   | 策略名称               |
+| cycle    | string   | 数据周期               |
+| signals  | []object | 历史买入信号列表       |
+
+**signals 数组元素字段：**
+
+| 字段 | 类型   | 说明           |
+|------|--------|----------------|
+| date | string | 信号日期，格式 YYYY-MM-DD |
 
 ---
 

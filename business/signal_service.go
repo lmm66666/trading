@@ -17,6 +17,14 @@ type StrategySignal struct {
 	Codes []string `json:"codes"`
 }
 
+// BacktestResult 回测结果
+type BacktestResult struct {
+	Code     string            `json:"code"`
+	Strategy string            `json:"strategy"`
+	Cycle    string            `json:"cycle"`
+	Signals  []strategy.Signal `json:"signals"`
+}
+
 // SignalService 信号扫描服务
 type SignalService interface {
 	// FindBuySignals 扫描所有股票，返回每个策略对应的买点股票列表
@@ -25,6 +33,8 @@ type SignalService interface {
 	FindBuySignalsByStrategy(ctx context.Context, name string) (*StrategySignal, error)
 	// FindFinancialReportSignals 扫描所有有财报数据的股票，返回满足财报策略的股票列表
 	FindFinancialReportSignals(ctx context.Context, profitThreshold float64, quarterCount int) (*StrategySignal, error)
+	// Backtest 对单只股票进行策略回测，返回历史上所有买入信号
+	Backtest(ctx context.Context, code, strategyName, cycle string) (*BacktestResult, error)
 }
 
 type signalService struct {
@@ -61,15 +71,65 @@ func (s *signalService) FindBuySignals(ctx context.Context) ([]StrategySignal, e
 }
 
 func (s *signalService) FindBuySignalsByStrategy(ctx context.Context, name string) (*StrategySignal, error) {
+	st, defaultCycle, err := createStrategy(name)
+	if err != nil {
+		return nil, err
+	}
+	if defaultCycle == "weekly" {
+		return s.scanWeeklyStrategy(ctx, st)
+	}
+	return s.scanDailyStrategy(ctx, st)
+}
+
+// createStrategy 根据策略名称创建策略实例，返回策略、默认周期和错误
+func createStrategy(name string) (*strategy.Strategy, string, error) {
 	switch name {
 	case "daily_b1_buy":
-		return s.scanDailyStrategy(ctx, strategy.NewDailyB1BuyStrategy())
+		return strategy.NewDailyB1BuyStrategy(), "daily", nil
 	case "weekly_b1_buy":
-		return s.scanWeeklyStrategy(ctx, strategy.NewWeeklyB1BuyStrategy())
+		return strategy.NewWeeklyB1BuyStrategy(), "weekly", nil
 	case "bottom_surge_pullback":
-		return s.scanDailyStrategy(ctx, strategy.NewBottomSurgePullbackStrategy())
+		return strategy.NewBottomSurgePullbackStrategy(), "daily", nil
 	default:
-		return nil, fmt.Errorf("unknown strategy: %s", name)
+		return nil, "", fmt.Errorf("unknown strategy: %s", name)
+	}
+}
+
+func (s *signalService) Backtest(ctx context.Context, code, strategyName, cycle string) (*BacktestResult, error) {
+	st, defaultCycle, err := createStrategy(strategyName)
+	if err != nil {
+		return nil, err
+	}
+
+	if cycle == "" {
+		cycle = defaultCycle
+	}
+
+	switch cycle {
+	case "daily":
+		dailies, findErr := s.dailyRepo.FindByCode(ctx, code, 0)
+		if findErr != nil {
+			return nil, fmt.Errorf("find daily klines failed: %w", findErr)
+		}
+		if len(dailies) == 0 {
+			return &BacktestResult{Code: code, Strategy: strategyName, Cycle: cycle}, nil
+		}
+		klines := dailyToKlines(dailies)
+		sigs := st.ScanAll(klines)
+		return &BacktestResult{Code: code, Strategy: strategyName, Cycle: cycle, Signals: sigs}, nil
+	case "weekly":
+		weeklies, findErr := s.weeklyRepo.FindByCode(ctx, code, 0)
+		if findErr != nil {
+			return nil, fmt.Errorf("find weekly klines failed: %w", findErr)
+		}
+		if len(weeklies) == 0 {
+			return &BacktestResult{Code: code, Strategy: strategyName, Cycle: cycle}, nil
+		}
+		klines := weeklyToKlines(weeklies)
+		sigs := st.ScanAll(klines)
+		return &BacktestResult{Code: code, Strategy: strategyName, Cycle: cycle, Signals: sigs}, nil
+	default:
+		return nil, fmt.Errorf("unsupported cycle: %s, must be daily or weekly", cycle)
 	}
 }
 
