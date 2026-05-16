@@ -64,6 +64,8 @@ func (s *signalService) FindBuySignalsByStrategy(ctx context.Context, name strin
 		return s.scanDailyStrategy(ctx, strategy.NewDailyB1BuyStrategy())
 	case "weekly_b1_buy":
 		return s.scanWeeklyStrategy(ctx, strategy.NewWeeklyB1BuyStrategy())
+	case "bottom_surge_pullback":
+		return s.scanDailyStrategy(ctx, strategy.NewBottomSurgePullbackStrategy())
 	default:
 		return nil, fmt.Errorf("unknown strategy: %s", name)
 	}

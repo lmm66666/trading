@@ -45,6 +45,7 @@ type mockDailyRepo struct {
 	findErr  error
 	upErr    error
 	codesErr error
+	codes    []string
 }
 
 func (m *mockDailyRepo) Create(ctx context.Context, kline *model.StockKlineDaily) error         { return nil }
@@ -64,7 +65,7 @@ func (m *mockDailyRepo) FindLatestByCode(ctx context.Context, code string) (*mod
 	return m.latest, nil
 }
 func (m *mockDailyRepo) FindAllCodes(ctx context.Context) ([]string, error) {
-	return nil, m.codesErr
+	return m.codes, m.codesErr
 }
 func (m *mockDailyRepo) Update(ctx context.Context, kline *model.StockKlineDaily) error { return nil }
 func (m *mockDailyRepo) Delete(ctx context.Context, id uint) error                      { return nil }
@@ -100,6 +101,7 @@ type mockWeeklyRepo struct {
 	findErr  error
 	upErr    error
 	codesErr error
+	codes    []string
 }
 
 func (m *mockWeeklyRepo) Create(ctx context.Context, kline *model.StockKlineWeekly) error         { return nil }
@@ -119,7 +121,7 @@ func (m *mockWeeklyRepo) FindLatestByCode(ctx context.Context, code string) (*mo
 	return m.latest, nil
 }
 func (m *mockWeeklyRepo) FindAllCodes(ctx context.Context) ([]string, error) {
-	return nil, m.codesErr
+	return m.codes, m.codesErr
 }
 func (m *mockWeeklyRepo) Update(ctx context.Context, kline *model.StockKlineWeekly) error { return nil }
 func (m *mockWeeklyRepo) Delete(ctx context.Context, id uint) error                      { return nil }

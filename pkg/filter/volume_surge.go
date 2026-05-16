@@ -6,20 +6,22 @@ import (
 )
 
 type VolumeSurgeConfig struct {
-	VolumeMAPeriod  int
-	MinVolumeRatio  float64
-	MinRallyPct     float64
-	MaxPullbackPct  float64
-	MaxPullbackDays int
+	VolumeMAPeriod      int
+	MinVolumeRatio      float64
+	MinRallyPct         float64
+	MaxPullbackPct      float64
+	MaxPullbackDays     int
+	MaxPullbackVolRatio float64 // 回调期最大成交量比例（相对拉升期均量），0 表示不检查
 }
 
 func DefaultVolumeSurgeConfig() VolumeSurgeConfig {
 	return VolumeSurgeConfig{
-		VolumeMAPeriod:  20,
-		MinVolumeRatio:  1.2,
-		MinRallyPct:     2.0,
-		MaxPullbackPct:  20.0,
-		MaxPullbackDays: 10,
+		VolumeMAPeriod:      20,
+		MinVolumeRatio:      1.2,
+		MinRallyPct:         2.0,
+		MaxPullbackPct:      20.0,
+		MaxPullbackDays:     10,
+		MaxPullbackVolRatio: 0,
 	}
 }
 
@@ -55,12 +57,40 @@ func (v *VolumeSurgeFilter) Filter(klines []*model.StockKline) []Result {
 	windowByDay := make(map[int]*pullbackWindow)
 	for i := range windows {
 		w := &windows[i]
+
+		// 计算拉升期均量（用于缩量检查）
+		var surgeAvgVol float64
+		if cfg.MaxPullbackVolRatio > 0 {
+			var surgeVolSum int64
+			surgeDays := 0
+			for d := w.surgeIdx; d <= w.peakIdx && d < n; d++ {
+				surgeVolSum += volumes[d]
+				surgeDays++
+			}
+			if surgeDays > 0 {
+				surgeAvgVol = float64(surgeVolSum) / float64(surgeDays)
+			}
+		}
+
 		for d := w.peakIdx + 1; d < n; d++ {
 			pullbackPct := (w.peakPrice - klines[d].Close) / w.peakPrice * 100
 			days := d - w.peakIdx
 			if pullbackPct > cfg.MaxPullbackPct || days > cfg.MaxPullbackDays {
 				break
 			}
+
+			// 缩量检查：回调期均量 <= 拉升期均量 * MaxPullbackVolRatio
+			if cfg.MaxPullbackVolRatio > 0 && surgeAvgVol > 0 {
+				var pullbackVolSum int64
+				for pd := w.peakIdx + 1; pd <= d; pd++ {
+					pullbackVolSum += volumes[pd]
+				}
+				pullbackAvgVol := float64(pullbackVolSum) / float64(days)
+				if pullbackAvgVol > surgeAvgVol*cfg.MaxPullbackVolRatio {
+					continue
+				}
+			}
+
 			if existing, ok := windowByDay[d]; !ok || w.peakPrice > existing.peakPrice {
 				windowByDay[d] = w
 			}
