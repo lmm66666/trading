@@ -25,7 +25,7 @@ curl "http://192.168.31.85:41027/api/stocks/signal?strategy=bottom_surge_pullbac
 |----------|-------------------------------|
 | strategy | `daily_b1_buy` 或 `weekly_b1_buy` |
 
-**注意**：扫描数据库耗时较长，建议超时 60s。
+**注意**：扫描数据库耗时较长，建议超时 60s。`bottom_surge_pullback` 策略涉及全量并发扫描，建议超时 10 分钟。
 
 ---
 

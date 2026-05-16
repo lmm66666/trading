@@ -102,7 +102,7 @@ curl "http://192.168.31.85:41027/api/stocks/signal?strategy=bottom_surge_pullbac
 ## 注意事项
 
 1. **并行执行**：获取多只股票数据时，使用并行 agent 加速
-2. **超时设置**：`/api/stocks/signal` 扫描数据库耗时较长，建议超时 60s
+2. **超时设置**：`/api/stocks/signal` 扫描数据库耗时较长。`bottom_surge_pullback` 策略涉及全量并发扫描（默认 20 并发），建议超时 **10 分钟**；其他策略建议超时 60s
 3. **数据缺失**：如某只股票缺失 K 线数据，在报告中标注"数据缺失"
 4. **评分客观**：评分需有明确量价依据，原因描述具体
 5. **增量分析**：如果 `./docs/analysis/bottom-surge/` 下已有同日期报告，询问用户是否覆盖

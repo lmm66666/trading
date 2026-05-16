@@ -122,7 +122,7 @@ curl -X POST http://localhost:8080/api/stocks/financial-report \
 
 - **Method**: `GET`
 - **Path**: `/api/stocks/signal`
-- **说明**: 需要扫描数据库，耗时较长，建议超时时间 30s
+- **说明**: 需要扫描数据库，耗时较长。日线/周线 B1 建议超时 30s；`bottom_surge_pullback` 策略涉及全量并发扫描，建议超时 10 分钟
 
 #### 请求参数
 
