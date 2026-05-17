@@ -22,7 +22,6 @@ func TestSupportHoldFilter(t *testing.T) {
 		t.Fatalf("expected 25 results, got %d", len(results))
 	}
 
-	// 持续上涨，所有收盘价都在 MA5 上方
 	for i := 5; i < 25; i++ {
 		if !results[i].Valid {
 			t.Fatalf("day %d should be valid in uptrend", i)
@@ -35,7 +34,7 @@ func TestSupportHoldFilterBreak(t *testing.T) {
 	for i := range 15 {
 		price := 10.0 + float64(i)*0.1
 		if i >= 10 {
-			price = 5.0 // 大幅跌破
+			price = 5.0
 		}
 		klines[i] = &model.StockKline{
 			Date:  "2026-01-",
@@ -46,7 +45,6 @@ func TestSupportHoldFilterBreak(t *testing.T) {
 	f := NewSupportHoldFilter(5)
 	results := f.Filter(klines)
 
-	// 大幅跌破后应该不满足
 	if results[12].Valid {
 		t.Fatal("expected invalid after major breakdown")
 	}
@@ -57,7 +55,7 @@ func TestSupportHoldFilterSlightBreak(t *testing.T) {
 	for i := range 15 {
 		price := 10.0 + float64(i)*0.1
 		if i == 12 {
-			price = 10.8 // 小幅跌破 MA5（约 11.0）
+			price = 10.8 // 跌破 MA5（约 11.0）
 		}
 		klines[i] = &model.StockKline{
 			Date:  "2026-01-",
@@ -68,9 +66,9 @@ func TestSupportHoldFilterSlightBreak(t *testing.T) {
 	f := NewSupportHoldFilter(5)
 	results := f.Filter(klines)
 
-	// 小幅跌破（<2%）应该仍然满足
-	if !results[12].Valid {
-		t.Fatal("expected valid for slight break within 2%")
+	// 收盘价低于 MA 应不满足
+	if results[12].Valid {
+		t.Fatal("expected invalid when close is below MA")
 	}
 }
 

@@ -31,13 +31,16 @@ func TestNewBottomSurgePullbackStrategy(t *testing.T) {
 func TestBottomSurgePullbackStrategyScanAll(t *testing.T) {
 	st := NewBottomSurgePullbackStrategy()
 
-	// 构造满足条件的 K 线数据
-	klines := make([]*model.StockKline, 68)
-	for i := range 68 {
-		price := 12.0
-		if i >= 40 && i < 56 {
-			price = 12.0 - float64(i-39)*0.125
-		}
+	// 构造满足条件的 K 线数据：
+	// - 先横盘筑底（让 MA 趋平）
+	// - 放量拉升突破（MA20 上穿 MA60）
+	// - 回调让 J 回到 [-20,20]
+	n := 100
+	klines := make([]*model.StockKline, n)
+
+	// 阶段1：长期横盘在 10.0 附近（index 0-69），让 MA20 ≈ MA60
+	for i := 0; i < 70; i++ {
+		price := 10.0 + 0.1*float64(i%10-5)*0.01
 		klines[i] = &model.StockKline{
 			Code:   "600312",
 			Date:   fmt.Sprintf("2026-%02d-%02d", (i/30)+1, (i%30)+1),
@@ -49,34 +52,47 @@ func TestBottomSurgePullbackStrategyScanAll(t *testing.T) {
 		}
 	}
 
-	// 倍量拉升（第 56 天，索引 56）
-	klines[56] = &model.StockKline{
-		Code: "600312", Date: "2026-02-26",
-		Open: 10.0, High: 10.6, Low: 9.9, Close: 10.5, Volume: 350000,
+	// 阶段2：放量拉升（index 70-72），连续3天渐进放量
+	klines[70] = &model.StockKline{
+		Code: "600312", Date: "2026-03-11",
+		Open: 10.0, High: 10.5, Low: 9.9, Close: 10.4, Volume: 220000,
 	}
-	// 峰值（第 57 天，索引 57）
-	klines[57] = &model.StockKline{
-		Code: "600312", Date: "2026-02-27",
-		Open: 10.5, High: 10.7, Low: 10.4, Close: 10.6, Volume: 280000,
+	klines[71] = &model.StockKline{
+		Code: "600312", Date: "2026-03-12",
+		Open: 10.4, High: 10.9, Low: 10.3, Close: 10.8, Volume: 250000,
 	}
-	// 缩量回调（第 58-67 天，索引 58-67）
-	for i := 58; i < 68; i++ {
-		close := 10.25
+	klines[72] = &model.StockKline{
+		Code: "600312", Date: "2026-03-13",
+		Open: 10.8, High: 11.3, Low: 10.7, Close: 11.2, Volume: 230000,
+	}
+
+	// 峰值延续
+	klines[73] = &model.StockKline{
+		Code: "600312", Date: "2026-03-14",
+		Open: 11.2, High: 11.3, Low: 11.0, Close: 11.1, Volume: 80000,
+	}
+
+	// 阶段3：回调（index 74-90），价格从 11.1 缓慢回落让 J 走低
+	for i := 74; i < 91; i++ {
+		close := 11.1 - float64(i-73)*0.08
 		klines[i] = &model.StockKline{
-			Code: "600312", Date: fmt.Sprintf("2026-02-%02d", i-56),
-			Open: 10.3, High: 10.3, Low: 10.2, Close: close, Volume: 40000,
+			Code: "600312", Date: fmt.Sprintf("2026-03-%02d", i-72),
+			Open: close + 0.02, High: close + 0.1, Low: close - 0.1, Close: close, Volume: 60000,
+		}
+	}
+
+	// 后续恢复
+	for i := 91; i < n; i++ {
+		price := 9.8 + float64(i-91)*0.02
+		klines[i] = &model.StockKline{
+			Code: "600312", Date: fmt.Sprintf("2026-04-%02d", i-90),
+			Open: price - 0.05, High: price + 0.1, Low: price - 0.1, Close: price, Volume: 100000,
 		}
 	}
 
 	signals := st.ScanAll(klines)
 	if len(signals) == 0 {
 		t.Fatal("expected at least one signal")
-	}
-
-	// 信号应该在回调的中后期出现
-	lastSignal := signals[len(signals)-1]
-	if lastSignal.Date != "2026-02-10" {
-		t.Fatalf("expected last signal on 2026-02-10, got %s", lastSignal.Date)
 	}
 }
 

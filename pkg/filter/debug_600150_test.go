@@ -98,7 +98,7 @@ func TestDebug600150EachFilter(t *testing.T) {
 			SurgeWindowDays: 3, MaxPullbackToVMARatio: 1.5,
 		})},
 		{"SupportHold(MA20)", NewSupportHoldFilter(20)},
-		{"KDJRange(5,40)", NewKDJRangeFilter(5, 40)},
+		{"KDJRange(-20,20)", NewKDJRangeFilter(-20, 20)},
 	}
 
 	for _, f := range filters {

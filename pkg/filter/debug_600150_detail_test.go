@@ -30,7 +30,7 @@ func TestDebug600150VolumeSurgeDetail(t *testing.T) {
 		MaxPullbackToVMARatio: 1.5,
 	}
 
-	windows := findPullbackWindows(klines, volumes, vma, cfg.VolumeMAPeriod, cfg.MinVolumeRatio, cfg.MinRallyPct, cfg.SurgeWindowDays)
+	windows := findPullbackWindows(klines, volumes, vma, cfg)
 	fmt.Printf("=== 发现的放量窗口（SurgeWindowDays=3）===\n")
 	fmt.Printf("共 %d 个窗口\n\n", len(windows))
 

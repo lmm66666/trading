@@ -16,6 +16,9 @@ type VolumeSurgeConfig struct {
 	NearLowMaxRatio       float64 // 底部确认最大上浮比例（0=不检查），如 0.15
 	SurgeWindowDays       int     // 拉升窗口：允许两个放量日之间间隔的最大天数（0=当前行为，即不合并）
 	MaxPullbackToVMARatio float64 // 回调均量相对 peak 处 VMA20 的最大比例（0=不检查）
+	SurgeMinDailyRatio    float64 // 渐进放量单日最低量比（0=不检查），如 1.2
+	SurgeMinDailyRally    float64 // 渐进放量单日最低涨幅%（0=不检查），如 2.0
+	SurgeMinConsecDays    int     // 渐进放量最低连续天数（0=不检查），如 3
 }
 
 func DefaultVolumeSurgeConfig() VolumeSurgeConfig {
@@ -56,7 +59,7 @@ func (v *VolumeSurgeFilter) Filter(klines []*model.StockKline) []Result {
 	}
 
 	vma := indicator.ComputeMA(volumes, cfg.VolumeMAPeriod)
-	windows := findPullbackWindows(klines, volumes, vma, cfg.VolumeMAPeriod, cfg.MinVolumeRatio, cfg.MinRallyPct, cfg.SurgeWindowDays)
+	windows := findPullbackWindows(klines, volumes, vma, cfg)
 
 	windowByDay := make(map[int]*pullbackWindow)
 	for i := range windows {
@@ -146,47 +149,37 @@ func findPullbackWindows(
 	klines []*model.StockKline,
 	volumes []int64,
 	vma []float64,
-	volumeMAPeriod int,
-	minVolumeRatio, minRallyPct float64,
-	surgeWindowDays int,
+	cfg VolumeSurgeConfig,
 ) []pullbackWindow {
 	n := len(klines)
 	var windows []pullbackWindow
 
-	for i := volumeMAPeriod; i < n; i++ {
+	// 模式1：单日倍量检测
+	for i := cfg.VolumeMAPeriod; i < n; i++ {
 		if vma[i] == 0 {
 			continue
 		}
 		volRatio := float64(volumes[i]) / vma[i]
 		rallyPct := rallyFromPrevClose(klines, i)
-		if volRatio < minVolumeRatio || rallyPct < minRallyPct {
+		if volRatio < cfg.MinVolumeRatio || rallyPct < cfg.MinRallyPct {
 			continue
 		}
 
 		lastSurgeDay := i
-		if surgeWindowDays > 0 {
-			for j := i + 1; j < n && (j-lastSurgeDay) <= surgeWindowDays; j++ {
+		if cfg.SurgeWindowDays > 0 {
+			for j := i + 1; j < n && (j-lastSurgeDay) <= cfg.SurgeWindowDays; j++ {
 				if vma[j] == 0 {
 					continue
 				}
 				vr := float64(volumes[j]) / vma[j]
 				rp := rallyFromPrevClose(klines, j)
-				if vr >= minVolumeRatio && rp >= minRallyPct {
+				if vr >= cfg.MinVolumeRatio && rp >= cfg.MinRallyPct {
 					lastSurgeDay = j
 				}
 			}
 		}
 
-		peakIdx := lastSurgeDay
-		peakPrice := klines[lastSurgeDay].Close
-		for j := lastSurgeDay + 1; j < n; j++ {
-			if klines[j].Close >= peakPrice {
-				peakIdx = j
-				peakPrice = klines[j].Close
-			} else {
-				break
-			}
-		}
+		peakIdx, peakPrice := findPeak(klines, lastSurgeDay, n)
 
 		windows = append(windows, pullbackWindow{
 			surgeIdx:  i,
@@ -199,7 +192,147 @@ func findPullbackWindows(
 		}
 	}
 
+	// 模式2：渐进放量检测
+	if cfg.SurgeMinConsecDays > 0 && cfg.SurgeMinDailyRatio > 0 && cfg.SurgeMinDailyRally > 0 {
+		windows = append(windows, findGradualSurgeWindows(klines, volumes, vma, cfg)...)
+	}
+
 	return windows
+}
+
+// findGradualSurgeWindows 检测连续多日渐进放量上涨的窗口
+func findGradualSurgeWindows(
+	klines []*model.StockKline,
+	volumes []int64,
+	vma []float64,
+	cfg VolumeSurgeConfig,
+) []pullbackWindow {
+	n := len(klines)
+	var windows []pullbackWindow
+
+	// 标记每天是否满足渐进放量条件
+	meetsDaily := make([]bool, n)
+	for i := cfg.VolumeMAPeriod; i < n; i++ {
+		if vma[i] == 0 {
+			continue
+		}
+		volRatio := float64(volumes[i]) / vma[i]
+		rallyPct := rallyFromPrevClose(klines, i)
+		meetsDaily[i] = volRatio >= cfg.SurgeMinDailyRatio && rallyPct >= cfg.SurgeMinDailyRally
+	}
+
+	// 寻找连续满足条件的区间
+	start := -1
+	for i := cfg.VolumeMAPeriod; i < n; i++ {
+		if meetsDaily[i] {
+			if start == -1 {
+				start = i
+			}
+		} else {
+			if start != -1 {
+				end := i - 1
+				consecDays := end - start + 1
+				if consecDays >= cfg.SurgeMinConsecDays {
+					if w := tryGradualWindow(klines, volumes, vma, cfg, start, end); w != nil {
+						windows = append(windows, *w)
+					}
+				}
+				start = -1
+			}
+		}
+	}
+	// 处理末尾
+	if start != -1 {
+		end := n - 1
+		consecDays := end - start + 1
+		if consecDays >= cfg.SurgeMinConsecDays {
+			if w := tryGradualWindow(klines, volumes, vma, cfg, start, end); w != nil {
+				windows = append(windows, *w)
+			}
+		}
+	}
+
+	return windows
+}
+
+// tryGradualWindow 验证渐进放量区间是否满足整体条件，满足则返回窗口
+func tryGradualWindow(
+	klines []*model.StockKline,
+	volumes []int64,
+	vma []float64,
+	cfg VolumeSurgeConfig,
+	start, end int,
+) *pullbackWindow {
+	n := len(klines)
+
+	// 区间累计涨幅（从 start-1 的收盘到 end 的收盘）
+	prevClose := klines[start].Open
+	if start > 0 {
+		prevClose = klines[start-1].Close
+	}
+	totalRally := (klines[end].Close - prevClose) / prevClose * 100
+	if totalRally < cfg.MinRallyPct {
+		return nil
+	}
+
+	// 区间均量比 >= MinVolumeRatio
+	var volSum int64
+	for d := start; d <= end; d++ {
+		volSum += volumes[d]
+	}
+	days := end - start + 1
+	avgVol := float64(volSum) / float64(days)
+	var vmaSum float64
+	for d := start; d <= end; d++ {
+		vmaSum += vma[d]
+	}
+	avgVMA := vmaSum / float64(days)
+	if avgVMA == 0 || avgVol/avgVMA < cfg.MinVolumeRatio {
+		return nil
+	}
+
+	// SurgeWindowDays 扩展：允许区间末尾后有间隔的放量日
+	lastSurgeDay := end
+	if cfg.SurgeWindowDays > 0 {
+		for j := end + 1; j < n && (j-lastSurgeDay) <= cfg.SurgeWindowDays; j++ {
+			if meetsDaily(klines, volumes, vma, cfg, j) {
+				lastSurgeDay = j
+			}
+		}
+	}
+
+	peakIdx, peakPrice := findPeak(klines, lastSurgeDay, n)
+
+	return &pullbackWindow{
+		surgeIdx:  start,
+		peakIdx:   peakIdx,
+		peakPrice: peakPrice,
+	}
+}
+
+// meetsDaily 判断某天是否满足渐进放量的单日条件
+func meetsDaily(klines []*model.StockKline, volumes []int64, vma []float64, cfg VolumeSurgeConfig, i int) bool {
+	if vma[i] == 0 {
+		return false
+	}
+	volRatio := float64(volumes[i]) / vma[i]
+	rallyPct := rallyFromPrevClose(klines, i)
+	return volRatio >= cfg.SurgeMinDailyRatio && rallyPct >= cfg.SurgeMinDailyRally
+}
+
+// findPeak 从 start 开始找连续收盘价上涨的峰值
+func findPeak(klines []*model.StockKline, start, n int) (int, float64) {
+	peakIdx := start
+	peakPrice := klines[start].Close
+	for j := start + 1; j < n; j++ {
+		if klines[j].Close >= peakPrice {
+			peakIdx = j
+			peakPrice = klines[j].Close
+		} else {
+			break
+		}
+	}
+	return peakIdx, peakPrice
 }
 
 // rallyFromPrevClose 计算相对前一日收盘价的涨幅百分比

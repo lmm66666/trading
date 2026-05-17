@@ -68,7 +68,7 @@ func main() {
 			MaxPullbackPct: 15.0, MaxPullbackDays: 10, MaxPullbackVolRatio: 0.5,
 		})},
 		{"SupportHold(MA20)", filter.NewSupportHoldFilter(20)},
-		{"KDJRange(5,40)", filter.NewKDJRangeFilter(5, 40)},
+		{"KDJRange(-20,20)", filter.NewKDJRangeFilter(-20, 20)},
 	}
 
 	for _, f := range filters {

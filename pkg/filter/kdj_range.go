@@ -5,14 +5,14 @@ import (
 	"trading/pkg/indicator"
 )
 
-// KDJRangeFilter KDJ 在指定范围内的过滤器
+// KDJRangeFilter J 值在指定范围内的过滤器
 type KDJRangeFilter struct {
-	MinK float64 // K 值下限
-	MaxK float64 // K 值上限
+	Min float64
+	Max float64
 }
 
-func NewKDJRangeFilter(minK, maxK float64) *KDJRangeFilter {
-	return &KDJRangeFilter{MinK: minK, MaxK: maxK}
+func NewKDJRangeFilter(min, max float64) *KDJRangeFilter {
+	return &KDJRangeFilter{Min: min, Max: max}
 }
 
 func (f *KDJRangeFilter) Filter(klines []*model.StockKline) []Result {
@@ -25,7 +25,7 @@ func (f *KDJRangeFilter) Filter(klines []*model.StockKline) []Result {
 	for i, r := range kdjResults {
 		results[i] = Result{
 			Date:  r.Date,
-			Valid: r.K >= f.MinK && r.K <= f.MaxK,
+			Valid: r.J >= f.Min && r.J <= f.Max,
 		}
 	}
 	return results

@@ -473,3 +473,122 @@ func TestVolumeSurgeFilterPullbackToVMARatioTooHigh(t *testing.T) {
 		t.Fatal("expected invalid when pullback volume exceeds VMA20 ratio")
 	}
 }
+
+func TestVolumeSurgeFilterWithGradualSurge(t *testing.T) {
+	klines := make([]*model.StockKline, 50)
+	for i := 0; i < 50; i++ {
+		price := 10.0 + float64(i)*0.01
+		klines[i] = &model.StockKline{
+			Code:   "600312",
+			Date:   fmt.Sprintf("2026-%02d-%02d", (i/30)+1, (i%30)+1),
+			Open:   price - 0.05,
+			High:   price + 0.1,
+			Low:    price - 0.1,
+			Close:  price,
+			Volume: 100000,
+		}
+	}
+
+	// 连续3天渐进放量上涨：每天量比>=1.2, 涨幅>=2%, 区间均量比>=2.0
+	klines[31] = &model.StockKline{
+		Code: "600312", Date: "2026-02-01",
+		Open: 10.30, High: 10.7, Low: 10.2, Close: 10.65, Volume: 220000,
+	}
+	klines[32] = &model.StockKline{
+		Code: "600312", Date: "2026-02-02",
+		Open: 10.65, High: 11.1, Low: 10.6, Close: 11.00, Volume: 250000,
+	}
+	klines[33] = &model.StockKline{
+		Code: "600312", Date: "2026-02-03",
+		Open: 11.00, High: 11.4, Low: 10.9, Close: 11.30, Volume: 230000,
+	}
+	// 峰值延续
+	klines[34] = &model.StockKline{
+		Code: "600312", Date: "2026-02-04",
+		Open: 11.30, High: 11.4, Low: 11.2, Close: 11.35, Volume: 80000,
+	}
+	// 回调
+	for i := 35; i <= 44; i++ {
+		prevClose := klines[i-1].Close
+		close := prevClose - 0.05
+		klines[i] = &model.StockKline{
+			Code: "600312", Date: fmt.Sprintf("2026-02-%02d", i-33),
+			Open: prevClose, High: prevClose + 0.02, Low: close - 0.02, Close: close, Volume: 50000,
+		}
+	}
+
+	cfg := VolumeSurgeConfig{
+		VolumeMAPeriod:     20,
+		MinVolumeRatio:     2.0, // 单日倍量阈值（不会被触发）
+		MinRallyPct:        5.0,
+		MaxPullbackPct:     15.0,
+		MaxPullbackDays:    10,
+		NearLowPeriod:      0, // 跳过底部确认
+		SurgeMinDailyRatio: 1.2,
+		SurgeMinDailyRally: 2.0,
+		SurgeMinConsecDays: 3,
+	}
+	f := NewVolumeSurgeFilter(cfg)
+	results := f.Filter(klines)
+
+	foundValid := false
+	for _, r := range results {
+		if r.Valid {
+			foundValid = true
+			break
+		}
+	}
+	if !foundValid {
+		t.Fatal("expected Valid with gradual surge detection")
+	}
+}
+
+func TestVolumeSurgeFilterGradualSurgeInsufficientConsec(t *testing.T) {
+	klines := make([]*model.StockKline, 50)
+	for i := 0; i < 50; i++ {
+		price := 10.0 + float64(i)*0.01
+		klines[i] = &model.StockKline{
+			Code:   "600312",
+			Date:   fmt.Sprintf("2026-%02d-%02d", (i/30)+1, (i%30)+1),
+			Open:   price - 0.05,
+			High:   price + 0.1,
+			Low:    price - 0.1,
+			Close:  price,
+			Volume: 100000,
+		}
+	}
+
+	// 只有2天满足渐进放量条件，不满足 SurgeMinConsecDays=3
+	klines[30] = &model.StockKline{
+		Code: "600312", Date: "2026-01-31",
+		Open: 10.30, High: 10.6, Low: 10.2, Close: 10.54, Volume: 150000,
+	}
+	klines[31] = &model.StockKline{
+		Code: "600312", Date: "2026-02-01",
+		Open: 10.54, High: 10.9, Low: 10.5, Close: 10.90, Volume: 180000,
+	}
+	// 第3天不满足
+	klines[32] = &model.StockKline{
+		Code: "600312", Date: "2026-02-02",
+		Open: 10.90, High: 11.0, Low: 10.8, Close: 10.85, Volume: 80000,
+	}
+
+	cfg := VolumeSurgeConfig{
+		VolumeMAPeriod:     20,
+		MinVolumeRatio:     2.0,
+		MinRallyPct:        5.0,
+		MaxPullbackPct:     15.0,
+		MaxPullbackDays:    10,
+		SurgeMinDailyRatio: 1.2,
+		SurgeMinDailyRally: 2.0,
+		SurgeMinConsecDays: 3,
+	}
+	f := NewVolumeSurgeFilter(cfg)
+	results := f.Filter(klines)
+
+	for _, r := range results {
+		if r.Valid {
+			t.Fatal("expected no Valid when gradual surge has insufficient consecutive days")
+		}
+	}
+}
