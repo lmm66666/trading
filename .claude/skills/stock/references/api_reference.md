@@ -11,28 +11,22 @@
 ### 1. 股票买点扫描
 
 ```bash
-# 日线 B1
-curl "http://192.168.31.85:41027/api/stocks/signal?strategy=daily_b1_buy"
-
-# 周线 B1
-curl "http://192.168.31.85:41027/api/stocks/signal?strategy=weekly_b1_buy"
-
 # 底部倍量回调
-curl "http://192.168.31.85:41027/api/stocks/signal?strategy=bottom_surge_pullback"
+curl "http://192.168.31.85:37809/api/stocks/signal?strategy=bottom_surge_pullback"
 ```
 
 | 参数     | 说明                          |
 |----------|-------------------------------|
-| strategy | `daily_b1_buy` 或 `weekly_b1_buy` |
+| strategy | `bottom_surge_pullback` |
 
-**注意**：扫描数据库耗时较长，建议超时 60s（`bottom_surge_pullback` 并发扫描亦同）。
+**注意**：扫描数据库耗时较长，建议超时 60s
 
 ---
 
 ### 2. 查询股价 K 线数据
 
 ```bash
-curl "http://192.168.31.85:41027/api/stocks/price?code=<股票代码>&cycle=<周期>&pagesize=<条数>"
+curl "http://192.168.31.85:37809/api/stocks/price?code=<股票代码>&cycle=<周期>&pagesize=<条数>"
 ```
 
 | 参数     | 说明                          |
@@ -46,7 +40,7 @@ curl "http://192.168.31.85:41027/api/stocks/price?code=<股票代码>&cycle=<周
 ### 3. 查询财报数据
 
 ```bash
-curl "http://192.168.31.85:41027/api/stocks/financial-report?code=<股票代码>&pagesize=20"
+curl "http://192.168.31.85:37809/api/stocks/financial-report?code=<股票代码>&pagesize=20"
 ```
 
 | 参数     | 说明                   |
@@ -64,13 +58,13 @@ curl "http://192.168.31.85:41027/api/stocks/financial-report?code=<股票代码>
 
 ```bash
 # 在岸人民币
-curl "http://192.168.31.85:41027/api/macro/exchange-rate?code=USDCNY"
+curl "http://192.168.31.85:37809/api/macro/exchange-rate?code=USDCNY"
 
 # 离岸人民币
-curl "http://192.168.31.85:41027/api/macro/exchange-rate?code=USDCNH"
+curl "http://192.168.31.85:37809/api/macro/exchange-rate?code=USDCNH"
 
 # 美元指数
-curl "http://192.168.31.85:41027/api/macro/exchange-rate?code=DINIW"
+curl "http://192.168.31.85:37809/api/macro/exchange-rate?code=DINIW"
 ```
 
 | 参数 | 说明 |
@@ -85,10 +79,10 @@ curl "http://192.168.31.85:41027/api/macro/exchange-rate?code=DINIW"
 
 ```bash
 # 隔夜 Shibor（可作为 DR007 的近似参考）
-curl "http://192.168.31.85:41027/api/macro/shibor?period=001"
+curl "http://192.168.31.85:37809/api/macro/shibor?period=001"
 
 # 全部期限
-curl "http://192.168.31.85:41027/api/macro/shibor"
+curl "http://192.168.31.85:37809/api/macro/shibor"
 ```
 
 | 参数   | 说明 |

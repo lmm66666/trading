@@ -111,10 +111,9 @@ trading/
 │       └── sell.go          # 预定义卖出策略
 ├── .claude/
 │   ├── settings.local.json      # 本地 IDE 设置
-│   └── commands/                # Claude Code 斜杠命令（自动识别）
-│       ├── analysis_daily_b1.md   # 日线 B1 股票筛选分析
-│       └── analysis_weekly_b1.md  # 周线 B1 股票筛选分析
-└── shell/                   # 脚本工具
+│   └── skills/                  # Claude Code 自定义 skill
+│       └── stock/               # 股票分析 skill（含底部倍量、宏观流动性两种模式）
+├── shell/                   # 脚本工具
     ├── save_stock_historical.sh   # 批量保存股票历史 K 线数据
     ├── save_financial_report.sh   # 批量保存股票财报数据
     └── code/                      # 股票代码列表
