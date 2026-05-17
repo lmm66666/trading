@@ -158,7 +158,7 @@ func findPullbackWindows(
 			continue
 		}
 		volRatio := float64(volumes[i]) / vma[i]
-		rallyPct := (klines[i].Close - klines[i].Open) / klines[i].Open * 100
+		rallyPct := rallyFromPrevClose(klines, i)
 		if volRatio < minVolumeRatio || rallyPct < minRallyPct {
 			continue
 		}
@@ -170,7 +170,7 @@ func findPullbackWindows(
 					continue
 				}
 				vr := float64(volumes[j]) / vma[j]
-				rp := (klines[j].Close - klines[j].Open) / klines[j].Open * 100
+				rp := rallyFromPrevClose(klines, j)
 				if vr >= minVolumeRatio && rp >= minRallyPct {
 					lastSurgeDay = j
 				}
@@ -200,4 +200,12 @@ func findPullbackWindows(
 	}
 
 	return windows
+}
+
+// rallyFromPrevClose 计算相对前一日收盘价的涨幅百分比
+func rallyFromPrevClose(klines []*model.StockKline, i int) float64 {
+	if i == 0 {
+		return (klines[i].Close - klines[i].Open) / klines[i].Open * 100
+	}
+	return (klines[i].Close - klines[i-1].Close) / klines[i-1].Close * 100
 }
