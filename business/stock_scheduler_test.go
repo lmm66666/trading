@@ -95,7 +95,7 @@ type mockSvcForScheduler struct {
 func (m *mockSvcForScheduler) SaveHistoricalData(ctx context.Context, code string) error {
 	return m.saveErr
 }
-func (m *mockSvcForScheduler) AppendStockData(ctx context.Context, code string) error {
+func (m *mockSvcForScheduler) AppendStockData(ctx context.Context, code string, daily, weekly bool) error {
 	return m.saveErr
 }
 
@@ -357,7 +357,6 @@ func TestSchedulerScanAndConsumeWithTasks(t *testing.T) {
 	}
 
 	sched := NewScheduler(&mockSvcForScheduler{}, dailyRepo, weeklyRepo).(*stockScheduler)
-	sched.interval = 0 // 跳过 task 间 sleep 加快测试
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

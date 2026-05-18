@@ -17,11 +17,15 @@ func NewDailyB1BuyStrategy() *Strategy {
 }
 
 // NewWeeklyB1BuyStrategy 周线 B1 买点策略
-// 条件：周线 KDJ < 10（超卖）且周线 MA20 趋势向上
+// 条件：
+//  1. 周线 KDJ < 10（超卖）
+//  2. 周线 MA20 在 MA60 之上（多头排列）
+//  3. 收盘价站稳周 60 日均线
 func NewWeeklyB1BuyStrategy() *Strategy {
 	return NewStrategy("weekly_b1_buy").
 		AddFilter(filter.NewKDJOverSold(10)).
-		AddFilter(filter.NewMATrendUp(20, 1))
+		AddFilter(filter.NewMACrossFilter(20, 60)).
+		AddFilter(filter.NewSupportHoldFilter(60))
 }
 
 // NewBottomSurgePullbackStrategy 底部放量拉升 + KDJ 低位回调策略

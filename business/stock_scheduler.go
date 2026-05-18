@@ -25,11 +25,11 @@ type Scheduler interface {
 }
 
 // stockScheduler 定时任务调度器实现，每天扫描并补充缺失的股票数据
+// 任务间不再自带固定 sleep，节流由 StockDataService 内部的 broker 限流器统一接管
 type stockScheduler struct {
 	svc        StockDataService
 	dailyRepo  data.StockKlineDailyRepo
 	weeklyRepo data.StockKlineWeeklyRepo
-	interval   time.Duration
 	guard      triggerGuard
 	worker     *concurrentWorker
 
@@ -46,7 +46,6 @@ func NewScheduler(svc StockDataService, dailyRepo data.StockKlineDailyRepo, week
 		svc:        svc,
 		dailyRepo:  dailyRepo,
 		weeklyRepo: weeklyRepo,
-		interval:   5 * time.Second,
 		worker:     newConcurrentWorker(100),
 	}
 }
@@ -137,7 +136,7 @@ func (s *stockScheduler) scanAndConsume(ctx context.Context) {
 		return
 	}
 
-	log.Printf("[scheduler] %d tasks queued, consuming one every %v", len(tasks), s.interval)
+	log.Printf("[scheduler] %d tasks queued (rate limited by broker limiter)", len(tasks))
 
 	for i, t := range tasks {
 		if err := ctx.Err(); err != nil {
@@ -149,14 +148,6 @@ func (s *stockScheduler) scanAndConsume(ctx context.Context) {
 			log.Printf("[scheduler] [%d/%d] failed %s: %v", i+1, len(tasks), t.code, err)
 		} else {
 			log.Printf("[scheduler] [%d/%d] success %s", i+1, len(tasks), t.code)
-		}
-
-		if i < len(tasks)-1 {
-			select {
-			case <-time.After(s.interval):
-			case <-ctx.Done():
-				return
-			}
 		}
 	}
 
@@ -257,10 +248,7 @@ func (s *stockScheduler) checkCode(ctx context.Context, code, today, lastFriday 
 }
 
 func (s *stockScheduler) process(ctx context.Context, t task) error {
-	if t.needDaily || t.needWeekly {
-		return s.svc.AppendStockData(ctx, t.code)
-	}
-	return nil
+	return s.svc.AppendStockData(ctx, t.code, t.needDaily, t.needWeekly)
 }
 
 type task struct {

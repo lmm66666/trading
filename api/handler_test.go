@@ -18,7 +18,7 @@ func (m *mockStockDataService) SaveHistoricalData(ctx context.Context, code stri
 	return m.saveErr
 }
 
-func (m *mockStockDataService) AppendStockData(ctx context.Context, code string) error {
+func (m *mockStockDataService) AppendStockData(ctx context.Context, code string, daily, weekly bool) error {
 	return m.saveErr
 }
 

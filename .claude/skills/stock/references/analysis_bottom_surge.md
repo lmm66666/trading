@@ -66,7 +66,7 @@
 调用 `/api/stocks/signal` 获取处于底部倍量回调状态的股票代码列表。
 
 ```bash
-curl "http://192.168.31.85:41027/api/stocks/signal?strategy=bottom_surge_pullback"
+curl "http://192.168.31.85:37809/api/stocks/signal?strategy=bottom_surge_pullback"
 ```
 
 策略名称：`bottom_surge_pullback`

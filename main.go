@@ -5,8 +5,10 @@ import (
 	"flag"
 	"log"
 	"os"
+	"time"
 
 	"github.com/goccy/go-yaml"
+	"golang.org/x/time/rate"
 
 	"trading/api"
 	"trading/business"
@@ -14,6 +16,9 @@ import (
 	"trading/data"
 	"trading/pkg/broker"
 )
+
+// brokerRequestInterval 全局 broker 请求最小间隔，避免对新浪接口造成过大压力
+const brokerRequestInterval = 3 * time.Second
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
@@ -31,7 +36,8 @@ func main() {
 	}
 
 	b := broker.NewSinaBroker()
-	svc := business.NewStockDataService(b, d.StockKlineDaily(), d.StockKlineWeekly())
+	brokerLimiter := rate.NewLimiter(rate.Every(brokerRequestInterval), 1)
+	svc := business.NewStockDataService(b, d.StockKlineDaily(), d.StockKlineWeekly(), brokerLimiter)
 	financialSvc := business.NewFinancialReportService(b, d.FinancialReport())
 
 	scheduler := business.NewScheduler(svc, d.StockKlineDaily(), d.StockKlineWeekly())
