@@ -28,6 +28,9 @@ func (m *mockQueryDailyRepo) FindLatestByCode(ctx context.Context, code string) 
 	return nil, nil
 }
 func (m *mockQueryDailyRepo) FindAllCodes(ctx context.Context) ([]string, error) { return nil, nil }
+func (m *mockQueryDailyRepo) FindRecentByCodes(ctx context.Context, codes []string, limit int) (map[string][]*model.StockKlineDaily, error) {
+	return nil, nil
+}
 func (m *mockQueryDailyRepo) Update(ctx context.Context, kline *model.StockKlineDaily) error {
 	return nil
 }
@@ -64,6 +67,9 @@ func (m *mockQueryWeeklyRepo) FindLatestByCode(ctx context.Context, code string)
 	return nil, nil
 }
 func (m *mockQueryWeeklyRepo) FindAllCodes(ctx context.Context) ([]string, error) { return nil, nil }
+func (m *mockQueryWeeklyRepo) FindRecentByCodes(ctx context.Context, codes []string, limit int) (map[string][]*model.StockKlineWeekly, error) {
+	return nil, nil
+}
 func (m *mockQueryWeeklyRepo) Update(ctx context.Context, kline *model.StockKlineWeekly) error {
 	return nil
 }

@@ -4,3 +4,4 @@ config-nas.yaml
 docs/trading
 trading
 *.tar
+coverage.out

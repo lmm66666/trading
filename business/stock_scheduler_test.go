@@ -42,6 +42,9 @@ func (m *mockDailyRepoForScheduler) FindAllCodes(ctx context.Context) ([]string,
 	}
 	return m.codes, nil
 }
+func (m *mockDailyRepoForScheduler) FindRecentByCodes(ctx context.Context, codes []string, limit int) (map[string][]*model.StockKlineDaily, error) {
+	return nil, nil
+}
 func (m *mockDailyRepoForScheduler) Update(ctx context.Context, kline *model.StockKlineDaily) error { return nil }
 func (m *mockDailyRepoForScheduler) Delete(ctx context.Context, id uint) error                      { return nil }
 func (m *mockDailyRepoForScheduler) List(ctx context.Context, limit, offset int) ([]*model.StockKlineDaily, error) {
@@ -80,6 +83,9 @@ func (m *mockWeeklyRepoForScheduler) FindAllCodes(ctx context.Context) ([]string
 		return nil, m.findAllErr
 	}
 	return m.codes, nil
+}
+func (m *mockWeeklyRepoForScheduler) FindRecentByCodes(ctx context.Context, codes []string, limit int) (map[string][]*model.StockKlineWeekly, error) {
+	return nil, nil
 }
 func (m *mockWeeklyRepoForScheduler) Update(ctx context.Context, kline *model.StockKlineWeekly) error { return nil }
 func (m *mockWeeklyRepoForScheduler) Delete(ctx context.Context, id uint) error                      { return nil }

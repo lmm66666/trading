@@ -67,6 +67,16 @@ func (m *mockDailyRepo) FindLatestByCode(ctx context.Context, code string) (*mod
 func (m *mockDailyRepo) FindAllCodes(ctx context.Context) ([]string, error) {
 	return m.codes, m.codesErr
 }
+func (m *mockDailyRepo) FindRecentByCodes(ctx context.Context, codes []string, limit int) (map[string][]*model.StockKlineDaily, error) {
+	if m.findErr != nil {
+		return nil, m.findErr
+	}
+	result := make(map[string][]*model.StockKlineDaily)
+	for _, k := range m.k {
+		result[k.Code] = append(result[k.Code], k)
+	}
+	return result, nil
+}
 func (m *mockDailyRepo) Update(ctx context.Context, kline *model.StockKlineDaily) error { return nil }
 func (m *mockDailyRepo) Delete(ctx context.Context, id uint) error                      { return nil }
 func (m *mockDailyRepo) List(ctx context.Context, limit, offset int) ([]*model.StockKlineDaily, error) {
@@ -78,6 +88,8 @@ type mockFinancialRepo struct {
 	upErr     error
 	reports   []*model.FinancialReport // FindByCode 返回的已有数据
 	upserted  []*model.FinancialReport // 记录 Upsert 实际接收的数据
+	codes     []string
+	codesErr  error
 }
 
 func (m *mockFinancialRepo) Upsert(ctx context.Context, reports []*model.FinancialReport) error {
@@ -91,7 +103,10 @@ func (m *mockFinancialRepo) FindByCodeWithPagination(ctx context.Context, code s
 	return nil, nil
 }
 func (m *mockFinancialRepo) FindAllCodes(ctx context.Context) ([]string, error) {
-	return nil, nil
+	if m.codesErr != nil {
+		return nil, m.codesErr
+	}
+	return m.codes, nil
 }
 
 // mockWeeklyRepo 模拟周线数据仓库
@@ -122,6 +137,16 @@ func (m *mockWeeklyRepo) FindLatestByCode(ctx context.Context, code string) (*mo
 }
 func (m *mockWeeklyRepo) FindAllCodes(ctx context.Context) ([]string, error) {
 	return m.codes, m.codesErr
+}
+func (m *mockWeeklyRepo) FindRecentByCodes(ctx context.Context, codes []string, limit int) (map[string][]*model.StockKlineWeekly, error) {
+	if m.findErr != nil {
+		return nil, m.findErr
+	}
+	result := make(map[string][]*model.StockKlineWeekly)
+	for _, k := range m.k {
+		result[k.Code] = append(result[k.Code], k)
+	}
+	return result, nil
 }
 func (m *mockWeeklyRepo) Update(ctx context.Context, kline *model.StockKlineWeekly) error { return nil }
 func (m *mockWeeklyRepo) Delete(ctx context.Context, id uint) error                      { return nil }
