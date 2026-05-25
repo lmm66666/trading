@@ -84,6 +84,10 @@ func (m *mockSignalService) Backtest(ctx context.Context, code, strategyName, cy
 	return m.backtestResult, m.backtestErr
 }
 
+func (m *mockSignalService) FindScoredSignalsByStrategy(ctx context.Context, name string) (*business.ScoredStrategySignal, error) {
+	return nil, m.signalErr
+}
+
 // mockQueryService 模拟查询服务
 type mockQueryService struct {
 	prices     []*model.StockKlineDaily
