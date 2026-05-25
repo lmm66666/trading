@@ -121,6 +121,58 @@ func TestStrategyEmptyKlines(t *testing.T) {
 	}
 }
 
+func TestScanLatest(t *testing.T) {
+	klines := make([]*model.StockKline, 10)
+	for i := 0; i < 10; i++ {
+		price := 10.0 + float64(i)*0.1
+		klines[i] = &model.StockKline{
+			Date:  fmt.Sprintf("2026-01-%02d", i+1),
+			Close: price,
+		}
+	}
+
+	// MA5 向上 + 价格 > 10.5：最后一天满足
+	s := NewStrategy("latest").
+		AddFilter(filter.NewMATrendUp(5, 1)).
+		AddFilter(&priceFilter{threshold: 10.5})
+
+	sig := s.ScanLatest(klines)
+	if sig == nil {
+		t.Fatal("expected a signal on the latest day")
+	}
+	if sig.Date != "2026-01-10" {
+		t.Fatalf("expected signal on 2026-01-10, got %s", sig.Date)
+	}
+}
+
+func TestScanLatestNoMatch(t *testing.T) {
+	klines := make([]*model.StockKline, 5)
+	for i := 0; i < 5; i++ {
+		klines[i] = &model.StockKline{
+			Date:  fmt.Sprintf("2026-01-%02d", i+1),
+			Close: 10.0,
+		}
+	}
+
+	// 价格 > 20 不可能满足
+	s := NewStrategy("no-match").
+		AddFilter(&priceFilter{threshold: 20})
+
+	if s.ScanLatest(klines) != nil {
+		t.Fatal("expected nil when last day does not match")
+	}
+}
+
+func TestScanLatestEmpty(t *testing.T) {
+	s := NewStrategy("test").AddFilter(filter.NewMATrendUp(5, 1))
+	if s.ScanLatest(nil) != nil {
+		t.Fatal("expected nil for empty klines")
+	}
+	if s.ScanLatest([]*model.StockKline{}) != nil {
+		t.Fatal("expected nil for zero-length klines")
+	}
+}
+
 type priceFilter struct {
 	threshold float64
 }

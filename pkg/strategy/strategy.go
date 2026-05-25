@@ -84,3 +84,23 @@ func (s *Strategy) Scan(klines []*model.StockKline) *Signal {
 	}
 	return nil
 }
+
+// ScanLatest 只检查最后一天是否满足全部 filter 条件
+func (s *Strategy) ScanLatest(klines []*model.StockKline) *Signal {
+	if len(s.filters) == 0 || len(klines) == 0 {
+		return nil
+	}
+
+	lastIdx := len(klines) - 1
+	allResults := make([][]filter.Result, len(s.filters))
+	for i, f := range s.filters {
+		allResults[i] = f.Filter(klines)
+	}
+
+	for i := range allResults {
+		if lastIdx >= len(allResults[i]) || !allResults[i][lastIdx].Valid {
+			return nil
+		}
+	}
+	return &Signal{Date: klines[lastIdx].Date}
+}
