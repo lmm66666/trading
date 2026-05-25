@@ -53,7 +53,7 @@ func New(cfg config.DB) (*Data, error) {
 	sqlDB.SetMaxIdleConns(maxIdle)
 	sqlDB.SetConnMaxLifetime(time.Duration(lifetimeMin) * time.Minute)
 
-	if err := db.AutoMigrate(&model.StockKlineDaily{}, &model.StockKlineWeekly{}, &model.FinancialReport{}); err != nil {
+	if err := db.AutoMigrate(&model.StockKlineDaily{}, &model.StockKlineWeekly{}, &model.FinancialReport{}, &model.StockInfo{}); err != nil {
 		return nil, fmt.Errorf("auto migrate failed: %w", err)
 	}
 
@@ -78,4 +78,9 @@ func (d *Data) StockKlineWeekly() StockKlineWeeklyRepo {
 // FinancialReport 返回财报 Repository
 func (d *Data) FinancialReport() FinancialReportRepo {
 	return newFinancialReportRepo(d.db)
+}
+
+// StockInfo 返回股票信息 Repository
+func (d *Data) StockInfo() StockInfoRepo {
+	return newStockInfoRepo(d.db)
 }

@@ -21,7 +21,8 @@ type StrategySignal struct {
 
 // ScoredSignal 带评分的信号股票
 type ScoredSignal struct {
-	Code        string           `json:"code"`
+	Code        string              `json:"code"`
+	Name        string              `json:"name,omitempty"`
 	ShortDetail *scorer.ScoreDetail `json:"short_detail"`
 	LongDetail  *scorer.ScoreDetail `json:"long_detail,omitempty"`
 }
@@ -58,11 +59,12 @@ type signalService struct {
 	dailyRepo     data.StockKlineDailyRepo
 	weeklyRepo    data.StockKlineWeeklyRepo
 	financialRepo data.FinancialReportRepo
+	stockInfo     StockInfoProvider
 }
 
 // NewSignalService 创建 SignalService 实例
-func NewSignalService(dailyRepo data.StockKlineDailyRepo, weeklyRepo data.StockKlineWeeklyRepo, financialRepo data.FinancialReportRepo) SignalService {
-	return &signalService{dailyRepo: dailyRepo, weeklyRepo: weeklyRepo, financialRepo: financialRepo}
+func NewSignalService(dailyRepo data.StockKlineDailyRepo, weeklyRepo data.StockKlineWeeklyRepo, financialRepo data.FinancialReportRepo, stockInfo StockInfoProvider) SignalService {
+	return &signalService{dailyRepo: dailyRepo, weeklyRepo: weeklyRepo, financialRepo: financialRepo, stockInfo: stockInfo}
 }
 
 func (s *signalService) FindBuySignals(ctx context.Context) ([]StrategySignal, error) {
@@ -164,6 +166,9 @@ func (s *signalService) FindScoredSignalsByStrategy(ctx context.Context, name st
 
 func (s *signalService) scoreOne(ctx context.Context, code, strategyName, cycle string) ScoredSignal {
 	ss := ScoredSignal{Code: code}
+	if s.stockInfo != nil {
+		ss.Name = s.stockInfo.GetName(ctx, code)
+	}
 
 	switch cycle {
 	case "daily":

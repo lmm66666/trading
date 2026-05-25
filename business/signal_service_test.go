@@ -11,7 +11,7 @@ import (
 
 // TestSignalServiceFindBuySignalsByStrategyUnknown 未知策略名称返回错误
 func TestSignalServiceFindBuySignalsByStrategyUnknown(t *testing.T) {
-	svc := NewSignalService(&mockDailyRepo{}, &mockWeeklyRepo{}, &mockFinancialRepo{})
+	svc := NewSignalService(&mockDailyRepo{}, &mockWeeklyRepo{}, &mockFinancialRepo{}, nil)
 
 	result, err := svc.FindBuySignalsByStrategy(context.Background(), "unknown_strategy")
 	if err == nil {
@@ -24,7 +24,7 @@ func TestSignalServiceFindBuySignalsByStrategyUnknown(t *testing.T) {
 
 // TestSignalServiceFindBuySignalsByStrategyBottomSurge 新策略 bottom_surge_pullback 可正常调用
 func TestSignalServiceFindBuySignalsByStrategyBottomSurge(t *testing.T) {
-	svc := NewSignalService(&mockDailyRepo{}, &mockWeeklyRepo{}, &mockFinancialRepo{})
+	svc := NewSignalService(&mockDailyRepo{}, &mockWeeklyRepo{}, &mockFinancialRepo{}, nil)
 
 	_, err := svc.FindBuySignalsByStrategy(context.Background(), "bottom_surge_pullback")
 	if err != nil {
@@ -37,7 +37,7 @@ func TestSignalServiceFindBuySignalsFindAllCodesError(t *testing.T) {
 	dailyRepo := &mockDailyRepo{codesErr: errors.New("db error")}
 	weeklyRepo := &mockWeeklyRepo{}
 
-	svc := NewSignalService(dailyRepo, weeklyRepo, &mockFinancialRepo{})
+	svc := NewSignalService(dailyRepo, weeklyRepo, &mockFinancialRepo{}, nil)
 
 	_, err := svc.FindBuySignals(context.Background())
 	if err == nil {
@@ -53,7 +53,7 @@ func TestSignalServiceScanDailyStrategy(t *testing.T) {
 	}
 
 	dailyRepo := &mockDailyRepo{k: k, codes: []string{"600312"}}
-	svc := NewSignalService(dailyRepo, &mockWeeklyRepo{}, &mockFinancialRepo{})
+	svc := NewSignalService(dailyRepo, &mockWeeklyRepo{}, &mockFinancialRepo{}, nil)
 
 	result, err := svc.FindBuySignalsByStrategy(context.Background(), "bottom_surge_pullback")
 	if err != nil {
@@ -83,7 +83,7 @@ func TestSignalServiceScanDailyStrategyWithMatch(t *testing.T) {
 	}
 
 	dailyRepo := &mockDailyRepo{k: k, codes: []string{"600312"}}
-	svc := NewSignalService(dailyRepo, &mockWeeklyRepo{}, &mockFinancialRepo{})
+	svc := NewSignalService(dailyRepo, &mockWeeklyRepo{}, &mockFinancialRepo{}, nil)
 
 	result, err := svc.FindBuySignalsByStrategy(context.Background(), "weekly_b1_buy")
 	if err != nil {
@@ -124,7 +124,7 @@ func TestSignalServiceScanWeeklyStrategy(t *testing.T) {
 	}
 
 	weeklyRepo := &mockWeeklyRepo{k: k, codes: []string{"600312"}}
-	svc := NewSignalService(&mockDailyRepo{}, weeklyRepo, &mockFinancialRepo{})
+	svc := NewSignalService(&mockDailyRepo{}, weeklyRepo, &mockFinancialRepo{}, nil)
 
 	result, err := svc.FindBuySignalsByStrategy(context.Background(), "weekly_b1_buy")
 	if err != nil {
@@ -139,7 +139,7 @@ func TestSignalServiceScanWeeklyStrategy(t *testing.T) {
 // TestSignalServiceFindFinancialReportSignals 扫描财报策略
 func TestSignalServiceFindFinancialReportSignals(t *testing.T) {
 	finRepo := &mockFinancialRepo{reports: []*model.FinancialReport{}}
-	svc := NewSignalService(&mockDailyRepo{}, &mockWeeklyRepo{}, finRepo)
+	svc := NewSignalService(&mockDailyRepo{}, &mockWeeklyRepo{}, finRepo, nil)
 
 	result, err := svc.FindFinancialReportSignals(context.Background(), 20.0, 4)
 	if err != nil {
@@ -153,7 +153,7 @@ func TestSignalServiceFindFinancialReportSignals(t *testing.T) {
 // TestSignalServiceScanDailyStrategyRepoError FindByCode 错误应跳过
 func TestSignalServiceScanDailyStrategyRepoError(t *testing.T) {
 	dailyRepo := &mockDailyRepo{findErr: errors.New("db error")}
-	svc := NewSignalService(dailyRepo, &mockWeeklyRepo{}, &mockFinancialRepo{})
+	svc := NewSignalService(dailyRepo, &mockWeeklyRepo{}, &mockFinancialRepo{}, nil)
 
 	result, err := svc.FindBuySignalsByStrategy(context.Background(), "daily_b1_buy")
 	if err != nil {
@@ -166,7 +166,7 @@ func TestSignalServiceScanDailyStrategyRepoError(t *testing.T) {
 
 // TestBacktestUnknownStrategy 未知策略返回错误
 func TestBacktestUnknownStrategy(t *testing.T) {
-	svc := NewSignalService(&mockDailyRepo{}, &mockWeeklyRepo{}, &mockFinancialRepo{})
+	svc := NewSignalService(&mockDailyRepo{}, &mockWeeklyRepo{}, &mockFinancialRepo{}, nil)
 	_, err := svc.Backtest(context.Background(), "600150", "unknown", "daily")
 	if err == nil {
 		t.Fatal("expected error for unknown strategy")
@@ -175,7 +175,7 @@ func TestBacktestUnknownStrategy(t *testing.T) {
 
 // TestBacktestUnsupportedCycle 不支持的周期返回错误
 func TestBacktestUnsupportedCycle(t *testing.T) {
-	svc := NewSignalService(&mockDailyRepo{}, &mockWeeklyRepo{}, &mockFinancialRepo{})
+	svc := NewSignalService(&mockDailyRepo{}, &mockWeeklyRepo{}, &mockFinancialRepo{}, nil)
 	_, err := svc.Backtest(context.Background(), "600150", "daily_b1_buy", "monthly")
 	if err == nil {
 		t.Fatal("expected error for unsupported cycle")
@@ -193,7 +193,7 @@ func TestBacktestDaily(t *testing.T) {
 		}
 	}
 	dailyRepo := &mockDailyRepo{k: k}
-	svc := NewSignalService(dailyRepo, &mockWeeklyRepo{}, &mockFinancialRepo{})
+	svc := NewSignalService(dailyRepo, &mockWeeklyRepo{}, &mockFinancialRepo{}, nil)
 
 	result, err := svc.Backtest(context.Background(), "600312", "daily_b1_buy", "daily")
 	if err != nil {
@@ -221,7 +221,7 @@ func TestBacktestWeekly(t *testing.T) {
 		}
 	}
 	weeklyRepo := &mockWeeklyRepo{k: k}
-	svc := NewSignalService(&mockDailyRepo{}, weeklyRepo, &mockFinancialRepo{})
+	svc := NewSignalService(&mockDailyRepo{}, weeklyRepo, &mockFinancialRepo{}, nil)
 
 	result, err := svc.Backtest(context.Background(), "600312", "weekly_b1_buy", "weekly")
 	if err != nil {
@@ -235,7 +235,7 @@ func TestBacktestWeekly(t *testing.T) {
 // TestBacktestEmptyData 无数据时返回空信号
 func TestBacktestEmptyData(t *testing.T) {
 	dailyRepo := &mockDailyRepo{k: []*model.StockKlineDaily{}}
-	svc := NewSignalService(dailyRepo, &mockWeeklyRepo{}, &mockFinancialRepo{})
+	svc := NewSignalService(dailyRepo, &mockWeeklyRepo{}, &mockFinancialRepo{}, nil)
 
 	result, err := svc.Backtest(context.Background(), "000001", "daily_b1_buy", "daily")
 	if err != nil {
@@ -260,7 +260,7 @@ func TestBacktestDefaultCycle(t *testing.T) {
 		}
 	}
 	dailyRepo := &mockDailyRepo{k: k}
-	svc := NewSignalService(dailyRepo, &mockWeeklyRepo{}, &mockFinancialRepo{})
+	svc := NewSignalService(dailyRepo, &mockWeeklyRepo{}, &mockFinancialRepo{}, nil)
 
 	result, err := svc.Backtest(context.Background(), "600312", "daily_b1_buy", "")
 	if err != nil {

@@ -46,7 +46,13 @@ func main() {
 	financialScheduler := business.NewFinancialScheduler(financialSvc, d.FinancialReport())
 	financialScheduler.Start(context.Background())
 
-	signalSvc := business.NewSignalService(d.StockKlineDaily(), d.StockKlineWeekly(), d.FinancialReport())
+	stockInfo, err := business.NewStockInfoProvider(d.StockInfo())
+	if err != nil {
+		log.Printf("warn: init stock info provider failed: %v", err)
+		stockInfo = nil
+	}
+
+	signalSvc := business.NewSignalService(d.StockKlineDaily(), d.StockKlineWeekly(), d.FinancialReport(), stockInfo)
 	querySvc := business.NewQueryService(d.StockKlineDaily(), d.StockKlineWeekly(), d.FinancialReport())
 	macroSvc := business.NewMacroService(broker.NewEastMoneyBroker(), broker.NewSinaBroker())
 	r := api.NewRouter(svc, financialSvc, scheduler, financialScheduler, signalSvc, querySvc, macroSvc)
