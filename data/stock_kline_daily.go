@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"sync"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -19,6 +20,7 @@ type StockKlineDailyRepo interface {
 	FindByCodeWithPagination(ctx context.Context, code string, limit, offset int) ([]*model.StockKlineDaily, error)
 	FindLatestByCode(ctx context.Context, code string) (*model.StockKlineDaily, error)
 	FindAllCodes(ctx context.Context) ([]string, error)
+	FindRecentByCodes(ctx context.Context, codes []string, limit int) (map[string][]*model.StockKlineDaily, error)
 	Update(ctx context.Context, kline *model.StockKlineDaily) error
 	Delete(ctx context.Context, id uint) error
 	List(ctx context.Context, limit, offset int) ([]*model.StockKlineDaily, error)
@@ -110,6 +112,82 @@ func (r *stockKlineDailyRepo) FindAllCodes(ctx context.Context) ([]string, error
 		return nil, err
 	}
 	return codes, nil
+}
+
+// FindRecentByCodes 批量查询多只股票的最近 limit 条日线，按 code 分组返回（日期升序）
+// 内部按 batchSize 拆分并发查询，通过 queryConcurrency 控制最大并发 SQL 数
+func (r *stockKlineDailyRepo) FindRecentByCodes(ctx context.Context, codes []string, limit int) (map[string][]*model.StockKlineDaily, error) {
+	if len(codes) == 0 || limit <= 0 {
+		return make(map[string][]*model.StockKlineDaily), nil
+	}
+
+	const (
+		batchSize          = 20
+		queryConcurrency   = 30
+	)
+
+	// 拆分为 batches
+	var batches [][]string
+	for i := 0; i < len(codes); i += batchSize {
+		end := i + batchSize
+		if end > len(codes) {
+			end = len(codes)
+		}
+		batches = append(batches, codes[i:end])
+	}
+
+	type batchResult struct {
+		klist []*model.StockKlineDaily
+		err   error
+	}
+
+	results := make([]batchResult, len(batches))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, queryConcurrency)
+
+	for i, batch := range batches {
+		wg.Add(1)
+		go func(idx int, b []string) {
+			defer wg.Done()
+
+			if err := ctx.Err(); err != nil {
+				results[idx] = batchResult{err: err}
+				return
+			}
+
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			var klines []*model.StockKlineDaily
+			err := r.db.WithContext(ctx).Where("code IN ?", b).Order("code, date DESC").Find(&klines).Error
+			results[idx] = batchResult{klist: klines, err: err}
+		}(i, batch)
+	}
+	wg.Wait()
+
+	// 合并结果
+	result := make(map[string][]*model.StockKlineDaily)
+	for _, br := range results {
+		if br.err != nil {
+			return nil, br.err
+		}
+		for _, k := range br.klist {
+			list := result[k.Code]
+			if len(list) < limit {
+				result[k.Code] = append(list, k)
+			}
+		}
+	}
+
+	// 反转每个 code 的数据为日期升序
+	for code, list := range result {
+		for i, j := 0, len(list)-1; i < j; i, j = i+1, j-1 {
+			list[i], list[j] = list[j], list[i]
+		}
+		result[code] = list
+	}
+
+	return result, nil
 }
 
 // List 分页查询所有日线数据

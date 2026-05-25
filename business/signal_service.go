@@ -271,7 +271,7 @@ func (s *signalService) Backtest(ctx context.Context, code, strategyName, cycle 
 }
 
 const (
-	scanConcurrency = 20 // 并发扫描 goroutine 数
+	scanConcurrency = 50 // 并发扫描 goroutine 数（Phase3 后纯内存计算，可提高并发）
 )
 
 func (s *signalService) scanDailyStrategy(ctx context.Context, st *strategy.Strategy) (*StrategySignal, error) {
@@ -280,7 +280,18 @@ func (s *signalService) scanDailyStrategy(ctx context.Context, st *strategy.Stra
 		return nil, fmt.Errorf("find all daily codes failed: %w", err)
 	}
 
-	return s.scanCodes(ctx, st, codes, s.dailyRepo)
+	// 批量加载日线数据
+	dailyMap, err := s.dailyRepo.FindRecentByCodes(ctx, codes, 70)
+	if err != nil {
+		return nil, fmt.Errorf("batch load daily klines failed: %w", err)
+	}
+
+	klinesMap := make(map[string][]*model.StockKline, len(dailyMap))
+	for code, dailies := range dailyMap {
+		klinesMap[code] = dailyToKlines(dailies)
+	}
+
+	return s.scanCodesFromMap(ctx, st, codes, klinesMap)
 }
 
 func (s *signalService) scanWeeklyStrategy(ctx context.Context, st *strategy.Strategy) (*StrategySignal, error) {
@@ -289,18 +300,33 @@ func (s *signalService) scanWeeklyStrategy(ctx context.Context, st *strategy.Str
 		return nil, fmt.Errorf("find all weekly codes failed: %w", err)
 	}
 
-	return s.scanCodes(ctx, st, codes, s.weeklyRepo)
+	// 批量加载周线数据
+	weeklyMap, err := s.weeklyRepo.FindRecentByCodes(ctx, codes, 70)
+	if err != nil {
+		return nil, fmt.Errorf("batch load weekly klines failed: %w", err)
+	}
+
+	// 批量加载日线数据用于填充 AuxMA20
+	dailyMap, _ := s.dailyRepo.FindRecentByCodes(ctx, codes, dailyMALookback)
+
+	klinesMap := make(map[string][]*model.StockKline, len(weeklyMap))
+	for code, weeklies := range weeklyMap {
+		klines := weeklyToKlines(weeklies)
+		if dailies, ok := dailyMap[code]; ok {
+			fillDailyMA20FromData(klines, dailies)
+		}
+		klinesMap[code] = klines
+	}
+
+	return s.scanCodesFromMap(ctx, st, codes, klinesMap)
 }
 
-type klineRepo interface {
-	FindByCode(ctx context.Context, code string, limit int) ([]*model.StockKlineDaily, error)
-}
+// scanCodesFromMap 从预加载的 klines map 中扫描信号，纯内存计算无 IO
+func (s *signalService) scanCodesFromMap(ctx context.Context, st *strategy.Strategy, codes []string, klinesMap map[string][]*model.StockKline) (*StrategySignal, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
-type weeklyKlineRepo interface {
-	FindByCode(ctx context.Context, code string, limit int) ([]*model.StockKlineWeekly, error)
-}
-
-func (s *signalService) scanCodes(ctx context.Context, st *strategy.Strategy, codes []string, repo any) (*StrategySignal, error) {
 	var (
 		matched []string
 		mu      sync.Mutex
@@ -310,28 +336,31 @@ func (s *signalService) scanCodes(ctx context.Context, st *strategy.Strategy, co
 	sem := make(chan struct{}, scanConcurrency)
 
 	for _, code := range codes {
-		select {
-		case <-ctx.Done():
+		if err := ctx.Err(); err != nil {
 			wg.Wait()
-			return nil, ctx.Err()
-		case sem <- struct{}{}:
+			return nil, err
 		}
 
+		klines, ok := klinesMap[code]
+		if !ok || len(klines) == 0 {
+			continue
+		}
+
+		sem <- struct{}{}
+
 		wg.Add(1)
-		go func(c string) {
+		go func(c string, kl []*model.StockKline) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			klines, sigs, lastDate := s.scanSingleCode(ctx, c, repo, st)
-			if len(klines) == 0 {
-				return
-			}
-			if len(sigs) > 0 && sigs[len(sigs)-1].Date == lastDate {
+			sig := st.ScanLatest(kl)
+			lastDate := kl[len(kl)-1].Date
+			if sig != nil && sig.Date == lastDate {
 				mu.Lock()
 				matched = append(matched, c)
 				mu.Unlock()
 			}
-		}(code)
+		}(code, klines)
 	}
 
 	wg.Wait()
@@ -342,32 +371,7 @@ func (s *signalService) scanCodes(ctx context.Context, st *strategy.Strategy, co
 	return &StrategySignal{Name: st.Name(), Codes: matched}, nil
 }
 
-func (s *signalService) scanSingleCode(ctx context.Context, code string, repo any, st *strategy.Strategy) ([]*model.StockKline, []strategy.Signal, string) {
-	switch r := repo.(type) {
-	case data.StockKlineDailyRepo:
-		dailies, err := r.FindByCode(ctx, code, 70)
-		if err != nil || len(dailies) == 0 {
-			return nil, nil, ""
-		}
-		lastDate := dailies[len(dailies)-1].Date
-		klines := dailyToKlines(dailies)
-		sigs := st.ScanAll(klines)
-		return klines, sigs, lastDate
-	case data.StockKlineWeeklyRepo:
-		weeklies, err := r.FindByCode(ctx, code, 70)
-		if err != nil || len(weeklies) == 0 {
-			return nil, nil, ""
-		}
-		lastDate := weeklies[len(weeklies)-1].Date
-		klines := weeklyToKlines(weeklies)
-		// 填充跨周期日 20 日均线
-		fillDailyMA20(ctx, s.dailyRepo, code, klines)
-		sigs := st.ScanAll(klines)
-		return klines, sigs, lastDate
-	default:
-		return nil, nil, ""
-	}
-}
+const dailyMALookback = 600
 
 // fillDailyMA20 获取日线数据并计算日 20 均线，按日期映射到周线 klines 的 AuxMA20 字段
 func fillDailyMA20(ctx context.Context, dailyRepo data.StockKlineDailyRepo, code string, klines []*model.StockKline) {
@@ -375,11 +379,19 @@ func fillDailyMA20(ctx context.Context, dailyRepo data.StockKlineDailyRepo, code
 		return
 	}
 
-	dailies, err := dailyRepo.FindByCode(ctx, code, 0)
+	dailies, err := dailyRepo.FindByCode(ctx, code, dailyMALookback)
 	if err != nil || len(dailies) == 0 {
 		return
 	}
 
+	fillDailyMA20FromData(klines, dailies)
+}
+
+// fillDailyMA20FromData 使用预加载的日线数据填充 klines 的 AuxMA20 字段
+func fillDailyMA20FromData(klines []*model.StockKline, dailies []*model.StockKlineDaily) {
+	if len(klines) == 0 || len(dailies) == 0 {
+		return
+	}
 	maMap := computeDailyMA20Map(dailies)
 	for i := range klines {
 		if v, ok := maMap[klines[i].Date]; ok {
