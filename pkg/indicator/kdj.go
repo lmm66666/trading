@@ -9,7 +9,45 @@ type KDJResult struct {
 	J    float64 `json:"j"`
 }
 
-// ComputeKDJ 标准 KDJ: RSV(9), K/D 初始 50
+// slidingWindowMax 双端队列求滑动窗口最大值（窗口大小动态：min(i+1, period)）
+func slidingWindowMax(arr []float64, period int) []float64 {
+	n := len(arr)
+	result := make([]float64, n)
+	deque := make([]int, 0, period)
+
+	for i := range arr {
+		for len(deque) > 0 && deque[0] < i-period+1 {
+			deque = deque[1:]
+		}
+		for len(deque) > 0 && arr[deque[len(deque)-1]] <= arr[i] {
+			deque = deque[:len(deque)-1]
+		}
+		deque = append(deque, i)
+		result[i] = arr[deque[0]]
+	}
+	return result
+}
+
+// slidingWindowMin 双端队列求滑动窗口最小值（窗口大小动态：min(i+1, period)）
+func slidingWindowMin(arr []float64, period int) []float64 {
+	n := len(arr)
+	result := make([]float64, n)
+	deque := make([]int, 0, period)
+
+	for i := range arr {
+		for len(deque) > 0 && deque[0] < i-period+1 {
+			deque = deque[1:]
+		}
+		for len(deque) > 0 && arr[deque[len(deque)-1]] >= arr[i] {
+			deque = deque[:len(deque)-1]
+		}
+		deque = append(deque, i)
+		result[i] = arr[deque[0]]
+	}
+	return result
+}
+
+// ComputeKDJ 标准 KDJ: RSV(9), K/D 初始 50，滑动窗口 O(n)
 func ComputeKDJ(klines []*model.StockKline) []KDJResult {
 	n := len(klines)
 	if n == 0 {
@@ -27,25 +65,15 @@ func ComputeKDJ(klines []*model.StockKline) []KDJResult {
 		closes[i] = k.Close
 	}
 
+	highMaxes := slidingWindowMax(highs, period)
+	lowMins := slidingWindowMin(lows, period)
+
 	results := make([]KDJResult, n)
 	kVal, dVal := 50.0, 50.0
 
 	for i := range klines {
-		start := 0
-		if i >= period {
-			start = i - period + 1
-		}
-
-		highMax := highs[start]
-		lowMin := lows[start]
-		for j := start + 1; j <= i; j++ {
-			if highs[j] > highMax {
-				highMax = highs[j]
-			}
-			if lows[j] < lowMin {
-				lowMin = lows[j]
-			}
-		}
+		highMax := highMaxes[i]
+		lowMin := lowMins[i]
 
 		rsv := 50.0
 		if highMax != lowMin {

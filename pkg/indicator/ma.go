@@ -6,24 +6,24 @@ type Number interface {
 		~float32 | ~float64
 }
 
-// ComputeMA 计算简单移动平均（SMA）
+// ComputeMA 计算简单移动平均（SMA），滑动窗口 O(n)
 func ComputeMA[T Number](values []T, period int) []float64 {
 	if period <= 0 || len(values) == 0 {
 		return nil
 	}
 	result := make([]float64, len(values))
+	var windowSum float64
+
 	for i := range values {
-		start := 0
-		if i >= period-1 {
-			start = i - period + 1
+		windowSum += float64(values[i])
+		if i >= period {
+			windowSum -= float64(values[i-period])
 		}
-		var sum float64
-		count := 0
-		for j := start; j <= i; j++ {
-			sum += float64(values[j])
-			count++
+		count := i + 1
+		if count > period {
+			count = period
 		}
-		result[i] = sum / float64(count)
+		result[i] = windowSum / float64(count)
 	}
 	return result
 }
