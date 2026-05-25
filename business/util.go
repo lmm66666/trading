@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"trading/model"
+	"trading/pkg/indicator"
 )
 
 // toSymbol 将纯数字 code 转换为带前缀的 symbol
@@ -110,6 +111,26 @@ func weeklyToKlines(weeklies []*model.StockKlineWeekly) []*model.StockKline {
 	for _, w := range weeklies {
 		k := model.StockKline(*w)
 		result = append(result, &k)
+	}
+	return result
+}
+
+// computeDailyMA20Map 计算日线 20 日均线并返回日期 -> 均线值映射
+func computeDailyMA20Map(dailies []*model.StockKlineDaily) map[string]float64 {
+	n := len(dailies)
+	if n == 0 {
+		return nil
+	}
+
+	prices := make([]float64, n)
+	for i, d := range dailies {
+		prices[i] = d.Close
+	}
+
+	maResults := indicator.ComputeMA(prices, 20)
+	result := make(map[string]float64, n)
+	for i := range n {
+		result[dailies[i].Date] = maResults[i]
 	}
 	return result
 }

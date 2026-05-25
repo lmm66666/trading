@@ -126,6 +126,7 @@ func (s *signalService) Backtest(ctx context.Context, code, strategyName, cycle 
 			return &BacktestResult{Code: code, Strategy: strategyName, Cycle: cycle}, nil
 		}
 		klines := weeklyToKlines(weeklies)
+		fillDailyMA20(ctx, s.dailyRepo, code, klines)
 		sigs := st.ScanAll(klines)
 		return &BacktestResult{Code: code, Strategy: strategyName, Cycle: cycle, Signals: sigs}, nil
 	default:
@@ -223,10 +224,31 @@ func (s *signalService) scanSingleCode(ctx context.Context, code string, repo an
 		}
 		lastDate := weeklies[len(weeklies)-1].Date
 		klines := weeklyToKlines(weeklies)
+		// 填充跨周期日 20 日均线
+		fillDailyMA20(ctx, s.dailyRepo, code, klines)
 		sigs := st.ScanAll(klines)
 		return klines, sigs, lastDate
 	default:
 		return nil, nil, ""
+	}
+}
+
+// fillDailyMA20 获取日线数据并计算日 20 均线，按日期映射到周线 klines 的 AuxMA20 字段
+func fillDailyMA20(ctx context.Context, dailyRepo data.StockKlineDailyRepo, code string, klines []*model.StockKline) {
+	if len(klines) == 0 {
+		return
+	}
+
+	dailies, err := dailyRepo.FindByCode(ctx, code, 0)
+	if err != nil || len(dailies) == 0 {
+		return
+	}
+
+	maMap := computeDailyMA20Map(dailies)
+	for i := range klines {
+		if v, ok := maMap[klines[i].Date]; ok {
+			klines[i].AuxMA20 = v
+		}
 	}
 }
 

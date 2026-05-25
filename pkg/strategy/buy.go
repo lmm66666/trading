@@ -21,11 +21,13 @@ func NewDailyB1BuyStrategy() *Strategy {
 //  1. 周线 KDJ < 10（超卖）
 //  2. 周线 MA20 在 MA60 之上（多头排列）
 //  3. 收盘价站稳周 60 日均线
+//  4. 收盘价站稳日 20 日均线（跨周期）
 func NewWeeklyB1BuyStrategy() *Strategy {
 	return NewStrategy("weekly_b1_buy").
 		AddFilter(filter.NewKDJOverSold(10)).
 		AddFilter(filter.NewMACrossFilter(20, 60)).
-		AddFilter(filter.NewSupportHoldFilter(60))
+		AddFilter(filter.NewSupportHoldFilter(60)).
+		AddFilter(filter.NewDailyMA20CrossFilter())
 }
 
 // NewBottomSurgePullbackStrategy 底部放量拉升 + KDJ 低位回调策略
