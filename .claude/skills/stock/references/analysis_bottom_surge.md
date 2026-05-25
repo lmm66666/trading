@@ -63,10 +63,10 @@
 
 ### 阶段 1：获取带评分的信号列表
 
-调用 `/api/stocks/signal/scored` 获取底部倍量回调信号股票列表（含短线/长线评分），**将结果保存到文件**。
+调用 `/api/stocks/signal` 获取底部倍量回调信号股票列表（含短线/长线评分），**将结果保存到文件**。
 
 ```bash
-curl --max-time 120 "http://192.168.31.85:38687/api/stocks/signal/scored?strategy=bottom_surge_pullback"
+curl --max-time 120 "http://192.168.31.85:38687/api/stocks/signal?strategy=bottom_surge_pullback"
 ```
 
 保存到 `.tmp/bottom-surge-scored-{日期}.json`。
@@ -235,10 +235,10 @@ curl --max-time 120 "http://192.168.31.85:38687/api/stocks/signal/scored?strateg
 
 ## 注意事项
 
-1. **评分由 API 计算**：短线/长线评分由 `/api/stocks/signal/scored` 接口的服务端算法计算，Agent 禁止手动心算量化指标
+1. **评分由 API 计算**：短线/长线评分由 `/api/stocks/signal` 接口的服务端算法计算，Agent 禁止手动心算量化指标
 
 2. **前 10 名深度分析**：只对短线评分最高的 10 只做行业搜索分析，避免无差别搜索拖慢整体效率
 
-3. **超时设置**：`/api/stocks/signal/scored` 扫描+评分耗时较长，建议超时 **120s**
+3. **超时设置**：`/api/stocks/signal` 扫描+评分耗时较长，建议超时 **120s**
 
 4. **增量分析**：如果 `./docs/analysis/bottom-surge/` 下已有同日期报告，询问用户是否覆盖

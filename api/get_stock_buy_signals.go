@@ -7,7 +7,7 @@ import (
 )
 
 // GetStockBuySignals GET /api/stocks/signal?strategy=
-// 按指定策略名称扫描所有股票，返回今日出现买点的股票代码列表
+// 按指定策略名称扫描所有股票，返回带评分的结果，按短线评分降序
 func (h *StockHandler) GetStockBuySignals(c *gin.Context) {
 	strategyName := c.Query("strategy")
 	if strategyName == "" {
@@ -15,15 +15,15 @@ func (h *StockHandler) GetStockBuySignals(c *gin.Context) {
 		return
 	}
 
-	signal, err := h.signalSvc.FindBuySignalsByStrategy(c.Request.Context(), strategyName)
+	result, err := h.signalSvc.FindScoredSignalsByStrategy(c.Request.Context(), strategyName)
 	if err != nil {
 		respondInternalError(c, "find buy signals", err)
 		return
 	}
 
-	var codes []string
-	if signal != nil {
-		codes = signal.Codes
+	if result == nil {
+		respondSuccess(c, gin.H{"name": strategyName, "signals": []any{}})
+		return
 	}
-	respondSuccess(c, gin.H{"strategy": strategyName, "codes": codes})
+	respondSuccess(c, result)
 }

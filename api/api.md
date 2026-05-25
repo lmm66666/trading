@@ -118,11 +118,11 @@ curl -X POST http://localhost:8080/api/stocks/financial-report \
 
 ### 4. 股票买点扫描
 
-按指定策略名称扫描所有股票，判断最新数据日期是否为买点，返回符合条件的股票代码列表。
+按指定策略名称扫描所有股票，判断最新数据日期是否为买点，返回带短线评分与长线评分的股票列表，按短线评分降序排列。
 
 - **Method**: `GET`
 - **Path**: `/api/stocks/signal`
-- **说明**: 需要扫描数据库，耗时较长。日线/周线 B1 建议超时 30s；`bottom_surge_pullback` 策略涉及全量并发扫描，建议超时 60s
+- **说明**: 需要扫描数据库并计算评分，耗时较长。日线/周线 B1 建议超时 60s；`bottom_surge_pullback` 策略涉及全量并发扫描，建议超时 120s
 
 #### 请求参数
 
@@ -150,8 +150,29 @@ curl "http://localhost:8080/api/stocks/signal?strategy=bottom_surge_pullback"
   "code": 0,
   "message": "success",
   "data": {
-    "strategy": "daily_b1_buy",
-    "codes": ["600312", "000001"]
+    "name": "bottom_surge_pullback",
+    "signals": [
+      {
+        "code": "600522",
+        "name": "中天科技",
+        "short_detail": {
+          "total": 85,
+          "max": 100,
+          "items": [
+            {"name": "单日最大量比", "value": 2.1, "score": 15, "max_score": 20},
+            {"name": "拉升累计涨幅", "value": 18.5, "score": 15, "max_score": 15}
+          ]
+        },
+        "long_detail": {
+          "total": 82,
+          "max": 100,
+          "items": [
+            {"name": "净利润同比", "value": 0.25, "score": 15, "max_score": 20},
+            {"name": "经营现金流", "value": 1.0, "score": 15, "max_score": 15}
+          ]
+        }
+      }
+    ]
   }
 }
 ```
@@ -160,8 +181,34 @@ curl "http://localhost:8080/api/stocks/signal?strategy=bottom_surge_pullback"
 
 | 字段     | 类型     | 说明                   |
 |----------|----------|------------------------|
-| strategy | string   | 策略名称               |
-| codes    | []string | 符合该策略的股票代码   |
+| name     | string   | 策略名称               |
+| signals  | []object | 带评分的信号股票列表   |
+
+**signals 数组元素字段：**
+
+| 字段        | 类型   | 说明                            |
+|-------------|--------|---------------------------------|
+| code        | string | 股票代码                        |
+| name        | string | 股票名称                        |
+| short_detail| object | 短线评分详情（技术面）          |
+| long_detail | object | 长线评分详情（财报基本面）      |
+
+**short_detail / long_detail 字段：**
+
+| 字段  | 类型     | 说明                            |
+|-------|----------|---------------------------------|
+| total | int      | 总分                            |
+| max   | int      | 满分                            |
+| items | []object | 各维度评分明细                  |
+
+**items 数组元素字段：**
+
+| 字段     | 类型    | 说明               |
+|----------|---------|--------------------|
+| name     | string  | 评分维度名称       |
+| value    | float64 | 原始指标值         |
+| score    | int     | 得分               |
+| max_score| int     | 该维度满分         |
 
 #### 支持的策略名称
 

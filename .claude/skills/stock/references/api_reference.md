@@ -8,44 +8,26 @@
 
 ## 核心接口速查
 
-### 1. 带评分的股票买点扫描（推荐）
+### 1. 带评分的股票买点扫描
 
 ```bash
 # 底部倍量回调（日线）
-curl --max-time 120 "http://192.168.31.85:38687/api/stocks/signal/scored?strategy=bottom_surge_pullback"
+curl --max-time 120 "http://192.168.31.85:38687/api/stocks/signal?strategy=bottom_surge_pullback"
 
 # 周线 B1 买点
-curl --max-time 120 "http://192.168.31.85:38687/api/stocks/signal/scored?strategy=weekly_b1_buy"
-```
-
-| 参数     | 说明                          |
-|----------|-------------------------------|
-| strategy | `bottom_surge_pullback` / `weekly_b1_buy` |
-
-**返回内容**：`signals` 数组，每只股票包含 `short_detail`（短线评分明细）和 `long_detail`（长线评分明细），已按短线评分降序排列。
-
-**注意**：扫描+评分耗时较长，建议超时 **120s**
-
----
-
-### 2. 原始买点扫描（不带评分）
-
-```bash
-# 底部倍量回调（日线）
-curl "http://192.168.31.85:38687/api/stocks/signal?strategy=bottom_surge_pullback"
+curl --max-time 120 "http://192.168.31.85:38687/api/stocks/signal?strategy=weekly_b1_buy"
 
 # 日线 B1 买点
-curl "http://192.168.31.85:38687/api/stocks/signal?strategy=daily_b1_buy"
-
-# 周线 B1 买点
-curl "http://192.168.31.85:38687/api/stocks/signal?strategy=weekly_b1_buy"
+curl --max-time 120 "http://192.168.31.85:38687/api/stocks/signal?strategy=daily_b1_buy"
 ```
 
 | 参数     | 说明                          |
 |----------|-------------------------------|
 | strategy | `bottom_surge_pullback` / `daily_b1_buy` / `weekly_b1_buy` |
 
-**注意**：扫描数据库耗时较长，建议超时 60s
+**返回内容**：`signals` 数组，每只股票包含 `short_detail`（短线评分明细）和 `long_detail`（长线评分明细），已按短线评分降序排列。
+
+**注意**：扫描+评分耗时较长，建议超时 **120s**
 
 ---
 
