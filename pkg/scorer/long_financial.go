@@ -56,7 +56,7 @@ func ScoreLongFinancial(reports []*model.FinancialReport) *ScoreDetail {
 	gmTrend := trend(sorted, func(r *model.FinancialReport) float64 { return r.GrossMargin / 100 })
 	items = append(items, ScoreItem{
 		Name: "毛利率趋势", Value: gmTrend,
-		Score: trendScore(gmTrend, 0.03), MaxScore: 5,
+		Score: trendScore(gmTrend, 0.03, 5, 3), MaxScore: 5,
 	})
 
 	roe := latest.ROE / 100
@@ -90,7 +90,7 @@ func ScoreLongFinancial(reports []*model.FinancialReport) *ScoreDetail {
 	tatTrend := trend(sorted, func(r *model.FinancialReport) float64 { return r.TotalAssetTurnover })
 	items = append(items, ScoreItem{
 		Name: "总资产周转率趋势", Value: tatTrend,
-		Score: trendScore(tatTrend, 0.1), MaxScore: 8,
+		Score: trendScore(tatTrend, 0.1, 8, 5), MaxScore: 8,
 	})
 
 	epsScore := epsTrendScore(sorted)
@@ -224,12 +224,12 @@ func cfScore(count int) int {
 	return 0
 }
 
-func trendScore(v, threshold float64) int {
+func trendScore(v, threshold float64, high, mid int) int {
 	if v >= 0 {
-		return 8
+		return high
 	}
 	if v >= -threshold {
-		return 5
+		return mid
 	}
 	return 0
 }

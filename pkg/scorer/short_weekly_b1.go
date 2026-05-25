@@ -120,7 +120,7 @@ func ScoreWeeklyB1Short(weekly []*model.StockKline, daily []*model.StockKline) *
 	adjustPct := (highPrice - latestClose) / highPrice * 100
 	items = append(items, ScoreItem{
 		Name: "调整幅度", Value: adjustPct,
-		Score: inverseStepScore(adjustPct, 15, 25, 100), MaxScore: 10,
+		Score: inverseStepScore(adjustPct, 15, 25, 100, 10, 5, 0), MaxScore: 10,
 	})
 
 	highIdx := 0

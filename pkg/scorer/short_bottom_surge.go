@@ -119,7 +119,7 @@ func ScoreBottomSurgeShort(klines []*model.StockKline) *ScoreDetail {
 	pullbackPct := (window.peakPrice - latestClose) / window.peakPrice * 100
 	items = append(items, ScoreItem{
 		Name: "回调深度", Value: pullbackPct,
-		Score: inverseStepScore(pullbackPct, 5, 10, 15), MaxScore: 15,
+		Score: inverseStepScore(pullbackPct, 5, 10, 15, 15, 10, 5), MaxScore: 15,
 	})
 
 	// MA20 支撑（10 分）
@@ -255,15 +255,15 @@ func stepScore(value, t1, t2, t3 float64) int {
 	}
 }
 
-// inverseStepScore 反向阶梯评分：value <= t1 得 15, <= t2 得 10, <= t3 得 5, else 0
-func inverseStepScore(value, t1, t2, t3 float64) int {
+// inverseStepScore 反向阶梯评分：value <= t1 得 s1, <= t2 得 s2, <= t3 得 s3, else 0
+func inverseStepScore(value, t1, t2, t3 float64, s1, s2, s3 int) int {
 	switch {
 	case value <= t1:
-		return 15
+		return s1
 	case value <= t2:
-		return 10
+		return s2
 	case value <= t3:
-		return 5
+		return s3
 	default:
 		return 0
 	}
