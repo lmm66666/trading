@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	defaultMaxOpenConns           = 25
-	defaultMaxIdleConns           = 5
+	defaultMaxOpenConns           = 60
+	defaultMaxIdleConns           = 10
 	defaultConnMaxLifetimeMinutes = 30
 )
 

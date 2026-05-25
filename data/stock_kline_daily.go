@@ -115,43 +115,25 @@ func (r *stockKlineDailyRepo) FindAllCodes(ctx context.Context) ([]string, error
 }
 
 // FindRecentByCodes 批量查询多只股票的最近 limit 条日线，按 code 分组返回（日期升序）
-// 内部按 batchSize 拆分并发查询，通过 queryConcurrency 控制最大并发 SQL 数
+// 每个 code 独立并发查询，SQL 使用 WHERE code = ? + LIMIT，直接走 (code, date) 索引前缀
 func (r *stockKlineDailyRepo) FindRecentByCodes(ctx context.Context, codes []string, limit int) (map[string][]*model.StockKlineDaily, error) {
 	if len(codes) == 0 || limit <= 0 {
 		return make(map[string][]*model.StockKlineDaily), nil
 	}
 
-	const (
-		batchSize          = 20
-		queryConcurrency   = 30
-	)
+	const queryConcurrency = 40
 
-	// 拆分为 batches
-	var batches [][]string
-	for i := 0; i < len(codes); i += batchSize {
-		end := i + batchSize
-		if end > len(codes) {
-			end = len(codes)
-		}
-		batches = append(batches, codes[i:end])
-	}
-
-	type batchResult struct {
-		klist []*model.StockKlineDaily
-		err   error
-	}
-
-	results := make([]batchResult, len(batches))
+	result := make(map[string][]*model.StockKlineDaily)
+	var mu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, queryConcurrency)
 
-	for i, batch := range batches {
+	for _, code := range codes {
 		wg.Add(1)
-		go func(idx int, b []string) {
+		go func(c string) {
 			defer wg.Done()
 
 			if err := ctx.Err(); err != nil {
-				results[idx] = batchResult{err: err}
 				return
 			}
 
@@ -159,33 +141,25 @@ func (r *stockKlineDailyRepo) FindRecentByCodes(ctx context.Context, codes []str
 			defer func() { <-sem }()
 
 			var klines []*model.StockKlineDaily
-			err := r.db.WithContext(ctx).Where("code IN ?", b).Order("code, date DESC").Find(&klines).Error
-			results[idx] = batchResult{klist: klines, err: err}
-		}(i, batch)
+			if err := r.db.WithContext(ctx).
+				Where("code = ?", c).
+				Order("date DESC").
+				Limit(limit).
+				Find(&klines).Error; err != nil {
+				return
+			}
+
+			// 反转为日期升序
+			for i, j := 0, len(klines)-1; i < j; i, j = i+1, j-1 {
+				klines[i], klines[j] = klines[j], klines[i]
+			}
+
+			mu.Lock()
+			result[c] = klines
+			mu.Unlock()
+		}(code)
 	}
 	wg.Wait()
-
-	// 合并结果
-	result := make(map[string][]*model.StockKlineDaily)
-	for _, br := range results {
-		if br.err != nil {
-			return nil, br.err
-		}
-		for _, k := range br.klist {
-			list := result[k.Code]
-			if len(list) < limit {
-				result[k.Code] = append(list, k)
-			}
-		}
-	}
-
-	// 反转每个 code 的数据为日期升序
-	for code, list := range result {
-		for i, j := 0, len(list)-1; i < j; i, j = i+1, j-1 {
-			list[i], list[j] = list[j], list[i]
-		}
-		result[code] = list
-	}
 
 	return result, nil
 }
