@@ -158,6 +158,7 @@ docker save -o trading.tar trading:latest
 # 开发规范
 ## 强制要求
 - 本项目除本文档外，还遵循全局 `~/.claude/CLAUDE.md`
+- **不允许使用 git worktree**：所有开发、测试、提交操作必须在当前工作目录（当前分支）直接完成，避免 worktree 导致的配置/文件不可见问题
 - 在读取或分析任何目录下的代码时，**如果该目录下存在 README.md，必须先读取 README.md**，以了解该目录的规范、约束和上下文，避免误读代码
 - 复杂需求完成后，启动子 agent 调用 /simplify 复查可优化点，并调用 /code-review 审查代码
 - 需求交付前，检查并同步更新 CLAUDE.md、README.md 及相关注释
