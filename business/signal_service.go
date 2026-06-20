@@ -3,13 +3,11 @@ package business
 import (
 	"context"
 	"fmt"
-	"sort"
 	"sync"
 
 	"trading/data"
 	"trading/model"
 	"trading/pkg/filter/financial"
-	"trading/pkg/scorer"
 	"trading/pkg/strategy"
 )
 
@@ -17,20 +15,6 @@ import (
 type StrategySignal struct {
 	Name  string   `json:"name"`
 	Codes []string `json:"codes"`
-}
-
-// ScoredSignal 带评分的信号股票
-type ScoredSignal struct {
-	Code        string              `json:"code"`
-	Name        string              `json:"name,omitempty"`
-	ShortDetail *scorer.ScoreDetail `json:"short_detail"`
-	LongDetail  *scorer.ScoreDetail `json:"long_detail,omitempty"`
-}
-
-// ScoredStrategySignal 带评分的策略扫描结果
-type ScoredStrategySignal struct {
-	Name    string          `json:"name"`
-	Signals []ScoredSignal  `json:"signals"`
 }
 
 // BacktestResult 回测结果
@@ -47,8 +31,6 @@ type SignalService interface {
 	FindBuySignals(ctx context.Context) ([]StrategySignal, error)
 	// FindBuySignalsByStrategy 按策略名称扫描，只返回该策略的结果
 	FindBuySignalsByStrategy(ctx context.Context, name string) (*StrategySignal, error)
-	// FindScoredSignalsByStrategy 按策略名称扫描，返回带评分的结果，按短线评分降序
-	FindScoredSignalsByStrategy(ctx context.Context, name string) (*ScoredStrategySignal, error)
 	// FindFinancialReportSignals 扫描所有有财报数据的股票，返回满足财报策略的股票列表
 	FindFinancialReportSignals(ctx context.Context, profitThreshold float64, quarterCount int) (*StrategySignal, error)
 	// Backtest 对单只股票进行策略回测，返回历史上所有买入信号
@@ -98,123 +80,6 @@ func (s *signalService) FindBuySignalsByStrategy(ctx context.Context, name strin
 		return s.scanWeeklyStrategy(ctx, st)
 	}
 	return s.scanDailyStrategy(ctx, st)
-}
-
-func (s *signalService) FindScoredSignalsByStrategy(ctx context.Context, name string) (*ScoredStrategySignal, error) {
-	st, defaultCycle, err := createStrategy(name)
-	if err != nil {
-		return nil, err
-	}
-
-	// 1. 先扫描获取信号股票列表
-	var signal *StrategySignal
-	if defaultCycle == "weekly" {
-		signal, err = s.scanWeeklyStrategy(ctx, st)
-	} else {
-		signal, err = s.scanDailyStrategy(ctx, st)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if signal == nil {
-		return &ScoredStrategySignal{Name: name}, nil
-	}
-
-	// 2. 并发计算评分
-	var (
-		scored []ScoredSignal
-		mu     sync.Mutex
-		wg     sync.WaitGroup
-	)
-	sem := make(chan struct{}, scanConcurrency)
-
-	for _, code := range signal.Codes {
-		select {
-		case <-ctx.Done():
-			wg.Wait()
-			return nil, ctx.Err()
-		case sem <- struct{}{}:
-		}
-
-		wg.Add(1)
-		go func(c string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			ss := s.scoreOne(ctx, c, name, defaultCycle)
-			mu.Lock()
-			scored = append(scored, ss)
-			mu.Unlock()
-		}(code)
-	}
-	wg.Wait()
-
-	// 3. 按短线评分降序
-	sort.Slice(scored, func(i, j int) bool {
-		si, sj := 0, 0
-		if scored[i].ShortDetail != nil {
-			si = scored[i].ShortDetail.Total
-		}
-		if scored[j].ShortDetail != nil {
-			sj = scored[j].ShortDetail.Total
-		}
-		return si > sj
-	})
-
-	return &ScoredStrategySignal{Name: name, Signals: scored}, nil
-}
-
-func (s *signalService) scoreOne(ctx context.Context, code, strategyName, cycle string) ScoredSignal {
-	ss := ScoredSignal{Code: code}
-	if s.stockInfo != nil {
-		ss.Name = s.stockInfo.GetName(ctx, code)
-	}
-
-	switch cycle {
-	case "daily":
-		dailies, err := s.dailyRepo.FindByCode(ctx, code, 0)
-		if err != nil || len(dailies) == 0 {
-			return ss
-		}
-		klines := dailyToKlines(dailies)
-
-		switch strategyName {
-		case "bottom_surge_pullback":
-			ss.ShortDetail = scorer.ScoreBottomSurgeShort(klines)
-		default:
-			ss.ShortDetail = scorer.ScoreBottomSurgeShort(klines)
-		}
-
-	case "weekly":
-		weeklies, err := s.weeklyRepo.FindByCode(ctx, code, 0)
-		if err != nil || len(weeklies) == 0 {
-			return ss
-		}
-		weeklyKlines := weeklyToKlines(weeklies)
-		fillDailyMA20(ctx, s.dailyRepo, code, weeklyKlines)
-
-		// 获取日线数据用于跨周期评分
-		dailies, _ := s.dailyRepo.FindByCode(ctx, code, 0)
-		var dailyKlines []*model.StockKline
-		if len(dailies) > 0 {
-			dailyKlines = dailyToKlines(dailies)
-		}
-
-		switch strategyName {
-		case "weekly_b1_buy":
-			ss.ShortDetail = scorer.ScoreWeeklyB1Short(weeklyKlines, dailyKlines)
-		default:
-			ss.ShortDetail = scorer.ScoreWeeklyB1Short(weeklyKlines, dailyKlines)
-		}
-	}
-
-	// 长线评分（财报）
-	reports, err := s.financialRepo.FindByCode(ctx, code)
-	if err == nil && len(reports) > 0 {
-		ss.LongDetail = scorer.ScoreLongFinancial(reports)
-	}
-
-	return ss
 }
 
 // createStrategy 根据策略名称创建策略实例，返回策略、默认周期和错误
