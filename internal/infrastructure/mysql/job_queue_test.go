@@ -78,3 +78,17 @@ func TestRenewRejectsStaleOrExpiredLease(t *testing.T) {
 	m.ExpectRollback()
 	require.ErrorIs(t, q.Renew(context.Background(), "Run A ", "token ", time.Minute), port.ErrLeaseLost)
 }
+
+func TestEnqueueReportsExplicitIdempotencyCollision(t *testing.T) {
+	repo, m := mockRepository(t)
+	q := NewJobQueue(repo.db)
+	m.ExpectBegin()
+	m.ExpectExec("INSERT INTO `t_compute_runs`.*ON DUPLICATE KEY UPDATE").WillReturnResult(sqlmock.NewResult(0, 0))
+	m.ExpectQuery("SELECT .*t_compute_runs.*kind = .*idempotency_key =").WithArgs("SCAN", "Key ", 1).WillReturnRows(runRows(port.RunPending))
+	m.ExpectRollback()
+	input := queuedRun()
+	input.InputHash = "different"
+	_, err := q.Enqueue(context.Background(), input)
+	require.ErrorIs(t, err, port.ErrIdempotencyConflict)
+	require.ErrorIs(t, err, port.ErrInvalidPortValue)
+}

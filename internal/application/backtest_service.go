@@ -82,14 +82,7 @@ func (s *BacktestService) Create(ctx context.Context, req BacktestRequest) (port
 	if previous, found, err := previousSubmission(ctx, s.queue, port.RunBacktest, req.IdempotencyKey); err != nil {
 		return port.Run{}, err
 	} else if found {
-		hash, err := canonicalInputHash(req, definition, previous.DataVersion, previous.EngineVersion)
-		if err != nil {
-			return port.Run{}, err
-		}
-		if hash != previous.InputHash {
-			return port.Run{}, port.ErrInvalidPortValue
-		}
-		return previous, nil
+		return reuseBacktestSubmission(s.registry, req, previous)
 	}
 	version, err := s.market.LatestCompleteVersion(ctx)
 	if err != nil {
@@ -102,7 +95,15 @@ func (s *BacktestService) Create(ctx context.Context, req BacktestRequest) (port
 	if err != nil {
 		return port.Run{}, err
 	}
-	return enqueueCompute(ctx, s.queue, port.RunBacktest, req.StrategyID, req.StrategyVersion, req.IdempotencyKey, hash, version, s.config.EngineVersion, req)
+	run, err := enqueueCompute(ctx, s.queue, port.RunBacktest, req.StrategyID, req.StrategyVersion, req.IdempotencyKey, hash, version, s.config.EngineVersion, req)
+	if err == nil {
+		return run, nil
+	}
+	winner, found, err := collidedSubmission(ctx, s.queue, port.RunBacktest, req.IdempotencyKey, err)
+	if !found {
+		return port.Run{}, err
+	}
+	return reuseBacktestSubmission(s.registry, req, winner)
 }
 
 func previousSubmission(ctx context.Context, queue port.JobQueue, kind port.RunKind, key string) (port.Run, bool, error) {

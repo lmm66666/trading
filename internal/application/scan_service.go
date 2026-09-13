@@ -95,19 +95,7 @@ func (s *ScanService) Create(ctx context.Context, request ScanRequest) (port.Run
 	if previous, found, err := previousSubmission(ctx, s.queue, port.RunScan, request.IdempotencyKey); err != nil {
 		return port.Run{}, err
 	} else if found {
-		var saved scanInput
-		if err = json.Unmarshal(previous.RequestJSON, &saved); err != nil {
-			return port.Run{}, invalidRequest("invalid saved scan")
-		}
-		saved.ScanRequest = request
-		hash, err := scanInputHash(saved, definition, previous.DataVersion, previous.EngineVersion)
-		if err != nil {
-			return port.Run{}, err
-		}
-		if hash != previous.InputHash {
-			return port.Run{}, port.ErrInvalidPortValue
-		}
-		return previous, nil
+		return reuseScanSubmission(s.registry, request, previous)
 	}
 	version, err := s.market.LatestCompleteVersion(ctx)
 	if err != nil {
@@ -140,7 +128,15 @@ func (s *ScanService) Create(ctx context.Context, request ScanRequest) (port.Run
 	if err != nil {
 		return port.Run{}, err
 	}
-	return enqueueCompute(ctx, s.queue, port.RunScan, request.StrategyID, request.StrategyVersion, request.IdempotencyKey, hash, version, s.config.EngineVersion, input)
+	run, err := enqueueCompute(ctx, s.queue, port.RunScan, request.StrategyID, request.StrategyVersion, request.IdempotencyKey, hash, version, s.config.EngineVersion, input)
+	if err == nil {
+		return run, nil
+	}
+	winner, found, err := collidedSubmission(ctx, s.queue, port.RunScan, request.IdempotencyKey, err)
+	if !found {
+		return port.Run{}, err
+	}
+	return reuseScanSubmission(s.registry, request, winner)
 }
 func (s *ScanService) Cancel(ctx context.Context, id string) error {
 	return s.queue.RequestCancel(ctx, id)

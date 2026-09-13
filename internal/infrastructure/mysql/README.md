@@ -46,6 +46,8 @@ go test -tags=integration ./internal/infrastructure/mysql/... -count=1
 
 `JobQueue.FindByIdempotency` 提供精确 kind/key 只读查询，使应用在最新行情变化后仍可返回原任务；Enqueue 的事务唯一约束继续负责并发仲裁。`MarketDataRepository.MarketChanges` 在 DirtyInstruments 之外增加一次有界 EXISTS 查询，对 `(after, through]` 的因子或公司行动修订作全快照失效标记；纯 Bar 修订保留 dirty 增量路径。所有过滤绑定确切 COMPLETE 版本，不做逐证券因子比较。
 
+Enqueue 的同幂等键异 hash 冲突以 `port.ErrIdempotencyConflict` 明确返回，并兼容 ErrInvalidPortValue；应用才能把并发系统输入解析漂移与真正的用户请求冲突区分开。碰撞事务回滚后由应用读取胜出者并验证完整保存输入，数据库错误或身份校验错误不伪装为幂等碰撞。
+
 回测证券优先核对请求和每条非空 Order/Fill Instrument；请求只解析稳定的 instrument、parameters、config 字段，不导入应用 DTO。无请求证券时可由领域结果补全；没有任何合法证券或证券不一致时拒绝写入。订单/成交标识保持 LONGBLOB 字节完整。
 
 Outbox 的 Payload 是端口定义的不透明字节，用 JSON base64 字符串无损保存；消费者需先 JSON 解码为字节，再按事件协议解码。独立 Publish 按 EventID 幂等，重复 ID 的内容不同会拒绝。成功/部分成功/Fail 发布生成稳定的 compute.completed 事件 ID。当前没有外部投递器，PublishedAt 保持空值供后续消费。

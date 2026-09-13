@@ -67,7 +67,7 @@ func (q *JobQueue) Enqueue(ctx context.Context, run port.Run) (port.Run, error) 
 			return err
 		}
 		if stored.InputHash != run.InputHash {
-			return invalid("idempotency key belongs to different inputs")
+			return port.ErrIdempotencyConflict
 		}
 		return nil
 	})
