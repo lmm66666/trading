@@ -73,12 +73,15 @@ func executeWithDatabase(ctx context.Context, path string, opts kernel.Migration
 		return kernel.MigrationReport{}, errors.New("无法读取迁移配置")
 	}
 	defer file.Close()
-	var cfg config.Config
+	var wrapper struct {
+		Config config.Config `yaml:"Config"`
+	}
 	decoder := yaml.NewDecoder(io.LimitReader(file, 1<<20))
 	decoder.KnownFields(true)
-	if err := decoder.Decode(&cfg); err != nil {
+	if err := decoder.Decode(&wrapper); err != nil {
 		return kernel.MigrationReport{}, errors.New("迁移配置格式无效")
 	}
+	cfg := wrapper.Config
 	if cfg.DB.Host == "" || cfg.DB.Port < 1 || cfg.DB.Port > 65535 || cfg.DB.User == "" || cfg.DB.DBName == "" {
 		return kernel.MigrationReport{}, errors.New("迁移数据库配置不完整")
 	}

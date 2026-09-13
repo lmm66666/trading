@@ -85,12 +85,32 @@ func TestCommandMissingConfigDoesNotEchoPath(t *testing.T) {
 	require.NotContains(t, err.Error(), "password")
 }
 
+func TestExecuteReadsApplicationConfigShape(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	body := "Config:\n  DB:\n    Host: db\n    Port: 3306\n    User: account\n    Password: private\n    DBName: trading\n"
+	require.NoError(t, os.WriteFile(path, []byte(body), 0600))
+	connected := false
+
+	_, err := executeWithDatabase(context.Background(), path, kernel.MigrationOptions{DryRun: true, BatchSize: 1}, func(cfg config.DB) (*gorm.DB, error) {
+		connected = true
+		require.Equal(t, "db", cfg.Host)
+		require.Equal(t, 3306, cfg.Port)
+		require.Equal(t, "account", cfg.User)
+		require.Equal(t, "private", cfg.Password)
+		require.Equal(t, "trading", cfg.DBName)
+		return nil, errors.New("stop after config assertion")
+	})
+
+	require.Error(t, err)
+	require.True(t, connected)
+}
+
 func TestCommandConfigurationAndConnectionFailuresAreRedacted(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	port := listener.Addr().(*net.TCPAddr).Port
 	require.NoError(t, listener.Close())
-	for _, body := range []string{"DB: [password", "DB: {User: secret}", fmt.Sprintf("DB:\n  Host: 127.0.0.1\n  Port: %d\n  User: secret\n  Password: password\n  DBName: test\n", port)} {
+	for _, body := range []string{"Config: [password", "Config: {DB: [secret}", fmt.Sprintf("Config:\n  DB:\n    Host: 127.0.0.1\n    Port: %d\n    User: secret\n    Password: password\n    DBName: test\n", port)} {
 		path := filepath.Join(t.TempDir(), "config.yaml")
 		require.NoError(t, os.WriteFile(path, []byte(body), 0600))
 		_, err := execute(context.Background(), path, kernel.MigrationOptions{DryRun: true, BatchSize: 1})
@@ -117,7 +137,7 @@ func TestDryRunCompositionNeverMigratesSchemaAndClosesConnection(t *testing.T) {
 	db, err := gorm.Open(driver.New(driver.Config{Conn: conn, SkipInitializeWithVersion: true}), &gorm.Config{DisableAutomaticPing: true, Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	require.NoError(t, os.WriteFile(path, []byte("DB: {Host: db, Port: 3306, User: account, Password: private, DBName: trading}"), 0600))
+	require.NoError(t, os.WriteFile(path, []byte("Config: {DB: {Host: db, Port: 3306, User: account, Password: private, DBName: trading}}"), 0600))
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT .*t_stock_info").WillReturnError(errors.New("private SQL details"))
 	mock.ExpectRollback()
