@@ -29,7 +29,7 @@ var migrationModels = []struct {
 	{&BacktestOrderModel{}, []string{"uq_order_sequence"}},
 	{&BacktestTradeModel{}, []string{"uq_trade_sequence"}},
 	{&BacktestEquityModel{}, []string{"uq_equity_sequence"}},
-	{&SignalSnapshotModel{}, []string{"uq_snapshot_id", "uq_snapshot_run", "uq_snapshot_business", "idx_snapshot_latest"}},
+	{&SignalSnapshotModel{}, []string{"uq_snapshot_id", "uq_snapshot_run", "idx_snapshot_latest"}},
 	{&SignalSnapshotRowModel{}, []string{"uq_snapshot_instrument", "uq_snapshot_sequence"}},
 	{&OutboxEventModel{}, []string{"uq_outbox_event", "idx_outbox_pending"}},
 }
@@ -49,6 +49,11 @@ func Migrate(db *gorm.DB) error {
 				return fmt.Errorf("migrate %T: missing index %s", entry.model, name)
 			}
 		}
+		if _, ok := entry.model.(*SignalSnapshotModel); ok {
+			if err := upgradeSnapshotBusinessIndex(db); err != nil {
+				return fmt.Errorf("upgrade snapshot index: %w", err)
+			}
+		}
 	}
 	now := time.Now().UTC()
 	anchor := DataVersionModel{BaseModel: BaseModel{CreatedAt: now, UpdatedAt: now}, Version: 0, Source: versionLockSource, Status: versionLock, Quality: "INTERNAL", Digest: ""}
@@ -63,4 +68,19 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("version zero is not a valid kernel lock")
 	}
 	return nil
+}
+
+// Repeated scans of the same business inputs publish independent snapshots.
+// RunID and SnapshotID remain unique; idx_snapshot_latest already indexes the
+// query's strategy/parameters/status prefix. AutoMigrate never drops obsolete
+// indexes, so explicitly remove only the obsolete business uniqueness rule.
+func upgradeSnapshotBusinessIndex(db *gorm.DB) error {
+	var count int64
+	if err := db.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?", "t_signal_snapshots", "uq_snapshot_business").Scan(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return nil
+	}
+	return db.Exec("ALTER TABLE `t_signal_snapshots` DROP INDEX `uq_snapshot_business`").Error
 }

@@ -42,6 +42,10 @@ go test -tags=integration ./internal/infrastructure/mysql/... -count=1
 
 快照分页必须绑定精确 SnapshotID：只有 `AfterSequence=0` 且 `SnapshotKey.SnapshotID` 为空时可选最新快照；返回的 `SignalSnapshot.ID` 及 `Key.SnapshotID` 是后续页绑定值。`AfterSequence>0` 缺失 ID 直接返回 ErrInvalidPortValue，不会重新选择最新快照。提供 ID 后仍同时匹配策略 ID、策略版本、参数 hash，以及非零 AsOf；未知、键不匹配或未发布的快照返回 ErrSnapshotNotReady。ID 的大小写和尾空格均精确区分。同 AsOf 后续发布更高 DataVersion 也不会改变已经开始的分页。未来 API 应接受 `snapshot_id`（SnapshotKey JSON 字段）并与 `after_sequence` 一起传入；不能仅以 AsOf/DataVersion 代替快照身份。
 
+同业务条件、DataVersion 和 AsOf 可以由不同 Run 重扫并发布不同 Snapshot；`uq_snapshot_id` 和 `uq_snapshot_run` 仍保证快照身份与每 Run 一个结果。Migrate 在确认保留索引已建立后，显式查询并删除旧 `uq_snapshot_business` 唯一索引；此升级不依赖 AutoMigrate 删除旧索引，不删除数据，重复迁移安全。查询复用现有 `idx_snapshot_latest` 的策略/参数/状态前缀，并按 AsOf、DataVersion、自增 ID 选择最新发布。旧 SnapshotID 的分页始终不变。
+
+`JobQueue.FindByIdempotency` 提供精确 kind/key 只读查询，使应用在最新行情变化后仍可返回原任务；Enqueue 的事务唯一约束继续负责并发仲裁。`MarketDataRepository.MarketChanges` 在 DirtyInstruments 之外增加一次有界 EXISTS 查询，对 `(after, through]` 的因子或公司行动修订作全快照失效标记；纯 Bar 修订保留 dirty 增量路径。所有过滤绑定确切 COMPLETE 版本，不做逐证券因子比较。
+
 回测证券优先核对请求和每条非空 Order/Fill Instrument；请求只解析稳定的 instrument、parameters、config 字段，不导入应用 DTO。无请求证券时可由领域结果补全；没有任何合法证券或证券不一致时拒绝写入。订单/成交标识保持 LONGBLOB 字节完整。
 
 Outbox 的 Payload 是端口定义的不透明字节，用 JSON base64 字符串无损保存；消费者需先 JSON 解码为字节，再按事件协议解码。独立 Publish 按 EventID 幂等，重复 ID 的内容不同会拒绝。成功/部分成功/Fail 发布生成稳定的 compute.completed 事件 ID。当前没有外部投递器，PublishedAt 保持空值供后续消费。
