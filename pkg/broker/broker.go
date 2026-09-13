@@ -2,9 +2,47 @@ package broker
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"time"
 
 	"trading/model"
 )
+
+var (
+	ErrUpstream          = errors.New("broker: upstream failure")
+	ErrUpstreamTimeout   = errors.New("broker: upstream timeout")
+	ErrRequestCanceled   = errors.New("broker: request canceled")
+	ErrMalformedResponse = errors.New("broker: malformed upstream response")
+	ErrIncompleteData    = errors.New("broker: incomplete market data")
+)
+
+// UpstreamError carries safe transport metadata. It deliberately excludes the
+// request URL and response body so callers can surface it without leaking data.
+type UpstreamError struct {
+	Kind          error
+	Cause         error
+	StatusCode    int
+	RetryAfter    time.Duration
+	HasRetryAfter bool
+}
+
+func (e *UpstreamError) Error() string {
+	if e.StatusCode != 0 {
+		return fmt.Sprintf("%v: status=%d", e.Kind, e.StatusCode)
+	}
+	if e.Cause != nil {
+		return fmt.Sprintf("%v: %v", e.Kind, e.Cause)
+	}
+	return e.Kind.Error()
+}
+
+func (e *UpstreamError) Unwrap() error {
+	if e.Cause == nil {
+		return e.Kind
+	}
+	return errors.Join(e.Kind, e.Cause)
+}
 
 // Broker 定义行情数据提供者的统一接口
 type Broker interface {
