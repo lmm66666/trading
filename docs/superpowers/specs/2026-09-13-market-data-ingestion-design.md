@@ -1,18 +1,24 @@
-# 商品期货日线接入设计
+# 新浪股票与商品期货日线接入设计
 
 ## 1. 背景
 
-项目已经完成策略与回测内核切换。股票行情不再经过旧 `business.StockDataService`、旧调度器和旧 K 线表，而是通过东方财富 `MarketSource` 进入统一行情应用服务，发布到版本化行情表。新浪目前保留给财报、汇率和宏观数据使用。
+项目已经完成策略与回测内核切换。股票行情不再经过旧 `business.StockDataService`、旧调度器和旧 K 线表，现有 `main` 使用东方财富 `MarketSource` 进入统一行情应用服务并发布到版本化行情表。
 
-本次只增加国内商品期货日线，首批覆盖黄金、白银、原油、燃料油、焦炭、焦煤和动力煤。期货数据来自 AKShare 封装的交易所公开数据；Go 服务继续负责领域校验、版本发布、查询、主力合约选择和连续序列计算。
+东方财富 `push2his.eastmoney.com` 当前会在低频单请求下直接断开连接。相同环境访问 `push2.eastmoney.com` 和 `datacenter-web.eastmoney.com` 正常，补充 `User-Agent`、`Referer` 和常见 `ut` 参数也不能恢复。该现象与 AKShare 社区近期记录的 `RemoteDisconnected` 一致，更接近特定域名或出口 IP 的连接级拒绝，而不是有明确窗口和 `429 Retry-After` 的普通频率限制。现有实现又会以 8 个 worker 并发，每只股票至少放大成 5 个请求，因此即使连接恢复，也容易再次触发上游防护。
+
+本次把股票行情主源切回新浪。新浪已实测需要全局每 5 秒最多 1 次请求；该节拍作为硬配置，不再用并发 semaphore 代替频率限制。股票只从上游获取日线和前复权因子，周线在 Go 内由日线聚合。东方财富不作为自动 fallback，避免失败后放大流量和掩盖数据来源。
+
+同时增加国内商品期货日线，首批覆盖黄金、白银、原油、燃料油、焦炭、焦煤和动力煤。期货数据来自 AKShare 封装的交易所公开数据；Go 服务继续负责领域校验、版本发布、查询、主力合约选择和连续序列计算。
 
 这是个人项目，允许停机更新。设计优先复用当前内核和数据库，不建设双写、灰度切换、影子表、跨进程采集集群或长期兼容层。
 
 ## 2. 当前架构带来的调整
 
-此前设计基于旧股票链路，已经不再适用：
+此前设计与当前 `main` 的差异按以下方式收敛：
 
-- 不再假设新浪承担股票日线；当前股票行情源是 `pkg/broker.EastmoneyMarketSource`。
+- 保留当前版本化行情内核，但把生产装配从 `EastmoneyMarketSource` 改为新的 `SinaMarketSource`。
+- 股票上游只抓日线和前复权因子；周线由应用层按实际交易日聚合，不再额外请求新浪周线。
+- 股票请求使用真正的全局时间节拍器，固定最小间隔 5 秒、burst 为 1；worker 数只控制本地处理，不改变外部请求速率。
 - 不再新建平行的 `internal/futuresdata/application/domain/infrastructure` 栈。
 - 期货领域值放入 `internal/market`，用例放入 `internal/application`，接口放入 `internal/port`，MySQL 实现放入现有 `internal/infrastructure/mysql`。
 - AKShare Go 客户端属于外部数据源 adapter，放入 `pkg/broker`；Python 服务放入 `sidecar/akshare-futures`。
@@ -21,16 +27,18 @@
 
 ## 3. 目标
 
-1. 接入 SHFE、INE、DCE、CZCE 的指定商品期货日线。
-2. 保存真实合约 OHLCV、结算价、前结算价、成交量、持仓量和成交额。
-3. 生成无未来数据的主力合约映射、原始主力序列和比例连续序列。
-4. 让现有指标、扫描和行情查询能够读取期货日线，同时不改变股票行情行为。
-5. 每条期货数据可追溯到交易所、AKShare 版本、原始代码和行情版本。
-6. 保持总体测试覆盖率大于 80%，期货领域计算覆盖率大于 90%。
+1. 用新浪日线和前复权因子替代不稳定的东方财富股票历史行情端点。
+2. 接入 SHFE、INE、DCE、CZCE 的指定商品期货日线。
+3. 保存真实合约 OHLCV、结算价、前结算价、成交量、持仓量和成交额。
+4. 生成无未来数据的主力合约映射、原始主力序列和比例连续序列。
+5. 让现有指标、扫描和行情查询读取股票与期货日线，不恢复旧行情表。
+6. 每条数据可追溯到来源、原始代码和行情版本。
+7. 保持总体测试覆盖率大于 80%，行情领域计算覆盖率大于 90%。
 
 ## 4. 非目标
 
-- 不修改当前东方财富股票行情链路，也不新增 Tushare 或新浪股票行情 adapter。
+- 不使用 Tushare，也不把东方财富作为股票行情自动 fallback。
+- 不把新浪的分钟线、实时行情或单独周线接口接入版本化行情。
 - 不采集分钟线、Tick、盘口或实时行情。
 - 不接入境外期货、国际现货或场外报价。
 - 不实现期货下单、保证金、交割、夜盘逐笔撮合和期货回测执行模型。
@@ -41,9 +49,10 @@
 ## 5. 目标架构
 
 ```text
-股票行情（保持现状）
-东方财富 -> EastmoneyMarketSource -> MarketIngestionService
-        -> MarketDataRepository -> 版本化股票行情
+股票行情（调整数据源，复用内核）
+新浪日线 + qfq 因子 -> SinaMarketSource -> MarketIngestionService
+                      -> 本地周线聚合 -> MarketDataRepository
+                      -> 版本化股票行情
 
 期货行情（新增）
 交易所公开数据 -> AKShare -> Python sidecar
@@ -96,6 +105,7 @@ internal/infrastructure/mysql/
   futures_repository.go
 
 pkg/broker/
+  sina_market.go                  新浪日线与 qfq 因子 adapter
   akshare_futures.go               Go sidecar HTTP adapter
 
 sidecar/akshare-futures/
@@ -112,15 +122,63 @@ cmd/futures-sync/
 
 ## 7. 股票行情边界
 
-股票行情保持当前实现：
+### 7.1 新浪协议
 
-- `EastmoneyMarketSource` 按证券和日期范围获取 Raw/QFQ 日线、周线及公司行动。
-- `MarketIngestionService` 校验复权因子、日周一致性和增量窗口。
-- `MarketDataRepository` 原子发布 `PENDING -> COMPLETE` 版本。
-- 查询、扫描和回测固定读取一个大于 0 的 `COMPLETE` 数据版本。
-- 新浪不参与股票行情发布，只继续服务现有财报、汇率和宏观用途。
+股票原始日线使用：
 
-期货改造不得恢复旧 `StockDataService`、旧股票调度器或旧 K 线表，也不得改变东方财富 adapter 的协议和限流。
+```text
+https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/
+CN_MarketData.getKLineData?symbol=sh600000&scale=240&ma=no&datalen=N
+```
+
+前复权因子使用：
+
+```text
+https://finance.sina.com.cn/realstock/company/sh600000/qfq.js
+```
+
+原始日线响应只接受 `day/open/high/low/close/volume`。`datalen` 首次同步请求 10000，增量同步按回看窗口计算并设置下限；实测 `sh600000` 能返回 6388 根日线。响应为空、日期倒序重复、非法 OHLC、零价格或超出请求窗口均按坏数据处理，不发布空版本。
+
+`qfq.js` 的因子 `f` 表示前复权价格为 `raw / f`。Go 使用十进制字符串经 `big.Rat` 转换为约分后的 `Numerator/Denominator`，禁止经过 `float64` 后再生成因子。若最早日线早于最早因子时点，在最早日线日期补一条取最早已知值的因子，保证整个数据集有定义。
+
+### 7.2 请求节拍
+
+- 所有新浪股票行情请求共享一个 `rate.Limiter`：`rate.Every(5*time.Second)`、burst 为 1。
+- 日线和 qfq 因子都消耗一个 token；重试也必须重新取 token，不能在 adapter 内绕过全局节拍。
+- 每只股票正常同步 2 次外部请求。5000 只股票的理论下限约 13.9 小时，这是选择免费新浪源后接受的运行约束。
+- worker 可以并发加载数据库、校验和发布，但不能提高新浪出口速率。
+- 遇到 `429` 或明确 `Retry-After` 时取较大等待值；连接重置使用有界指数退避，但每次重试仍遵守 5 秒节拍。
+
+### 7.3 应用与发布
+
+活跃股票源接口收敛为“日线 + 调整因子”，不再要求上游提供周线和公司行动：
+
+```go
+type EquityDailySource interface {
+    FetchDailyBars(context.Context, market.InstrumentID, time.Time, time.Time) ([]market.Bar, error)
+    FetchAdjustmentFactors(context.Context, market.InstrumentID) ([]market.AdjustmentFactor, error)
+}
+```
+
+`MarketIngestionService` 合并已存和新增日线后，按 ISO 周和实际最后交易日生成周线：首日 open、最高 high、最低 low、末日 close、volume 求和，周 Bar 的时间取该周最后一根日线。未结束的最新周可以发布并在下一次同步原位修订；任何周线必须能映射到同版本日线收盘。
+
+每次刷新把 Raw 日线、本地周线和完整 qfq 因子放入同一个 `MarketWriteBatch`，继续由 `MarketDataRepository` 原子发布 `PENDING -> COMPLETE` 版本。新浪不提供本设计所需的结构化公司行动，因此新版本不新增 `CorporateAction`；现存历史行动保留，但策略和价格查询只依赖调整因子。
+
+查询、扫描和回测仍固定读取一个大于 0 的 `COMPLETE` 数据版本。东方财富 adapter 暂时保留用于已有测试和人工诊断，但不在 `main.go` 装配，也不自动回退。
+
+### 7.4 东方财富诊断结论
+
+本次低频探针结果：
+
+| 探针 | 结果 |
+|---|---|
+| `push2his`，现有参数 | 首次请求即 empty reply / HTTP 000 |
+| 增加 `User-Agent`、`Referer` | 仍为 empty reply |
+| 增加 AKShare 常用 `ut` | 仍为 empty reply |
+| 绕过本地代理直连 | 仍为 empty reply |
+| 同环境 `push2`、`datacenter-web` | HTTP 200 |
+
+因此不能把当前故障归结为“低于某个每秒请求数即可恢复”。更合理的判断是：`push2his` 存在按域名、出口 IP 或信誉状态执行的连接级拒绝，历史高并发可能是触发因素，但被拒后单次低频请求也不会立即恢复。当前代码的 8 worker 并发、每股最少 5 请求会显著放大风险；仅增加 header 或普通 sleep 不能形成可靠主源。
 
 ## 8. 首批期货范围
 
@@ -350,7 +408,15 @@ Build(all)[:k] == Build(all[:k])
 
 ## 14. 采集、调度与查询
 
-### 14.1 日常同步
+### 14.1 股票日常同步
+
+- 延续全市场逐证券同步，但新浪请求全局串行，固定 5 秒最小间隔。
+- 首次同步每只股票请求最多 10000 根原始日线和完整 qfq 因子；日常同步重抓最近 30 根日线并重新获取因子。
+- 同一轮只允许一个股票全市场刷新；服务重启后允许从头重跑，已发布股票不回滚。
+- 单只股票失败记录稳定错误码并继续其他股票；失败股票保留旧 `COMPLETE` 版本。
+- 股票同步不和期货 sidecar 共用 limiter，两个上游互不阻塞。
+
+### 14.2 期货日常同步
 
 - 默认每天 18:30 执行一次。
 - 单进程 scheduler 按配置交易所顺序调用 sidecar，并使用独立于股票行情的有界并发。
@@ -359,7 +425,7 @@ Build(all)[:k] == Build(all[:k])
 - 单个分区失败记录在本轮摘要，下一轮或人工命令重试，不引入持久化采集任务。
 - 夜盘归属完全采用交易所数据中的 `trade_date`，不按请求时间重新解释。
 
-### 14.2 历史回补
+### 14.3 期货历史回补
 
 ```text
 futures-sync --from 2018-01-01 --to 2026-09-11
@@ -367,7 +433,7 @@ futures-sync --from 2018-01-01 --to 2026-09-11
 
 命令按日期正序执行，已存在且 digest 相同的合约跳过。失败时返回非零状态并打印最后成功日期；再次运行从指定日期安全重做即可，不额外建设 checkpoint 表。
 
-### 14.3 查询
+### 14.4 查询
 
 新增只读接口：
 
@@ -380,6 +446,8 @@ futures-sync --from 2018-01-01 --to 2026-09-11
 
 ## 15. 错误与日志
 
+- 新浪 adapter 把 HTTP 状态、连接重置、超时、空响应和格式漂移映射为稳定错误，不记录完整 URL 或上游正文。
+- 股票调度摘要包含总数、成功数、失败数、预计剩余时间和最近一次成功请求时间；不为每次 limiter 等待打印日志。
 - Go adapter 把 sidecar 错误映射为稳定的参数错误、临时上游错误、超时和坏数据错误。
 - 领域校验错误不可重试；网络超时和明确临时错误可重试。
 - 失败发布保持旧版本可读，不写半条 Bar，也不把缺失价格写成零。
@@ -395,8 +463,9 @@ futures-sync --from 2018-01-01 --to 2026-09-11
 2. 停止服务，备份当前数据库。
 3. 执行 `t_instruments` 显式 ALTER 和新表迁移。
 4. 校验股票 Instrument 数量、唯一键、字段回填和现有版本读取。
-5. 启动新版本，先运行少量日期的 `futures-sync`。
-6. 核对真实合约、主力映射和连续序列后启用日常调度。
+5. 用 3 只含历史除权事件的股票执行新浪 smoke sync，核对 Raw、qfq 和本地周线。
+6. 启动新版本，先运行少量日期的 `futures-sync`。
+7. 核对真实合约、主力映射和连续序列后启用日常调度。
 
 不实施双写、影子表、在线回填和旧新 schema 长期兼容。失败时停止服务，恢复数据库备份并运行旧版本。
 
@@ -404,6 +473,10 @@ futures-sync --from 2018-01-01 --to 2026-09-11
 
 ### 17.1 Go
 
+- 新浪 symbol 映射、日线 JSON、qfq.js、十进制有理数和异常响应解析。
+- 5 秒全局节拍、burst=1、重试重新取 token、取消等待和多 worker 不突破速率。
+- 从日线生成周线，覆盖节假日短周、未结束周修订、重复日期和日周收盘一致性。
+- 新浪切换后 Raw/qfq 查询与既有版本固定语义。
 - Instrument 股票/期货分流校验、郑商所年份解析和指数代码过滤。
 - sidecar 响应缺字段、坏数值、错误日期、重复合约和意外空集。
 - 期货专有字段与通用 Bar 同版本事务发布。
@@ -429,31 +502,38 @@ futures-sync --from 2018-01-01 --to 2026-09-11
 
 ## 18. 实施顺序
 
-1. 扩展 Instrument、数据库字段和迁移校验。
-2. 实现期货领域值、source/writer port 和单元测试。
-3. 实现固定版本 AKShare sidecar 及 fixture 测试。
-4. 实现 Go adapter、真实合约发布和 MySQL 集成测试。
-5. 实现主力映射与连续序列。
-6. 实现 scheduler、CLI 和只读 API。
-7. 停机迁移并完成小范围数据验证。
+1. 实现新浪日线/qfq adapter、全局 5 秒节拍和 parser 测试。
+2. 把股票应用服务改为日线输入、本地周线聚合，并切换 `main.go` 装配。
+3. 扩展 Instrument、数据库字段和迁移校验。
+4. 实现期货领域值、source/writer port 和单元测试。
+5. 实现固定版本 AKShare sidecar 及 fixture 测试。
+6. 实现 Go adapter、真实合约发布和 MySQL 集成测试。
+7. 实现主力映射与连续序列。
+8. 实现 scheduler、CLI 和只读 API。
+9. 停机迁移并完成小范围数据验证。
 
-实施开始前必须以合并后的 `main` 为基线重新检查文件和接口；本设计不授权在当前 worktree 或当前功能分支继续写代码。
+实现以已合并的 `main` 为基线，在独立 `codex/` 开发分支完成；不得把用户现有的 `.claude/skills/stock` 删除项混入本功能提交。
 
 ## 19. 验收标准
 
-1. 股票行情仍由当前东方财富版本化链路提供，股票查询、扫描和回测行为不变。
-2. 首批 8 个商品品种能够保存真实合约日线及期货专有字段。
-3. sidecar 对意外空集和坏上游内容返回错误，不发布空成功数据。
-4. 每根期货 Bar 可追溯至交易所、原始代码、AKShare 版本和数据版本。
-5. 主力映射从决策后的下一交易日生效，不读取未来 OI 或价格。
-6. `RAW_MAIN` 和 `FORWARD_RATIO` 可查询；连续序列通过前缀一致性测试。
-7. 任一数据库事务失败不产生半发布版本，旧 `COMPLETE` 版本仍可读取。
-8. 停机迁移后现有股票 Instrument 和版本化行情校验通过。
-9. 项目总体覆盖率大于 80%，期货核心计算覆盖率大于 90%。
+1. 生产股票行情不再请求 `push2his`，新浪任意两个股票行情请求的开始时间至少间隔 5 秒。
+2. 股票上游只抓日线和 qfq 因子；周线由同版本日线确定性生成。
+3. 含除权历史的样例股票 Raw 与 qfq 价格符合新浪因子，既有前复权策略无需改版本。
+4. 首批 8 个商品品种能够保存真实合约日线及期货专有字段。
+5. sidecar 对意外空集和坏上游内容返回错误，不发布空成功数据。
+6. 每根期货 Bar 可追溯至交易所、原始代码、AKShare 版本和数据版本。
+7. 主力映射从决策后的下一交易日生效，不读取未来 OI 或价格。
+8. `RAW_MAIN` 和 `FORWARD_RATIO` 可查询；连续序列通过前缀一致性测试。
+9. 任一数据库事务失败不产生半发布版本，旧 `COMPLETE` 版本仍可读取。
+10. 停机迁移后现有股票 Instrument 和版本化行情校验通过。
+11. 项目总体覆盖率大于 80%，行情核心计算覆盖率大于 90%。
 
 ## 20. 外部依据
 
 - AKShare 期货日线接口：<https://akshare.akfamily.xyz/data/futures/futures.html>
 - 固定 AKShare 版本：<https://pypi.org/project/akshare/>
+- AKShare 新浪 A 股实现与 qfq 因子协议：<https://github.com/akfamily/akshare/blob/main/akshare/stock/stock_zh_a_sina.py>
+- 东方财富连接断开案例：<https://github.com/akfamily/akshare/issues/6592>
+- 东方财富按域名替换恢复案例：<https://github.com/akfamily/akshare/issues/7230>
 
 公开接口可能变化。实现必须通过固定 fixture 和契约测试发现变化，不能把“请求成功”直接等同于“数据正确”。
