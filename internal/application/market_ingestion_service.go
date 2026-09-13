@@ -127,6 +127,9 @@ func (s *MarketIngestionService) Refresh(ctx context.Context, id market.Instrume
 	if err != nil {
 		return result, err
 	}
+	if err := validateFinalMarketBars(stored, batch.Bars); err != nil {
+		return result, err
+	}
 	version, err = s.writer.Publish(ctx, batch)
 	if err != nil {
 		return result, err
@@ -139,6 +142,54 @@ func (s *MarketIngestionService) Refresh(ctx context.Context, id market.Instrume
 	result.DailyBars = len(batch.Bars[market.Day])
 	result.WeeklyBars = len(batch.Bars[market.Week])
 	return result, nil
+}
+
+// 按 writer 的增量 upsert 语义验证最终状态，包括本次窗口外保留的旧 Bar。
+// 已观测周收盘证明对应日线应存在；后续已观测周收盘证明更早周组已经结束。
+func validateFinalMarketBars(stored, updates map[market.Timeframe][]market.Bar) error {
+	final := map[market.Timeframe]map[time.Time]market.Bar{
+		market.Day: {}, market.Week: {},
+	}
+	for _, input := range []map[market.Timeframe][]market.Bar{stored, updates} {
+		for _, tf := range []market.Timeframe{market.Day, market.Week} {
+			for _, bar := range input[tf] {
+				final[tf][bar.CloseTime] = bar
+			}
+		}
+	}
+	var latestWeeklyClose time.Time
+	for at, weekly := range final[market.Week] {
+		daily, ok := final[market.Day][at]
+		if !ok || daily.Close != weekly.Close {
+			return ErrIncompleteMarketData
+		}
+		if at.After(latestWeeklyClose) {
+			latestWeeklyClose = at
+		}
+	}
+	dailyWeekCloses := map[[2]int]time.Time{}
+	for at := range final[market.Day] {
+		year, week := at.ISOWeek()
+		key := [2]int{year, week}
+		if at.After(dailyWeekCloses[key]) {
+			dailyWeekCloses[key] = at
+		}
+	}
+	knownDailyWeeks := map[[2]int]bool{}
+	for _, bar := range stored[market.Day] {
+		year, week := bar.CloseTime.ISOWeek()
+		knownDailyWeeks[[2]int{year, week}] = true
+	}
+	for key, at := range dailyWeekCloses {
+		// 已存日线发现的缺口必须补齐；仅新增且无已确认周收盘的末尾周组保留未知状态。
+		if !knownDailyWeeks[key] && at.After(latestWeeklyClose) {
+			continue
+		}
+		if _, ok := final[market.Week][at]; !ok {
+			return ErrIncompleteMarketData
+		}
+	}
+	return nil
 }
 
 func refreshStarts(history time.Time, stored map[market.Timeframe][]market.Bar) map[market.Timeframe]time.Time {
