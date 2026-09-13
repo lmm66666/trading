@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/goccy/go-yaml"
+	"golang.org/x/time/rate"
 	"gorm.io/gorm"
 
 	"trading/api"
@@ -28,7 +29,6 @@ import (
 	"trading/internal/strategy"
 	"trading/internal/strategy/builtin"
 	"trading/pkg/broker"
-	"trading/pkg/indicator"
 )
 
 const marketRefreshInterval = 24 * time.Hour
@@ -39,6 +39,10 @@ type workerRuntimeConfig struct {
 	PollInterval    time.Duration
 	SyncWaitTimeout time.Duration
 	ScanBatchSize   int
+}
+
+type marketRuntimeConfig struct {
+	StockRequestInterval time.Duration
 }
 
 type kernelRuntime struct {
@@ -85,7 +89,7 @@ func run(ctx context.Context, configPath string) error {
 	defer sqlDB.Close()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	kernel, err := newKernel(ctx, d.DB(), cfg.Worker)
+	kernel, err := newKernel(ctx, d.DB(), cfg.Worker, cfg.Market)
 	if err != nil {
 		return err
 	}
@@ -117,8 +121,12 @@ func run(ctx context.Context, configPath string) error {
 	return err
 }
 
-func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerConfig) (kernelRuntime, error) {
+func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerConfig, marketConfig config.MarketConfig) (kernelRuntime, error) {
 	settings, err := resolveWorkerConfig(workerConfig)
+	if err != nil {
+		return kernelRuntime{}, err
+	}
+	marketSettings, err := resolveMarketConfig(marketConfig)
 	if err != nil {
 		return kernelRuntime{}, err
 	}
@@ -145,11 +153,12 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 		return kernelRuntime{}, err
 	}
 	historyStart := time.Now().UTC().AddDate(-(port.MaxBacktestRangeYears - 1), 0, 0).Truncate(time.Microsecond)
+	sinaLimiter := rate.NewLimiter(rate.Every(marketSettings.StockRequestInterval), 1)
 	ingestion, err := application.NewMarketIngestionService(
-		broker.NewEastmoneyMarketSource(),
+		broker.NewSinaMarketSource(sinaLimiter),
 		marketData,
 		marketData,
-		application.MarketIngestionConfig{Source: "eastmoney", HistoryStart: historyStart, Limiter: indicator.NewLimiter(settings.ScanBatchSize)},
+		application.MarketIngestionConfig{Source: "sina", HistoryStart: historyStart},
 	)
 	if err != nil {
 		return kernelRuntime{}, err
@@ -174,6 +183,18 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 		Clock:           time.Now,
 	}
 	return kernelRuntime{services: services, workers: workers, marketScheduler: marketScheduler}, nil
+}
+
+func resolveMarketConfig(input config.MarketConfig) (marketRuntimeConfig, error) {
+	if input.StockRequestIntervalSeconds == 0 {
+		input.StockRequestIntervalSeconds = 5
+	}
+	if input.StockRequestIntervalSeconds < 5 || input.StockRequestIntervalSeconds > 86_400 {
+		return marketRuntimeConfig{}, errors.New("market configuration is out of bounds")
+	}
+	return marketRuntimeConfig{
+		StockRequestInterval: time.Duration(input.StockRequestIntervalSeconds) * time.Second,
+	}, nil
 }
 
 func resolveWorkerConfig(input config.WorkerConfig) (workerRuntimeConfig, error) {

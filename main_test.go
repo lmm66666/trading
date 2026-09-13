@@ -24,7 +24,7 @@ func TestKernelCompositionKeepsDurableIdempotencyReader(t *testing.T) {
 	defer sqlDB.Close()
 	db, err := gorm.Open(mysql.New(mysql.Config{Conn: sqlDB, SkipInitializeWithVersion: true}), &gorm.Config{})
 	require.NoError(t, err)
-	kernel, err := newKernel(context.Background(), db, config.WorkerConfig{})
+	kernel, err := newKernel(context.Background(), db, config.WorkerConfig{}, config.MarketConfig{})
 	require.NoError(t, err)
 	require.NotNil(t, kernel.workers)
 	require.NotNil(t, kernel.marketScheduler)
@@ -43,7 +43,7 @@ func TestKernelCompositionKeepsDurableIdempotencyReader(t *testing.T) {
 func TestLoadConfigAndStartupValidation(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	require.NoError(t, os.WriteFile(path, []byte("Config:\n  DB:\n    Host: localhost\n  Worker:\n    Count: 6\n    LeaseSeconds: 45\n    PollIntervalMillis: 500\n    SyncWaitTimeoutSecs: 3\n    ScanBatchSize: 12\n"), 0600))
+	require.NoError(t, os.WriteFile(path, []byte("Config:\n  DB:\n    Host: localhost\n  Worker:\n    Count: 6\n    LeaseSeconds: 45\n    PollIntervalMillis: 500\n    SyncWaitTimeoutSecs: 3\n    ScanBatchSize: 12\n  Market:\n    StockRequestIntervalSeconds: 7\n"), 0600))
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
 	require.Equal(t, 6, cfg.Worker.Count)
@@ -51,10 +51,24 @@ func TestLoadConfigAndStartupValidation(t *testing.T) {
 	require.Equal(t, 500, cfg.Worker.PollIntervalMillis)
 	require.Equal(t, 3, cfg.Worker.SyncWaitTimeoutSecs)
 	require.Equal(t, 12, cfg.Worker.ScanBatchSize)
+	require.Equal(t, 7, cfg.Market.StockRequestIntervalSeconds)
 	require.NoError(t, os.WriteFile(path, []byte("["), 0600))
 	_, err = loadConfig(path)
 	require.Error(t, err)
 	require.Error(t, run(context.Background(), filepath.Join(dir, "missing")))
+}
+
+func TestResolveMarketConfigDefaultsAndRejectsUnsafeRate(t *testing.T) {
+	got, err := resolveMarketConfig(config.MarketConfig{})
+	require.NoError(t, err)
+	require.Equal(t, 5*time.Second, got.StockRequestInterval)
+
+	got, err = resolveMarketConfig(config.MarketConfig{StockRequestIntervalSeconds: 10})
+	require.NoError(t, err)
+	require.Equal(t, 10*time.Second, got.StockRequestInterval)
+
+	_, err = resolveMarketConfig(config.MarketConfig{StockRequestIntervalSeconds: 4})
+	require.Error(t, err)
 }
 
 func TestResolveWorkerConfigDefaultsAndRejectsOutOfBounds(t *testing.T) {

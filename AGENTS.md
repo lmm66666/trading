@@ -27,7 +27,7 @@ trading/
 │   ├── financialscreen/            # 财报筛选器
 │   ├── port/                       # 应用端口与 DTO
 │   └── infrastructure/mysql/       # 版本化行情、任务、结果和快照适配器
-├── pkg/broker/                     # 新浪财报/宏观与东方财富版本化行情适配器
+├── pkg/broker/                     # 新浪财报/宏观、股票日线及外部行情适配器
 ├── cmd/migrate-strategy-kernel/    # 旧行情 dry-run、迁移、检查点与重跑命令
 ├── scripts/verify.sh               # 覆盖率、Race、集成、性能和镜像门禁
 └── shell/                          # 旧批量运维脚本
@@ -46,7 +46,7 @@ go mod download
 go run . -config config.yaml
 ```
 
-服务默认监听 `:8080`。启动时只迁移财报、证券主数据和新策略内核表，不再创建或写入旧技术 K 线表。`Worker` 配置分别控制持久化任务 Worker 数、租约、轮询、兼容接口同步等待时间，以及扫描/行情刷新的有界并发数。
+服务默认监听 `:8080`。启动时只迁移财报、证券主数据和新策略内核表，不再创建或写入旧技术 K 线表。`Worker` 配置分别控制持久化任务 Worker 数、租约、轮询、兼容接口同步等待时间，以及扫描/行情刷新的有界并发数；`Market.StockRequestIntervalSeconds` 控制新浪股票行情的进程级共享限频，默认且不得低于 5 秒。
 
 ## 运行约束
 
@@ -100,6 +100,7 @@ docker run -d --name trading -p 8080:8080 \
 - `internal/application` 编排用例、事务边界外的流程和重试；`internal/port` 只定义领域真正需要替换或隔离的边界；`internal/infrastructure/mysql` 实现持久化；`pkg/broker` 实现外部数据源适配。
 - 新功能优先复用现有领域对象、port、版本化行情仓储和任务模型。禁止为同一业务另建平行的 service/repository/model 栈，也不为只有一个简单实现的内部函数预先抽象接口。
 - 外部数据必须先在 adapter 边界完成结构解析，再进入领域校验；领域层不得接收 GORM Model、外部 JSON DTO 或未校验的字符串枚举。
+- A 股生产行情以新浪原始日线和前复权因子为源，周线由日线在本地确定性聚合；所有股票请求必须共用同一限频器，配置间隔不得低于 5 秒，禁止用并发绕开数据源限制。
 - 文件和类型保持单一职责。仅在当前需求确实需要时增加抽象、缓存、消息系统、跨进程协调或兼容层，避免为假设中的扩展点提前设计。
 
 ### 日志
