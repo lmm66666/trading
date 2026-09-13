@@ -127,6 +127,10 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 		return kernelRuntime{}, err
 	}
 	marketData := mysqlinfra.NewMarketDataRepository(db)
+	instrumentQueries, err := application.NewInstrumentQueryService(marketData)
+	if err != nil {
+		return kernelRuntime{}, err
+	}
 	queue := mysqlinfra.NewJobQueue(db)
 	store := mysqlinfra.NewRunStore(db)
 	snapshots := mysqlinfra.NewSignalSnapshotStore(db)
@@ -159,19 +163,20 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 		return kernelRuntime{}, err
 	}
 	services := api.KernelServices{
-		Backtests:       backtests,
-		Scans:           scans,
-		Runs:            store,
-		Registry:        registry,
-		Instruments:     marketData,
-		SnapshotKeys:    snapshots,
-		MarketIngestion: ingestion,
-		MarketTrigger:   rootMarketTrigger{ctx: rootCtx, scheduler: marketScheduler},
-		MarketQueries:   application.NewMarketQueryService(marketData),
-		MarketWorkers:   settings.ScanBatchSize,
-		SyncWaitTimeout: settings.SyncWaitTimeout,
-		PollInterval:    settings.PollInterval,
-		Clock:           time.Now,
+		Backtests:         backtests,
+		Scans:             scans,
+		Runs:              store,
+		Registry:          registry,
+		Instruments:       marketData,
+		SnapshotKeys:      snapshots,
+		MarketIngestion:   ingestion,
+		MarketTrigger:     rootMarketTrigger{ctx: rootCtx, scheduler: marketScheduler},
+		MarketQueries:     application.NewMarketQueryService(marketData),
+		InstrumentCatalog: instrumentQueries,
+		MarketWorkers:     settings.ScanBatchSize,
+		SyncWaitTimeout:   settings.SyncWaitTimeout,
+		PollInterval:      settings.PollInterval,
+		Clock:             time.Now,
 	}
 	return kernelRuntime{services: services, workers: workers, marketScheduler: marketScheduler}, nil
 }

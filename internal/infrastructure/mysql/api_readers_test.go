@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
+	"trading/internal/market"
 	"trading/internal/port"
 )
 
@@ -58,4 +59,40 @@ func TestAPIReadersErrorsAndVersionFilters(t *testing.T) {
 	m.ExpectQuery("SELECT .*t_signal_snapshots").WillReturnError(errors.New("database"))
 	_, err = s.LatestPublishedKey(context.Background(), "strategy", "", "")
 	require.Error(t, err)
+}
+
+func TestSearchInstrumentsRanksExactCodeAndReturnsMetadata(t *testing.T) {
+	repo, m := mockRepository(t)
+	m.ExpectQuery("SELECT .*exchange.*code.*name.*board.*active.*lot_size.*t_instruments.*active = .*exchange = .*code LIKE .*ORDER BY CASE WHEN code = .*exchange, code LIMIT").
+		WithArgs(true, market.SZSE, "002%", "002", 20).
+		WillReturnRows(sqlmock.NewRows([]string{"exchange", "code", "name", "board", "active", "lot_size"}).
+			AddRow("SZSE", "002415", "海康威视", "MAIN", true, 100))
+
+	items, err := repo.Search(context.Background(), port.InstrumentSearch{Query: "002", Exchange: market.SZSE, Limit: 20})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, "SZSE:002415", items[0].ID.String())
+	require.Equal(t, "海康威视", items[0].Name)
+	require.Equal(t, int64(100), items[0].LotSize)
+}
+
+func TestSearchInstrumentsEscapesNameWildcards(t *testing.T) {
+	repo, m := mockRepository(t)
+	m.ExpectQuery("SELECT .*t_instruments.*active = .*name LIKE .*ORDER BY CASE WHEN name = .*WHEN name LIKE .*exchange, code LIMIT").
+		WithArgs(true, `%A\%\_B%`, `A%_B`, `A\%\_B%`, 10).
+		WillReturnRows(sqlmock.NewRows([]string{"exchange", "code", "name", "board", "active", "lot_size"}))
+
+	items, err := repo.Search(context.Background(), port.InstrumentSearch{Query: "A%_B", Limit: 10})
+	require.NoError(t, err)
+	require.Empty(t, items)
+}
+
+func TestGetInstrumentReturnsNotFoundForInactiveOrMissingInstrument(t *testing.T) {
+	repo, m := mockRepository(t)
+	m.ExpectQuery("SELECT .*t_instruments.*exchange = .*code = .*active = .*LIMIT").
+		WithArgs(market.SSE, "600000", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"exchange", "code", "name", "board", "active", "lot_size"}))
+
+	_, err := repo.Get(context.Background(), market.InstrumentID{Exchange: market.SSE, Code: "600000"})
+	require.ErrorIs(t, err, port.ErrMarketDataNotFound)
 }
