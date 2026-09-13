@@ -14,3 +14,10 @@ type JobQueue interface {
 	// ReapExpired terminalizes a bounded batch of exhausted expired leases.
 	ReapExpired(ctx context.Context) (int64, error)
 }
+
+// IdempotentRunReader resolves a previous submission before the application
+// consults a newer market version or a changed instrument universe. Enqueue's
+// atomic uniqueness check still arbitrates concurrent first submissions.
+type IdempotentRunReader interface {
+	FindByIdempotency(ctx context.Context, kind RunKind, key string) (Run, error)
+}
