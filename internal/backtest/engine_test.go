@@ -43,6 +43,32 @@ func TestEngineAppliesCorporateActionBeforeOpenAndMarksRawClose(t *testing.T) {
 	assert.Equal(t, market.Money(100_000_000), result.Equity[2].PositionValue)
 }
 
+func TestEngineAppliesCorporateActionWithinWeeklyBarBeforeClose(t *testing.T) {
+	id := engineInstrument()
+	bars := []market.Bar{
+		{Instrument: id, Timeframe: market.Week, Version: 1, OpenTime: engineOpenTime("2026-01-05"), CloseTime: engineCloseTime("2026-01-09"), Open: 100, Low: 100, High: 100, Close: 100, Volume: 1},
+		{Instrument: id, Timeframe: market.Week, Version: 1, OpenTime: engineOpenTime("2026-01-12"), CloseTime: engineCloseTime("2026-01-16"), Open: 100, Low: 80, High: 100, Close: 80, Volume: 1},
+	}
+	dataset, err := market.NewDataset(id, market.Week, 1, bars)
+	require.NoError(t, err)
+	timeline, err := strategy.NewTimeline(dataset, nil, nil)
+	require.NoError(t, err)
+
+	result, err := (backtest.Engine{}).Run(context.Background(), backtest.Input{
+		Strategy: &scriptedStrategy{actions: []strategy.Action{strategy.EnterLong, strategy.Hold}, timeframe: market.Week},
+		Timeline: timeline,
+		Actions: []market.CorporateAction{{
+			ID: "midweek-dividend", Instrument: id, ExDate: engineTime("2026-01-14", 0),
+			Kind: market.CashDividend, CashPerShare: 20, Version: 1,
+		}},
+		Config: backtest.Config{InitialCash: 100, CashFractionBPS: 10_000, LotSize: 1},
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Fills, 1)
+	require.Len(t, result.Equity, 2)
+	assert.Equal(t, market.Money(20), result.Equity[1].Cash)
+}
+
 func TestLastBarDecisionRemainsUnfilled(t *testing.T) {
 	result := runScripted(t, []strategy.Action{strategy.Hold, strategy.EnterLong}, nil)
 	assert.Empty(t, result.Fills)
@@ -156,11 +182,18 @@ func TestEngineRejectsIncompleteInputAndAmbiguousActionTime(t *testing.T) {
 }
 
 type scriptedStrategy struct {
-	actions []strategy.Action
-	seen    []strategy.PositionView
+	actions   []strategy.Action
+	seen      []strategy.PositionView
+	timeframe market.Timeframe
 }
 
-func (s *scriptedStrategy) Definition() strategy.Definition { return engineDefinition() }
+func (s *scriptedStrategy) Definition() strategy.Definition {
+	definition := engineDefinition()
+	if s.timeframe.Valid() {
+		definition.PrimaryTimeframe = s.timeframe
+	}
+	return definition
+}
 
 func (s *scriptedStrategy) OnBar(ctx strategy.Context) (strategy.Decision, error) {
 	s.seen = append(s.seen, ctx.Position())

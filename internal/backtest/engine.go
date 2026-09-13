@@ -26,20 +26,21 @@ type Input struct {
 type Engine struct{}
 
 type engineState struct {
-	input        Input
-	timeline     strategy.Timeline
-	definition   strategy.Definition
-	account      Account
-	execution    ExecutionModel
-	actionsAt    map[int][]market.CorporateAction
-	orders       []Order
-	fills        []Fill
-	trades       []Trade
-	equity       []EquityPoint
-	pendingOrder int
-	entry        *entryState
-	exitRetry    bool
-	holdBars     int
+	input              Input
+	timeline           strategy.Timeline
+	definition         strategy.Definition
+	account            Account
+	execution          ExecutionModel
+	actionsBeforeOpen  map[int][]market.CorporateAction
+	actionsBeforeClose map[int][]market.CorporateAction
+	orders             []Order
+	fills              []Fill
+	trades             []Trade
+	equity             []EquityPoint
+	pendingOrder       int
+	entry              *entryState
+	exitRetry          bool
+	holdBars           int
 }
 
 type entryState struct {
@@ -48,9 +49,10 @@ type entryState struct {
 	cashDividends market.Money
 }
 
-// Run advances exactly one confirmed Bar at a time: apply actions before the
-// open, attempt the previous close's pending order once, mark close equity,
-// execute strategy code, then queue the next-open order.
+// Run advances exactly one confirmed Bar at a time: apply actions due before
+// the open, attempt the previous close's pending order once, apply intrabar
+// actions, mark close equity, execute strategy code, then queue the next-open
+// order.
 func (Engine) Run(ctx context.Context, input Input) (Result, error) {
 	if ctx == nil {
 		return Result{}, fmt.Errorf("%w: nil context", ErrInvalidInput)
@@ -67,6 +69,9 @@ func (Engine) Run(ctx context.Context, input Input) (Result, error) {
 			return Result{}, err
 		}
 		if err := state.tryPendingOrderAtOpen(ctx, index); err != nil {
+			return Result{}, err
+		}
+		if err := state.applyActions(ctx, index, state.actionsBeforeClose[index]); err != nil {
 			return Result{}, err
 		}
 		if err := state.markToMarketAtClose(ctx, index); err != nil {
@@ -125,7 +130,7 @@ func newEngineState(input Input) (*engineState, error) {
 	if err := validateTimelineFeatures(definition, timeline); err != nil {
 		return nil, err
 	}
-	actionsAt, err := indexActions(input.Actions, timeline)
+	actionsBeforeOpen, actionsBeforeClose, err := indexActions(input.Actions, timeline)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +149,7 @@ func newEngineState(input Input) (*engineState, error) {
 	if holdBars == 0 {
 		holdBars = 10
 	}
-	return &engineState{input: input, timeline: timeline, definition: definition, account: account, execution: execution, actionsAt: actionsAt, pendingOrder: -1, holdBars: holdBars}, nil
+	return &engineState{input: input, timeline: timeline, definition: definition, account: account, execution: execution, actionsBeforeOpen: actionsBeforeOpen, actionsBeforeClose: actionsBeforeClose, pendingOrder: -1, holdBars: holdBars}, nil
 }
 
 func validateTimelineFeatures(definition strategy.Definition, timeline strategy.Timeline) error {
@@ -166,34 +171,44 @@ func validateTimelineFeatures(definition strategy.Definition, timeline strategy.
 	return nil
 }
 
-func indexActions(actions []market.CorporateAction, timeline strategy.Timeline) (map[int][]market.CorporateAction, error) {
-	indexed := make(map[int][]market.CorporateAction)
+func indexActions(actions []market.CorporateAction, timeline strategy.Timeline) (map[int][]market.CorporateAction, map[int][]market.CorporateAction, error) {
+	beforeOpen := make(map[int][]market.CorporateAction)
+	beforeClose := make(map[int][]market.CorporateAction)
 	seen := make(map[string]struct{}, len(actions))
 	for _, action := range actions {
 		if action.ID == "" || action.Instrument != timeline.Primary.Instrument() || action.ExDate.IsZero() || action.Version != timeline.Primary.Version() {
-			return nil, fmt.Errorf("%w: corporate action ownership or version", ErrInvalidInput)
+			return nil, nil, fmt.Errorf("%w: corporate action ownership or version", ErrInvalidInput)
 		}
 		if _, exists := seen[action.ID]; exists {
-			return nil, fmt.Errorf("%w: duplicate corporate action", ErrInvalidInput)
+			return nil, nil, fmt.Errorf("%w: duplicate corporate action", ErrInvalidInput)
 		}
 		seen[action.ID] = struct{}{}
-		index := -1
+		indexed := false
 		for i := 0; i < timeline.Len(); i++ {
-			if action.ExDate.Equal(timeline.Primary.Bar(i).OpenTime) {
-				index = i
+			bar := timeline.Primary.Bar(i)
+			if action.ExDate.Equal(bar.OpenTime) || (i > 0 && action.ExDate.After(timeline.Primary.Bar(i-1).CloseTime) && action.ExDate.Before(bar.OpenTime)) {
+				beforeOpen[i] = append(beforeOpen[i], action)
+				indexed = true
+				break
+			}
+			if action.ExDate.After(bar.OpenTime) && action.ExDate.Before(bar.CloseTime) {
+				beforeClose[i] = append(beforeClose[i], action)
+				indexed = true
 				break
 			}
 		}
-		if index < 0 {
-			return nil, fmt.Errorf("%w: corporate action time", ErrInvalidInput)
+		if !indexed {
+			return nil, nil, fmt.Errorf("%w: corporate action time", ErrInvalidInput)
 		}
-		indexed[index] = append(indexed[index], action)
 	}
-	return indexed, nil
+	return beforeOpen, beforeClose, nil
 }
 
 func (s *engineState) applyActionsBeforeOpen(ctx context.Context, index int) error {
-	actions := s.actionsAt[index]
+	return s.applyActions(ctx, index, s.actionsBeforeOpen[index])
+}
+
+func (s *engineState) applyActions(ctx context.Context, index int, actions []market.CorporateAction) error {
 	if len(actions) == 0 {
 		return nil
 	}

@@ -52,6 +52,34 @@ func TestParseEastmoneyRawAndQFQProducesCompressedFactors(t *testing.T) {
 	}
 }
 
+func TestParseEastmoneyKlinesAssignsExecutableTradingSessions(t *testing.T) {
+	id := eastmoneyInstrument(t, market.SSE, "600000")
+	for _, tc := range []struct {
+		name      string
+		timeframe market.Timeframe
+		raw       []byte
+		qfq       []byte
+		wantOpen  time.Time
+		wantClose time.Time
+	}{
+		{name: "daily", timeframe: market.Day, raw: []byte(`{"rc":0,"data":{"klines":["2024-01-02,10,10,10,10,1,10"]}}`), qfq: []byte(`{"rc":0,"data":{"klines":["2024-01-02,10,10,10,10,1,10"]}}`), wantOpen: time.Date(2024, time.January, 2, 1, 30, 0, 0, time.UTC), wantClose: time.Date(2024, time.January, 2, 7, 0, 0, 0, time.UTC)},
+		{name: "weekly", timeframe: market.Week, raw: []byte(`{"rc":0,"data":{"klines":["2024-01-05,10,10,10,10,1,10"]}}`), qfq: []byte(`{"rc":0,"data":{"klines":["2024-01-05,10,10,10,10,1,10"]}}`), wantOpen: time.Date(2024, time.January, 1, 1, 30, 0, 0, time.UTC), wantClose: time.Date(2024, time.January, 5, 7, 0, 0, 0, time.UTC)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bars, _, err := ParseEastmoneyKlines(tc.raw, tc.qfq, id, tc.timeframe)
+			if err != nil {
+				t.Fatalf("ParseEastmoneyKlines() error = %v", err)
+			}
+			if len(bars) != 1 {
+				t.Fatalf("bars = %d, want 1", len(bars))
+			}
+			if !bars[0].OpenTime.Equal(tc.wantOpen) || !bars[0].CloseTime.Equal(tc.wantClose) {
+				t.Fatalf("session = %s..%s, want %s..%s", bars[0].OpenTime, bars[0].CloseTime, tc.wantOpen, tc.wantClose)
+			}
+		})
+	}
+}
+
 func TestParseEastmoneyKlinesRejectsInconsistentOrPartialSeries(t *testing.T) {
 	id := eastmoneyInstrument(t, market.SSE, "600000")
 	raw := readEastmoneyFixture(t, "eastmoney_kline_raw.json")

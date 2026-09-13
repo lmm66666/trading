@@ -102,6 +102,19 @@ func TestLegacyBackfillUsesAuthoritativeOHLCForCorruptLegacyRows(t *testing.T) {
 	require.Equal(t, source.bars[market.Day], batch.Bars[market.Day])
 }
 
+func TestLegacyBackfillMatchesAuthoritativeBarsByTradingDate(t *testing.T) {
+	item, source := legacyFixture(t)
+	tradingDate := source.bars[market.Day][0].CloseTime
+	source.bars[market.Day][0].OpenTime = tradingDate.Add(90 * time.Minute)
+	source.bars[market.Day][0].CloseTime = tradingDate.Add(7 * time.Hour)
+	source.factors[0].EffectiveTime = source.bars[market.Day][0].CloseTime
+
+	batch, err := backfillLegacy(context.Background(), source, item)
+
+	require.NoError(t, err)
+	require.Equal(t, source.bars[market.Day], batch.Bars[market.Day])
+}
+
 func TestMigrationOptionsRejectInvalidBatchBeforeDBAccess(t *testing.T) {
 	for _, n := range []int{0, -1, 10001} {
 		_, err := NewLegacyMigrator(nil, nil).Run(context.Background(), MigrationOptions{BatchSize: n})

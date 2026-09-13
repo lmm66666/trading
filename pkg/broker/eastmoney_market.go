@@ -273,11 +273,11 @@ func ParseEastmoneyKlines(rawBody, qfqBody []byte, id market.InstrumentID, tf ma
 		if !eastmoneyOHLCMatches(line, adjusted, factor) {
 			return nil, nil, fmt.Errorf("%w: QFQ OHLC mismatch for %s", ErrIncompleteData, line.date)
 		}
-		closeTime := line.time
+		openTime, closeTime := eastmoneyTradingSession(line.time, tf)
 		bar := market.Bar{
 			Instrument: id,
 			Timeframe:  tf,
-			OpenTime:   closeTime,
+			OpenTime:   openTime,
 			CloseTime:  closeTime,
 			Open:       line.open,
 			High:       line.high,
@@ -300,6 +300,18 @@ func ParseEastmoneyKlines(rawBody, qfqBody []byte, id market.InstrumentID, tf ma
 	sort.SliceStable(bars, func(i, j int) bool { return bars[i].CloseTime.Before(bars[j].CloseTime) })
 	sort.SliceStable(factors, func(i, j int) bool { return factors[i].EffectiveTime.Before(factors[j].EffectiveTime) })
 	return bars, factors, nil
+}
+
+func eastmoneyTradingSession(tradingDate time.Time, tf market.Timeframe) (time.Time, time.Time) {
+	openDate := tradingDate
+	switch tf {
+	case market.Week:
+		daysSinceMonday := (int(tradingDate.Weekday()) + 6) % 7
+		openDate = tradingDate.AddDate(0, 0, -daysSinceMonday)
+	case market.Month:
+		openDate = time.Date(tradingDate.Year(), tradingDate.Month(), 1, 0, 0, 0, 0, time.UTC)
+	}
+	return openDate.Add(90 * time.Minute), tradingDate.Add(7 * time.Hour)
 }
 
 func ParseEastmoneyCorporateActions(body []byte, id market.InstrumentID) ([]market.CorporateAction, error) {
@@ -693,9 +705,12 @@ func eastmoneyKlinePeriod(tf market.Timeframe) string {
 }
 
 func filterEastmoneyRange(bars []market.Bar, factors []market.AdjustmentFactor, from, to time.Time) ([]market.Bar, []market.AdjustmentFactor, error) {
+	fromDate := eastmoneyUTCDate(from)
+	toDate := eastmoneyUTCDate(to)
 	filtered := make([]market.Bar, 0, len(bars))
 	for _, bar := range bars {
-		if (bar.CloseTime.Equal(from) || bar.CloseTime.After(from)) && (bar.CloseTime.Equal(to) || bar.CloseTime.Before(to)) {
+		barDate := eastmoneyUTCDate(bar.CloseTime)
+		if !barDate.Before(fromDate) && !barDate.After(toDate) {
 			filtered = append(filtered, bar)
 		}
 	}
@@ -703,6 +718,11 @@ func filterEastmoneyRange(bars []market.Bar, factors []market.AdjustmentFactor, 
 		return nil, nil, fmt.Errorf("%w: response contains bars outside requested range", ErrIncompleteData)
 	}
 	return filtered, factors, nil
+}
+
+func eastmoneyUTCDate(value time.Time) time.Time {
+	value = value.UTC()
+	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 func cloneValues(values url.Values) url.Values {

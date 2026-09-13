@@ -327,7 +327,7 @@ func backfillLegacy(ctx context.Context, source port.MarketSource, item legacyIn
 			return batch, ErrMigrationIncomplete
 		}
 		for _, bar := range bars {
-			if !dates[bar.CloseTime] {
+			if !dates[legacyDateOnly(bar.CloseTime)] {
 				return batch, ErrMigrationIncomplete
 			}
 		}
@@ -389,6 +389,11 @@ func backfillLegacy(ctx context.Context, source port.MarketSource, item legacyIn
 		}
 	}
 	return batch, nil
+}
+
+func legacyDateOnly(value time.Time) time.Time {
+	value = value.UTC()
+	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 func sameLegacyFactor(a, b market.AdjustmentFactor) bool {
