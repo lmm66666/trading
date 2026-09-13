@@ -169,3 +169,11 @@ docker save -o trading.tar trading:latest
 ## 测试要求
 - 新增业务逻辑必须配套单元测试
 - 测试覆盖率保持 80% 以上（继承全局规范） 
+
+## 策略内核持久化迁移
+
+- 新内核表和仓储位于 `internal/infrastructure/mysql/`，进入该目录前先阅读其 `README.md`。
+- 新表使用 UTC `DATETIME(6)` 和显式版本可见区间；Price/Money 为有符号 BIGINT，版本/序号为无符号整数。旧 `model/` 交易日期字符串暂时保留。
+- `data.New` 同时执行旧表迁移和内核 `Migrate`，Task15 运行时切换前不得撤掉旧表注册。
+- 行情发布是增量 upsert，缺省键不代表删除；保留版本 0 只作发布锁，所有业务读取必须使用大于 0 的 COMPLETE 版本。
+- Docker 集成测试带 `integration` 标签；无 Docker 必须报告环境失败，不能把编译检查或 SQL mock 结果当作真实 MySQL 验证通过。

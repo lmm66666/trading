@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"trading/config"
+	mysqlinfra "trading/internal/infrastructure/mysql"
 	"trading/model"
 
 	"gorm.io/driver/mysql"
@@ -23,10 +24,7 @@ type Data struct {
 
 // New 创建 Data 实例，内部根据配置初始化 gorm.DB 连接与连接池
 func New(cfg config.DB) (*Data, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName)
-
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(mysql.Open(mysqlDSN(cfg)), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("open mysql failed: %w", err)
 	}
@@ -56,8 +54,20 @@ func New(cfg config.DB) (*Data, error) {
 	if err := db.AutoMigrate(&model.StockKlineDaily{}, &model.StockKlineWeekly{}, &model.FinancialReport{}, &model.StockInfo{}); err != nil {
 		return nil, fmt.Errorf("auto migrate failed: %w", err)
 	}
+	// Legacy tables remain registered until every runtime reader/writer switches.
+	if err := mysqlinfra.Migrate(db); err != nil {
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("migrate strategy kernel schema: %w", err)
+	}
 
 	return &Data{db: db}, nil
+}
+
+// mysqlDSN 统一无时区 DATETIME 的编码与解析口径；旧业务交易日期是
+// 字符串字段，其内容不会被驱动按时区转换。
+func mysqlDSN(cfg config.DB) string {
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=UTC",
+		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName)
 }
 
 // DB 返回底层 gorm.DB 实例
