@@ -22,6 +22,86 @@
 
 ## 接口列表
 
+### V1 持久化策略任务
+
+创建和取消返回202，状态和结果读取返回200。统一响应为 `{code,message,data}`；错误时 code 为 HTTP 状态整数，message 为以下稳定标识，data 为 null。
+
+| HTTP | message | 条件 |
+|---|---|---|
+| 400 | INVALID_REQUEST | JSON、字段、身份长度、证券、日期、参数或分页非法 |
+| 404 | NOT_FOUND | 策略/版本、证券/行情或对应类型的 Run 不存在 |
+| 409 | IDEMPOTENCY_CONFLICT | 同种任务幂等键已绑定不同输入 |
+| 409 | SIGNAL_SNAPSHOT_NOT_READY | 无匹配的已发布快照 |
+| 409 | RUN_RESULT_NOT_READY | 回测结果尚未成功发布，包括失败/取消 |
+| 409 | AMBIGUOUS_INSTRUMENT | 旧六位代码匹配多个活跃交易所证券 |
+| 500 | internal server error | 未分类内部错误；不含 SQL、凭据、路径或堆栈 |
+
+JSON 创建请求限制1MiB（含空白），拒绝未知字段、超大 body 和尾随第二个 JSON 值。时间使用 RFC3339，输入时区规范化为 UTC；日期范围最多20年。身份精确区分大小写和尾空格：策略/Run/SnapshotID 最多64字节，策略版本32字节，幂等键128字节。证券使用完整 `SSE:600000`、`SZSE:000001` 或 `BSE:920001`。
+
+#### 创建回测
+
+`POST /api/v1/backtest-runs`：`instrument,strategy,strategy_version,idempotency_key,start,end,config` 必填，`parameters` 是可选策略参数对象，白名单和范围从策略目录读取。
+
+```bash
+curl -X POST http://localhost:8080/api/v1/backtest-runs \
+  -H 'Content-Type: application/json' \
+  -d '{"instrument":"SSE:600000","strategy":"daily_b1_buy","strategy_version":"1","idempotency_key":"backtest-example-1","start":"2026-01-01T00:00:00Z","end":"2026-06-01T00:00:00Z","config":{"initial_cash":10000000000,"cash_fraction_bps":10000,"commission_bps":3,"minimum_commission":50000,"stamp_duty_bps":5,"transfer_fee_bps":0,"slippage_bps":5,"lot_size":100,"hold_bars":10}}'
+```
+
+Price/Money 均为有符号整数，缩放10000：initial_cash=10000000000 表示100万元，minimum_commission=50000 表示5元。大整数客户端应使用无损 JSON/BigInt，避免先转 JavaScript Number。cash_fraction_bps 为1–10000，费率/滑点为0–10000bps，lot_size>0，hold_bars>=0；省略费用为0，hold_bars=0 使用策略默认持有期。上例仅演示执行假设，不是费率建议。
+
+响应 `{"code":0,"message":"success","data":{"run_id":"...","status":"PENDING"}}`。同 kind、幂等键和相同请求返回原任务，即使最新行情已更新；修改配置复用同一键返回409。重复任务可能已运行或终态，创建仍返回202。
+
+#### 回测状态、取消与结果页
+
+| 方法 | 路径 | 数据 |
+|---|---|---|
+| GET | `/api/v1/backtest-runs/:run_id` | 安全状态元数据；成功时附 summary |
+| POST | `/api/v1/backtest-runs/:run_id/cancel` | `{run_id,cancel_requested:true}` |
+| GET | `/api/v1/backtest-runs/:run_id/orders` | 订单 Page |
+| GET | `/api/v1/backtest-runs/:run_id/trades` | 成交 Fill Page，不是往返交易对 |
+| GET | `/api/v1/backtest-runs/:run_id/equity` | 权益 Page |
+
+取消请求体可为空或空对象，不接受额外字段。取消表示请求已交给持久化队列；终态任务保持终态，重新 GET 核对状态。错误 Run 类型返回404，不会取消另一种任务。
+
+状态数据含 `run_id,status,kind,strategy,strategy_version,data_version,engine_version,attempts,cancel_requested_at`。status 取 PENDING、RUNNING、SUCCEEDED、PARTIAL_SUCCEEDED（扫描）、FAILED、CANCELLED；不输出 RequestJSON 或租约凭据。
+
+summary 含 `total_return,annualized_return,maximum_drawdown,closed_trades,win_rate,profit_factor,average_holding_bars,has_open_position`；无定义的比例为 null。orders 含 `id,instrument,side,quantity,created_at,reason,attempted_at,final_reason`；trades 含 `id,order_id,instrument,side,time,price,quantity,gross,commission,stamp_duty,transfer_fee`；equity 含 `time,equity,cash,position_value`。时间统一 UTC，金额维持缩放整数；side=1买、2卖；final_reason 保持领域 OrderFinalReason 数值枚举（0待执行、1成交、2无下一根Bar）。
+
+结果页共享 `?limit=100&after_sequence=0`：limit 默认100、范围1–1000，游标为非负 int64，重复分页参数拒绝。响应 `{items:[...],next_sequence:123}`；用服务端 next_sequence 继续，无此字段即结束。顺序来自持久化 sequence，不能用日期替代游标。
+
+#### 扫描任务
+
+```bash
+curl -X POST http://localhost:8080/api/v1/scan-runs \
+  -H 'Content-Type: application/json' \
+  -d '{"strategy":"daily_b1_buy","strategy_version":"1","idempotency_key":"scan-example-1","from":"2026-01-01T00:00:00Z","as_of":"2026-06-01T00:00:00Z","scope":{"exchanges":["SSE","SZSE","BSE"],"active_only":true,"limit":5000}}'
+```
+
+`strategy,strategy_version,idempotency_key,from,as_of,scope` 必填，parameters 可选；scope.limit 为1–5000，exchanges 为空表示全部支持的交易所，active_only 缺省 false。创建锁定证券集合与 COMPLETE 数据版本。单证券失败允许 PARTIAL_SUCCEEDED，失败分类保存在快照。
+
+`GET /api/v1/scan-runs/:run_id` 返回安全状态，成功/部分成功附 snapshot_id；`POST /api/v1/scan-runs/:run_id/cancel` 与回测取消一致。
+
+#### 最新快照与续页
+
+`GET /api/v1/signal-snapshots/latest?strategy=daily_b1_buy&limit=100`。仅给 strategy 选该策略最近发布快照（可跨版本/参数）；精确查询同时给 strategy_version、parameters_hash，可用 RFC3339 的 as_of 限定。仅 strategy 时，as_of 只对选中的最新快照作校验；历史定位应提供版本/hash 或 SnapshotID。
+
+data 含 `snapshot_id,run_id,key,data_version,rows,failures` 和满页时的 next_sequence。key 含 `snapshot_id,strategy_id,strategy_version,parameters_hash,as_of`；rows 保留完整 instrument；failures 是按完整 instrument 排序的 `{instrument,code,message,retryable}` 数组，属于整个快照，不随成功行分页改变。
+
+保存首响应的 key，再继续：
+
+```text
+/api/v1/signal-snapshots/latest?strategy=daily_b1_buy&strategy_version=1&parameters_hash=HASH&snapshot_id=SNAPSHOT_ID&after_sequence=100&limit=100
+```
+
+after_sequence>0 必须带 snapshot_id。SnapshotID 仍需匹配策略、版本、参数 hash 和非零 as_of，新快照发布不会改变已开始的分页。扫描状态中的 snapshot_id 也可直接用于定位结果。
+
+Task12 延后的游标输出在此补齐：不可变快照行以1开始连续编号，满页返回 `after_sequence+本页行数`。若末页恰好满页，允许下一请求返回空 rows，此时无 next_sequence；满页游标不保证还有数据。协议无须额外 COUNT，也不会重选快照。
+
+#### 策略目录
+
+`GET /api/v1/strategies` 返回按 ID、版本排序的已编译目录；`GET /api/v1/strategies/:strategy?version=1` 返回具体版本。含 `strategy,version,primary_timeframe,warmup_bars,default_hold_bars,parameters,features,auxiliary`，每个参数含 default/min/max/integer。内置版本1：daily_b1_buy、weekly_b1_buy、bottom_surge_pullback。未知策略/版本返回404。
+
 ### 1. 保存股票历史数据
 
 从行情数据源（Broker）获取指定股票的历史 K 线数据，清洗后写入数据库。
@@ -116,171 +196,37 @@ curl -X POST http://localhost:8080/api/stocks/financial-report \
 
 ---
 
-### 4. 股票买点扫描
-
-按指定策略名称扫描所有股票，判断最新数据日期是否为买点，返回带短线评分与长线评分的股票列表，按短线评分降序排列。
+### 4. 最新股票买点快照（兼容路径）
 
 - **Method**: `GET`
-- **Path**: `/api/stocks/signal`
-- **说明**: 需要扫描数据库并计算评分，耗时较长。日线/周线 B1 建议超时 60s；`bottom_surge_pullback` 策略涉及全量并发扫描，建议超时 120s
+- **Path**: `/api/stocks/signal?strategy=daily_b1_buy`
 
-#### 请求参数
-
-| 字段     | 类型   | 必填 | 说明                                 |
-|----------|--------|------|--------------------------------------|
-| strategy | string | 是   | 策略名称，如 `daily_b1_buy`          |
-
-#### 请求示例
-
-```bash
-# 日线 B1 策略
-curl "http://localhost:8080/api/stocks/signal?strategy=daily_b1_buy"
-
-# 周线 B1 策略
-curl "http://localhost:8080/api/stocks/signal?strategy=weekly_b1_buy"
-
-# 底部倍量回调策略
-curl "http://localhost:8080/api/stocks/signal?strategy=bottom_surge_pullback"
-```
-
-#### 成功响应
+只读该策略最近已发布的成功或部分成功快照，不启动扫描。旧路径无法表达参数或版本，默认跨参数、跨策略版本按 `as_of DESC, data_version DESC, id DESC` 选取一条；随后所有分页固定其 SnapshotID。返回完整代码集合，只有此处去掉交易所：
 
 ```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "name": "bottom_surge_pullback",
-    "signals": [
-      {
-        "code": "600522",
-        "name": "中天科技",
-        "short_detail": {
-          "total": 85,
-          "max": 100,
-          "items": [
-            {"name": "单日最大量比", "value": 2.1, "score": 15, "max_score": 20},
-            {"name": "拉升累计涨幅", "value": 18.5, "score": 15, "max_score": 15}
-          ]
-        },
-        "long_detail": {
-          "total": 82,
-          "max": 100,
-          "items": [
-            {"name": "净利润同比", "value": 0.25, "score": 15, "max_score": 20},
-            {"name": "经营现金流", "value": 1.0, "score": 15, "max_score": 15}
-          ]
-        }
-      }
-    ]
-  }
-}
+{"code":0,"message":"success","data":{"name":"daily_b1_buy","codes":["600000","000001"]}}
 ```
 
-#### 响应字段说明
+已发布但无信号时 `codes:[]`；没有已发布快照返回 HTTP 409、`message:"SIGNAL_SNAPSHOT_NOT_READY"`；未知策略返回404。需要精确参数、版本、失败证券信息时使用下文 V1 快照接口。已移除旧短线/长线评分输出。
 
-| 字段     | 类型     | 说明                   |
-|----------|----------|------------------------|
-| name     | string   | 策略名称               |
-| signals  | []object | 带评分的信号股票列表   |
-
-**signals 数组元素字段：**
-
-| 字段        | 类型   | 说明                            |
-|-------------|--------|---------------------------------|
-| code        | string | 股票代码                        |
-| name        | string | 股票名称                        |
-| short_detail| object | 短线评分详情（技术面）          |
-| long_detail | object | 长线评分详情（财报基本面）      |
-
-**short_detail / long_detail 字段：**
-
-| 字段  | 类型     | 说明                            |
-|-------|----------|---------------------------------|
-| total | int      | 总分                            |
-| max   | int      | 满分                            |
-| items | []object | 各维度评分明细                  |
-
-**items 数组元素字段：**
-
-| 字段     | 类型    | 说明               |
-|----------|---------|--------------------|
-| name     | string  | 评分维度名称       |
-| value    | float64 | 原始指标值         |
-| score    | int     | 得分               |
-| max_score| int     | 该维度满分         |
-
-#### 支持的策略名称
-
-| 策略名称                 | 说明                                                         |
-|--------------------------|--------------------------------------------------------------|
-| `daily_b1_buy`          | 日线 B1：倍量拉升（量比≥2.0，涨幅≥5%）+ 缩量回调 + KDJ低位（<40）+ MA20向上 |
-| `weekly_b1_buy`         | 周线 B1：KDJ超卖（<10）+ MA20向上                                        |
-| `bottom_surge_pullback` | 底部倍量回调：底部确认（放量日Open在60日低点上浮15%内）+ 倍量拉升（允许间隔3天）+ 缩量回调（量能回归VMA20*1.5内）+ 不破MA20 + KDJ低位（5~40） |
-
----
-
-### 5. 策略回测
-
-对单只股票进行策略回测，返回历史上所有满足该策略的买入信号日期。
+### 5. 策略回测（兼容路径）
 
 - **Method**: `GET`
-- **Path**: `/api/stocks/backtest`
+- **Path**: `/api/stocks/backtest?code=600000&strategy=daily_b1_buy`
+- `code` 必须是六位数字；仅从 `t_instruments` 精确查找活跃证券，不依据前缀猜交易所。无匹配返回404，多交易所匹配返回409、`AMBIGUOUS_INSTRUMENT`。
+- `strategy` 必填，使用内置版本1；可选 `cycle=daily|weekly` 必须与策略主周期一致，否则400。
 
-#### 请求参数
+每次 GET 生成新幂等键并创建持久化 Run。需要重试复用同一任务时，请使用 V1 创建接口的显式 `idempotency_key`，或直接查询已经返回的 `run_id`。
 
-| 字段     | 类型   | 必填 | 默认值   | 说明                                 |
-|----------|--------|------|----------|--------------------------------------|
-| code     | string | 是   | -        | 股票代码，如 `600150`               |
-| strategy | string | 是   | -        | 策略名称，同买点扫描接口             |
-| cycle    | string | 否   | 策略默认 | 周期：`daily`（日线）或 `weekly`（周线）|
+默认回测最近10年到请求时 UTC 时刻，初始资金100万元、100%现金投入、佣金3bps/最低5元、卖出印花税5bps、过户费0、滑点5bps、整手100股，持有期使用策略默认值。这些是兼容路径的固定执行假设，不代表当前市场费率；自定义配置使用 V1。
 
-#### 请求示例
-
-```bash
-# 回测中国船舶的底部倍量回调策略
-curl "http://localhost:8080/api/stocks/backtest?code=600150&strategy=bottom_surge_pullback"
-
-# 回测日线 B1 策略
-curl "http://localhost:8080/api/stocks/backtest?code=600150&strategy=daily_b1_buy"
-
-# 回测周线 B1 策略（显式指定周期）
-curl "http://localhost:8080/api/stocks/backtest?code=600150&strategy=weekly_b1_buy&cycle=weekly"
-```
-
-#### 成功响应
+生产最多同步等待2秒（装配硬上限30秒），请求断开只结束等待。任务由后台持久化 worker 继续执行；未完成返回202：
 
 ```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "code": "600150",
-    "strategy": "bottom_surge_pullback",
-    "cycle": "daily",
-    "signals": [
-      { "date": "2026-04-29" },
-      { "date": "2026-05-14" },
-      { "date": "2026-05-15" }
-    ]
-  }
-}
+{"code":0,"message":"success","data":{"run_id":"...","status":"PENDING"}}
 ```
 
-#### 响应字段说明
-
-| 字段     | 类型     | 说明                   |
-|----------|----------|------------------------|
-| code     | string   | 股票代码               |
-| strategy | string   | 策略名称               |
-| cycle    | string   | 数据周期               |
-| signals  | []object | 历史买入信号列表       |
-
-**signals 数组元素字段：**
-
-| 字段 | 类型   | 说明           |
-|------|--------|----------------|
-| date | string | 信号日期，格式 YYYY-MM-DD |
+窗口内完成返回200，`data` 包含 `code,strategy,cycle,run_id,status,summary,orders,trades,equity`，字段与 V1 结果一致。完整响应只从已原子发布的结果读取，等待和分页共用时间预算。任务失败或取消返回409、`RUN_RESULT_NOT_READY`。旧的“信号日期数组”已替换为成交、权益和汇总结果。
 
 ---
 

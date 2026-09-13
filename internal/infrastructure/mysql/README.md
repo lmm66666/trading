@@ -60,6 +60,8 @@ go test -race -tags=integration ./internal/infrastructure/mysql -run '^TestDurab
 
 ## 旧行情迁移命令
 
+HTTP 兼容查询使用两个只读扩展：`MarketDataRepository.ResolveCode` 验证六位数字后只读 active 证券，最多返回两个匹配，由 API 区分无匹配/唯一/歧义；不推断交易所。`SignalSnapshotStore.LatestPublishedKey` 只读 SUCCEEDED/PARTIAL_SUCCEEDED，按 AsOf、DataVersion、自增 ID 倒序定位，返回完整 SnapshotID/版本/参数 hash。版本可省略供旧接口跨版本选最新，非空 SnapshotID 精确匹配。后续行读取仍使用严格 SnapshotKey.Validate 与 SnapshotID 绑定，不放宽原 Latest 的分页约束。
+
 先在备份副本演练，正式运行时暂停旧行情采集和扫描：
 
 ```bash

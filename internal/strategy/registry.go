@@ -3,6 +3,7 @@ package strategy
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"sync"
 )
 
@@ -23,6 +24,23 @@ type registeredStrategy struct {
 type Registry struct {
 	mu         sync.RWMutex
 	strategies map[strategyKey]registeredStrategy
+}
+
+// Definitions 返回按 ID、版本排序的独立目录，供 API 展示已编译策略。
+func (r *Registry) Definitions() []Definition {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	definitions := make([]Definition, 0, len(r.strategies))
+	for _, entry := range r.strategies {
+		definitions = append(definitions, cloneDefinition(entry.definition))
+	}
+	sort.Slice(definitions, func(i, j int) bool {
+		if definitions[i].ID == definitions[j].ID {
+			return definitions[i].Version < definitions[j].Version
+		}
+		return definitions[i].ID < definitions[j].ID
+	})
+	return definitions
 }
 
 // Register records an immutable strategy definition. The factory is invoked

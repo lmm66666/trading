@@ -7,9 +7,24 @@ import (
 )
 
 // NewRouter 创建 gin 路由
-func NewRouter(svc business.StockDataService, financialSvc business.FinancialReportService, scheduler business.Scheduler, financialScheduler business.FinancialScheduler, signalSvc business.SignalService, querySvc business.QueryService, macroSvc business.MacroService) *gin.Engine {
+func NewRouter(svc business.StockDataService, financialSvc business.FinancialReportService, scheduler business.Scheduler, financialScheduler business.FinancialScheduler, signalSvc business.SignalService, querySvc business.QueryService, macroSvc business.MacroService, kernel ...KernelServices) *gin.Engine {
 	r := gin.Default()
 	h := NewStockHandler(svc, financialSvc, scheduler, financialScheduler, signalSvc, querySvc, macroSvc)
+	if len(kernel) > 0 {
+		h.kernel = kernel[0]
+		r.POST("/api/v1/backtest-runs", h.CreateBacktestRun)
+		r.GET("/api/v1/backtest-runs/:run_id", h.GetBacktestRun)
+		r.POST("/api/v1/backtest-runs/:run_id/cancel", h.CancelBacktestRun)
+		r.GET("/api/v1/backtest-runs/:run_id/orders", h.ListBacktestOrders)
+		r.GET("/api/v1/backtest-runs/:run_id/trades", h.ListBacktestTrades)
+		r.GET("/api/v1/backtest-runs/:run_id/equity", h.ListBacktestEquity)
+		r.POST("/api/v1/scan-runs", h.CreateScanRun)
+		r.GET("/api/v1/scan-runs/:run_id", h.GetScanRun)
+		r.POST("/api/v1/scan-runs/:run_id/cancel", h.CancelScanRun)
+		r.GET("/api/v1/signal-snapshots/latest", h.GetLatestSignalSnapshot)
+		r.GET("/api/v1/strategies", h.ListStrategies)
+		r.GET("/api/v1/strategies/:strategy", h.GetStrategy)
+	}
 
 	r.POST("/api/stocks/historical", h.SaveStockHistoricalData)
 	r.POST("/api/stocks/append", h.AppendStockData)

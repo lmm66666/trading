@@ -1,100 +1,40 @@
 package api
 
 import (
-	"errors"
-	"net/http"
-	"net/http/httptest"
+	"github.com/stretchr/testify/require"
+	"strings"
 	"testing"
-
-	"trading/business"
+	"trading/internal/port"
 )
 
-func TestGetStockBuySignalsMissingStrategy(t *testing.T) {
-	r := setupTestRouter(
-		&mockStockDataService{},
-		&mockFinancialReportService{},
-		&mockScheduler{},
-		&mockSignalService{},
-		&mockQueryService{},
-	)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/api/stocks/signal", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", w.Code)
+func TestLegacySignalReadsSnapshotWithoutStartingScan(t *testing.T) {
+	f := newKernelFixture(t)
+	w := kernelRequest(t, f, "GET", "/api/stocks/signal?strategy=daily_b1_buy", "")
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"codes":["600000"]`)
+	require.NotContains(t, w.Body.String(), "SSE:")
+	require.Zero(t, f.s.creates)
+	require.Equal(t, "snap-1", f.s.key.SnapshotID)
+}
+func TestLegacySignalMissingUnknownAndNotReady(t *testing.T) {
+	for _, tt := range []struct {
+		query  string
+		err    error
+		status int
+	}{{"", nil, 400}, {"?strategy=missing", nil, 404}, {"?strategy=daily_b1_buy", port.ErrSnapshotNotReady, 409}, {"?strategy=daily_b1_buy", internalAPIError, 500}} {
+		f := newKernelFixture(t)
+		f.s.err = tt.err
+		w := kernelRequest(t, f, "GET", "/api/stocks/signal"+tt.query, "")
+		require.Equal(t, tt.status, w.Code, w.Body.String())
+		require.NotContains(t, w.Body.String(), "secret")
+		require.Zero(t, f.s.creates)
 	}
 }
-
-func TestGetStockBuySignalsSuccess(t *testing.T) {
-	r := setupTestRouter(
-		&mockStockDataService{},
-		&mockFinancialReportService{},
-		&mockScheduler{},
-		&mockSignalService{
-			signal: &business.StrategySignal{Name: "weekly_b1_buy", Codes: []string{"600312", "600519"}},
-		},
-		&mockQueryService{},
-	)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/api/stocks/signal?strategy=weekly_b1_buy", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	body := w.Body.String()
-	if !contains(body, "600312") || !contains(body, "600519") {
-		t.Fatalf("expected codes in response, got %s", body)
-	}
-	if contains(body, "short_detail") || contains(body, "long_detail") {
-		t.Fatalf("response should not contain scoring details, got %s", body)
-	}
+func TestLegacySignalEmptyPublishedSnapshot(t *testing.T) {
+	f := newKernelFixture(t)
+	f.s.snapshot.Rows = nil
+	w := kernelRequest(t, f, "GET", "/api/stocks/signal?strategy=daily_b1_buy", "")
+	require.Equal(t, 200, w.Code)
+	require.Contains(t, w.Body.String(), `"codes":[]`)
 }
-
-func TestGetStockBuySignalsEmpty(t *testing.T) {
-	r := setupTestRouter(
-		&mockStockDataService{},
-		&mockFinancialReportService{},
-		&mockScheduler{},
-		&mockSignalService{},
-		&mockQueryService{},
-	)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/api/stocks/signal?strategy=daily_b1_buy", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-}
-
-func TestGetStockBuySignalsServiceError(t *testing.T) {
-	r := setupTestRouter(
-		&mockStockDataService{},
-		&mockFinancialReportService{},
-		&mockScheduler{},
-		&mockSignalService{signalErr: errors.New("boom")},
-		&mockQueryService{},
-	)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/api/stocks/signal?strategy=daily_b1_buy", nil)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", w.Code)
-	}
-}
-
-func contains(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
+func contains(s, substr string) bool { return strings.Contains(s, substr) }

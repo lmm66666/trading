@@ -1,83 +1,49 @@
 package api
 
 import (
-	"encoding/json"
-	"errors"
-	"net/http"
-	"net/http/httptest"
+	"github.com/stretchr/testify/require"
 	"testing"
-
-	"trading/business"
-	"trading/pkg/strategy"
+	"trading/internal/market"
+	"trading/internal/port"
 )
 
-func TestGetStockBacktest_MissingCode(t *testing.T) {
-	signalSvc := &mockSignalService{}
-	router := setupTestRouter(nil, nil, nil, signalSvc, nil)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/stocks/backtest?strategy=daily_b1_buy", nil)
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", w.Code)
+func TestLegacyBacktestTimeoutReturnsDurableRun(t *testing.T) {
+	f := newKernelFixture(t)
+	w := kernelRequest(t, f, "GET", "/api/stocks/backtest?code=600000&strategy=daily_b1_buy", "")
+	require.Equal(t, 202, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"run_id":"run-1"`)
+	require.Equal(t, 1, f.b.creates)
+	require.Equal(t, "SSE:600000", f.b.req.Instrument.String())
+	require.NotEmpty(t, f.b.req.IdempotencyKey)
+	require.Equal(t, "600000", f.lookup.code)
+}
+func TestLegacyBacktestCodeResolutionAndValidation(t *testing.T) {
+	for _, tt := range []struct {
+		query  string
+		ids    []market.InstrumentID
+		status int
+	}{{"?strategy=daily_b1_buy", nil, 400}, {"?code=600000", nil, 400}, {"?code=abcdef&strategy=daily_b1_buy", nil, 400}, {"?code=600000&strategy=daily_b1_buy", nil, 404}, {"?code=600000&strategy=daily_b1_buy", []market.InstrumentID{{Exchange: market.SSE, Code: "600000"}, {Exchange: market.BSE, Code: "600000"}}, 409}, {"?code=600000&strategy=daily_b1_buy&cycle=weekly", nil, 400}} {
+		f := newKernelFixture(t)
+		f.lookup.ids = tt.ids
+		w := kernelRequest(t, f, "GET", "/api/stocks/backtest"+tt.query, "")
+		require.Equal(t, tt.status, w.Code, w.Body.String())
+		require.Zero(t, f.b.creates)
 	}
 }
-
-func TestGetStockBacktest_MissingStrategy(t *testing.T) {
-	signalSvc := &mockSignalService{}
-	router := setupTestRouter(nil, nil, nil, signalSvc, nil)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/stocks/backtest?code=600150", nil)
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", w.Code)
-	}
+func TestLegacyBacktestCompletedResult(t *testing.T) {
+	f := newKernelFixture(t)
+	f.store.run.Status = port.RunSucceeded
+	w := kernelRequest(t, f, "GET", "/api/stocks/backtest?code=600000&strategy=daily_b1_buy", "")
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"closed_trades":2`)
+	require.Contains(t, w.Body.String(), `"code":"600000"`)
+	require.Contains(t, w.Body.String(), `"equity":`)
+	require.NotContains(t, w.Body.String(), "secret")
 }
-
-func TestGetStockBacktest_Success(t *testing.T) {
-	signalSvc := &mockSignalService{
-		backtestResult: &business.BacktestResult{
-			Code:     "600150",
-			Strategy: "daily_b1_buy",
-			Cycle:    "daily",
-			Signals:  []strategy.Signal{{Date: "2026-01-15"}},
-		},
-	}
-	router := setupTestRouter(nil, nil, nil, signalSvc, nil)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/stocks/backtest?code=600150&strategy=daily_b1_buy", nil)
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-
-	var resp map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to parse response: %v", err)
-	}
-
-	data := resp["data"].(map[string]any)
-	if data["code"] != "600150" {
-		t.Fatalf("expected code 600150, got %v", data["code"])
-	}
-}
-
-func TestGetStockBacktest_InternalError(t *testing.T) {
-	signalSvc := &mockSignalService{
-		backtestErr: errors.New("db error"),
-	}
-	router := setupTestRouter(nil, nil, nil, signalSvc, nil)
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/stocks/backtest?code=600150&strategy=daily_b1_buy", nil)
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", w.Code)
-	}
+func TestLegacyBacktestCreateFailureIsRedacted(t *testing.T) {
+	f := newKernelFixture(t)
+	f.b.err = internalAPIError
+	w := kernelRequest(t, f, "GET", "/api/stocks/backtest?code=600000&strategy=daily_b1_buy", "")
+	require.Equal(t, 500, w.Code)
+	require.NotContains(t, w.Body.String(), "secret")
 }

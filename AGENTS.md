@@ -180,3 +180,6 @@ docker save -o trading.tar trading:latest
 - 不透明身份字段必须精确区分大小写和尾空格：有界字段使用 VARBINARY 并与 port UTF-8 字节长度验证一致；无界且不索引的订单/成交标识使用 LONGBLOB，普通展示字段不做二进制化。
 - 回测/扫描应用编排位于 `internal/application/`，进入前先读 README。生产装配须显式设置 EngineVersion，并保留 MySQL 的 IdempotentRunReader/MarketChangeReader 能力；任务执行不得重新解析最新行情版本。
 - 同一业务条件允许不同 Run 重扫生成新的不可变快照；Migrate 显式移除旧 `uq_snapshot_business`，保留 RunID/SnapshotID 唯一性与 SnapshotID 续页绑定。
+- `/api/v1` 策略任务由 `api.KernelServices` 注入应用服务与只读 port。创建请求显式 Validate、1MiB JSON 上限并传递 request context；Run DTO 不输出保存请求和租约身份。
+- 旧 signal 只读单个已发布快照；旧 backtest 从活跃证券仓储精确解析六位代码，零匹配404、多匹配409，不回退旧技术引擎。快照满页返回连续 sequence 游标，续页绑定 SnapshotID。
+- Task14 启用新 compute worker；行情采集/查询和财报筛选的运行时切换留 Task15，禁止同时启动两套行情调度。关闭顺序：取消根 context、等待 HTTP/worker/旧调度器退出、关闭数据库。

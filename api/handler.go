@@ -18,6 +18,7 @@ type StockHandler struct {
 	signalSvc          business.SignalService
 	querySvc           business.QueryService
 	macroSvc           business.MacroService
+	kernel             KernelServices
 }
 
 // NewStockHandler 创建 StockHandler
