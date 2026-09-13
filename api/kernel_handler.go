@@ -39,6 +39,9 @@ type InstrumentQueries interface {
 	Search(context.Context, application.InstrumentSearchQuery) ([]port.InstrumentSummary, error)
 	Get(context.Context, market.InstrumentID) (port.InstrumentSummary, error)
 }
+type ChartQueries interface {
+	Query(context.Context, application.ChartQuery) (application.ChartResult, error)
+}
 
 // KernelServices 显式注入持久化用例；旧接口不再回退到旧技术策略引擎。
 type KernelServices struct {
@@ -52,6 +55,7 @@ type KernelServices struct {
 	MarketTrigger     MarketTrigger
 	MarketQueries     MarketQueries
 	InstrumentCatalog InstrumentQueries
+	ChartQueries      ChartQueries
 	MarketWorkers     int
 	SyncWaitTimeout   time.Duration
 	PollInterval      time.Duration

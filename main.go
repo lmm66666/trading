@@ -131,6 +131,10 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 	if err != nil {
 		return kernelRuntime{}, err
 	}
+	chartQueries, err := application.NewChartQueryService(marketData, marketData)
+	if err != nil {
+		return kernelRuntime{}, err
+	}
 	queue := mysqlinfra.NewJobQueue(db)
 	store := mysqlinfra.NewRunStore(db)
 	snapshots := mysqlinfra.NewSignalSnapshotStore(db)
@@ -173,6 +177,7 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 		MarketTrigger:     rootMarketTrigger{ctx: rootCtx, scheduler: marketScheduler},
 		MarketQueries:     application.NewMarketQueryService(marketData),
 		InstrumentCatalog: instrumentQueries,
+		ChartQueries:      chartQueries,
 		MarketWorkers:     settings.ScanBatchSize,
 		SyncWaitTimeout:   settings.SyncWaitTimeout,
 		PollInterval:      settings.PollInterval,

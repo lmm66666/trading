@@ -25,6 +25,7 @@ func NewRouter(financialSvc business.FinancialReportService, financialScheduler 
 		r.GET("/api/v1/strategies", h.ListStrategies)
 		r.GET("/api/v1/strategies/:strategy", h.GetStrategy)
 		r.GET("/api/v1/instruments", h.SearchInstruments)
+		r.POST("/api/v1/chart-queries", h.QueryChart)
 	}
 
 	r.POST("/api/stocks/historical", h.SaveStockHistoricalData)
