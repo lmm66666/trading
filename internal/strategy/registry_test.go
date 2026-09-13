@@ -21,6 +21,23 @@ func TestRegistryReturnsFreshStrategyInstances(t *testing.T) {
 	assert.NotSame(t, first, second)
 }
 
+func TestRegistryResolvesStableDefinitionWithNonNilEmptyCollections(t *testing.T) {
+	registry := &Registry{}
+	definition := Definition{
+		ID:               "daily_b1_buy",
+		Version:          "1",
+		PrimaryTimeframe: market.Day,
+		Features:         []indicator.Ref{},
+		Auxiliary:        []market.Timeframe{},
+		Parameters:       map[string]ParameterSpec{},
+	}
+	require.NoError(t, registry.Register(definition.ID, definition.Version, strategyFactory(definition)))
+
+	_, err := registry.Resolve(definition.ID, definition.Version, nil)
+
+	assert.NoError(t, err)
+}
+
 func TestRegistryValidatesParametersBeforeCreatingStrategy(t *testing.T) {
 	registry := &Registry{}
 	calls := 0

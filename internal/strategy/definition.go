@@ -29,8 +29,14 @@ type ParameterSpec struct {
 
 func cloneDefinition(definition Definition) Definition {
 	cloned := definition
-	cloned.Features = append([]indicator.Ref(nil), definition.Features...)
-	cloned.Auxiliary = append([]market.Timeframe(nil), definition.Auxiliary...)
+	if definition.Features != nil {
+		cloned.Features = make([]indicator.Ref, len(definition.Features))
+		copy(cloned.Features, definition.Features)
+	}
+	if definition.Auxiliary != nil {
+		cloned.Auxiliary = make([]market.Timeframe, len(definition.Auxiliary))
+		copy(cloned.Auxiliary, definition.Auxiliary)
+	}
 	if definition.Parameters != nil {
 		cloned.Parameters = make(map[string]ParameterSpec, len(definition.Parameters))
 		for name, spec := range definition.Parameters {
