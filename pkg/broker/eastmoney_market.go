@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -69,8 +70,8 @@ func NewEastmoneyMarketSourceWithClient(client *http.Client, klineBaseURL, dataC
 	}
 	return &EastmoneyMarketSource{
 		client:            client,
-		klineBaseURL:      strings.TrimRight(klineBaseURL, "/"),
-		dataCenterBaseURL: strings.TrimRight(dataCenterBaseURL, "/"),
+		klineBaseURL:      normalizeEastmoneyBaseURL(klineBaseURL),
+		dataCenterBaseURL: normalizeEastmoneyBaseURL(dataCenterBaseURL),
 	}
 }
 
@@ -117,6 +118,7 @@ func (s *EastmoneyMarketSource) FetchCorporateActions(ctx context.Context, id ma
 	}
 
 	var actions []market.CorporateAction
+	seenRecords := make(map[string]struct{})
 	var expectedCount, expectedPages, receivedRecords int
 	for page := 1; ; page++ {
 		query := url.Values{
@@ -138,6 +140,12 @@ func (s *EastmoneyMarketSource) FetchCorporateActions(ctx context.Context, id ma
 		if err != nil {
 			return nil, err
 		}
+		if response.noData {
+			if page == 1 && expectedCount == 0 {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("%w: no-data response after pagination began", ErrIncompleteData)
+		}
 		if page == 1 {
 			expectedCount, expectedPages = response.count, response.pages
 			if expectedPages > eastmoneyMaxPages {
@@ -149,8 +157,17 @@ func (s *EastmoneyMarketSource) FetchCorporateActions(ctx context.Context, id ma
 		} else if response.count != expectedCount || response.pages != expectedPages {
 			return nil, fmt.Errorf("%w: pagination metadata changed", ErrIncompleteData)
 		}
-		if response.pageNumber != page {
-			return nil, fmt.Errorf("%w: response page %d for request %d", ErrIncompleteData, response.pageNumber, page)
+		if response.pageNumber != nil && *response.pageNumber != page {
+			return nil, fmt.Errorf("%w: response page %d for request %d", ErrIncompleteData, *response.pageNumber, page)
+		}
+		if err := validateEastmoneyActionRecordCount(response.count, page, response.recordCount); err != nil {
+			return nil, err
+		}
+		for _, identity := range response.recordIdentities {
+			if _, exists := seenRecords[identity]; exists {
+				return nil, fmt.Errorf("%w: repeated source record", ErrIncompleteData)
+			}
+			seenRecords[identity] = struct{}{}
 		}
 		receivedRecords += response.recordCount
 		actions = append(actions, response.actions...)
@@ -444,11 +461,13 @@ type eastmoneyCorporateActionRow struct {
 }
 
 type eastmoneyCorporateActionPage struct {
-	actions     []market.CorporateAction
-	count       int
-	pages       int
-	pageNumber  int
-	recordCount int
+	actions          []market.CorporateAction
+	recordIdentities []string
+	count            int
+	pages            int
+	pageNumber       *int
+	recordCount      int
+	noData           bool
 }
 
 func parseEastmoneyCorporateActionPage(body []byte, id market.InstrumentID) (eastmoneyCorporateActionPage, error) {
@@ -460,12 +479,15 @@ func parseEastmoneyCorporateActionPage(body []byte, id market.InstrumentID) (eas
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: invalid JSON", ErrMalformedResponse)
 	}
+	code, hasCode := eastmoneyResponseCode(envelope.Code)
 	if envelope.Success == nil || !*envelope.Success {
+		if hasCode && code == 9201 {
+			return eastmoneyCorporateActionPage{noData: true}, nil
+		}
 		return eastmoneyCorporateActionPage{}, upstreamError(ErrUpstream, nil, 0, "")
 	}
-	var code int
-	if len(envelope.Code) == 0 || json.Unmarshal(envelope.Code, &code) != nil || code != 0 {
-		if len(envelope.Code) > 0 && string(envelope.Code) != "0" {
+	if !hasCode || code != 0 {
+		if hasCode && code != 0 {
 			return eastmoneyCorporateActionPage{}, upstreamError(ErrUpstream, nil, 0, "")
 		}
 		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: invalid code", ErrMalformedResponse)
@@ -482,8 +504,8 @@ func parseEastmoneyCorporateActionPage(body []byte, id market.InstrumentID) (eas
 	if err := json.Unmarshal(envelope.Result, &result); err != nil {
 		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: invalid result", ErrMalformedResponse)
 	}
-	if result.Count == nil || result.Pages == nil || result.PageNumber == nil || *result.Count < 0 || *result.Pages < 0 || len(result.Data) == 0 {
-		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: count, pages, pageNumber and data are required", ErrMalformedResponse)
+	if result.Count == nil || result.Pages == nil || *result.Count < 0 || *result.Pages < 0 || len(result.Data) == 0 {
+		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: count, pages and data are required", ErrMalformedResponse)
 	}
 	if string(result.Data) == "null" {
 		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: data must be an array", ErrMalformedResponse)
@@ -492,13 +514,23 @@ func parseEastmoneyCorporateActionPage(body []byte, id market.InstrumentID) (eas
 	if err := json.Unmarshal(result.Data, &rows); err != nil {
 		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: invalid corporate actions", ErrMalformedResponse)
 	}
-	page := eastmoneyCorporateActionPage{count: *result.Count, pages: *result.Pages, pageNumber: *result.PageNumber, recordCount: len(rows)}
+	page := eastmoneyCorporateActionPage{count: *result.Count, pages: *result.Pages, pageNumber: result.PageNumber, recordCount: len(rows)}
 	if err := validateEastmoneyActionPage(page); err != nil {
 		return eastmoneyCorporateActionPage{}, err
 	}
 	actions := make([]market.CorporateAction, 0, len(rows)*2)
+	seenRecords := make(map[string]struct{}, len(rows))
 	for _, row := range rows {
-		rowActions, err := parseEastmoneyCorporateAction(row, id)
+		recordIdentity, sourceID, err := eastmoneyRecordIdentity(row, id)
+		if err != nil {
+			return eastmoneyCorporateActionPage{}, err
+		}
+		if _, exists := seenRecords[recordIdentity]; exists {
+			return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: repeated source record", ErrIncompleteData)
+		}
+		seenRecords[recordIdentity] = struct{}{}
+		page.recordIdentities = append(page.recordIdentities, recordIdentity)
+		rowActions, err := parseEastmoneyCorporateAction(row, id, sourceID)
 		if err != nil {
 			return eastmoneyCorporateActionPage{}, err
 		}
@@ -508,7 +540,7 @@ func parseEastmoneyCorporateActionPage(body []byte, id market.InstrumentID) (eas
 	return page, nil
 }
 
-func parseEastmoneyCorporateAction(row eastmoneyCorporateActionRow, id market.InstrumentID) ([]market.CorporateAction, error) {
+func parseEastmoneyCorporateAction(row eastmoneyCorporateActionRow, id market.InstrumentID, sourceID string) ([]market.CorporateAction, error) {
 	code, err := rawJSONString(row.SecurityCode)
 	if err != nil || code != id.Code {
 		return nil, fmt.Errorf("%w: invalid security code", ErrMalformedResponse)
@@ -542,7 +574,7 @@ func parseEastmoneyCorporateAction(row eastmoneyCorporateActionRow, id market.In
 			return nil, fmt.Errorf("%w: cash ratio is below fixed-point precision", ErrMalformedResponse)
 		}
 		actions = append(actions, market.CorporateAction{
-			ID:           eastmoneyActionID(row, id, exDate, "cash"),
+			ID:           eastmoneyActionID(id, exDate, sourceID, "cash"),
 			Instrument:   id,
 			ExDate:       exDate,
 			Kind:         market.CashDividend,
@@ -558,7 +590,7 @@ func parseEastmoneyCorporateAction(row eastmoneyCorporateActionRow, id market.In
 			return nil, fmt.Errorf("%w: invalid share ratio", ErrMalformedResponse)
 		}
 		actions = append(actions, market.CorporateAction{
-			ID:               eastmoneyActionID(row, id, exDate, "share"),
+			ID:               eastmoneyActionID(id, exDate, sourceID, "share"),
 			Instrument:       id,
 			ExDate:           exDate,
 			Kind:             market.ShareDistribution,
@@ -572,25 +604,35 @@ func parseEastmoneyCorporateAction(row eastmoneyCorporateActionRow, id market.In
 
 func validateEastmoneyActionPage(page eastmoneyCorporateActionPage) error {
 	if page.count == 0 {
-		if page.pages != 0 || page.recordCount != 0 || (page.pageNumber != 0 && page.pageNumber != 1) {
+		if page.pages != 0 || page.recordCount != 0 || (page.pageNumber != nil && *page.pageNumber != 0 && *page.pageNumber != 1) {
 			return fmt.Errorf("%w: empty result metadata is inconsistent", ErrIncompleteData)
 		}
 		return nil
 	}
-	if page.pages < 1 || page.pageNumber < 1 || page.pageNumber > page.pages {
+	if page.pages < 1 || (page.pageNumber != nil && (*page.pageNumber < 1 || *page.pageNumber > page.pages)) {
 		return fmt.Errorf("%w: invalid pagination metadata", ErrIncompleteData)
 	}
 	expectedPages := (page.count + eastmoneyActionPageSize - 1) / eastmoneyActionPageSize
 	if page.pages != expectedPages {
 		return fmt.Errorf("%w: count and pages are inconsistent", ErrIncompleteData)
 	}
-	remaining := page.count - (page.pageNumber-1)*eastmoneyActionPageSize
+	if page.pageNumber == nil {
+		if page.recordCount == 0 || page.recordCount > eastmoneyActionPageSize {
+			return fmt.Errorf("%w: page has an invalid record count", ErrIncompleteData)
+		}
+		return nil
+	}
+	return validateEastmoneyActionRecordCount(page.count, *page.pageNumber, page.recordCount)
+}
+
+func validateEastmoneyActionRecordCount(count, pageNumber, recordCount int) error {
+	remaining := count - (pageNumber-1)*eastmoneyActionPageSize
 	expectedRecords := eastmoneyActionPageSize
 	if remaining < expectedRecords {
 		expectedRecords = remaining
 	}
-	if page.recordCount != expectedRecords {
-		return fmt.Errorf("%w: page %d contains %d of %d records", ErrIncompleteData, page.pageNumber, page.recordCount, expectedRecords)
+	if recordCount != expectedRecords {
+		return fmt.Errorf("%w: page %d contains %d of %d records", ErrIncompleteData, pageNumber, recordCount, expectedRecords)
 	}
 	return nil
 }
@@ -606,11 +648,9 @@ func validateEastmoneyActionIDs(actions []market.CorporateAction) error {
 	return nil
 }
 
-func eastmoneyActionID(row eastmoneyCorporateActionRow, id market.InstrumentID, exDate time.Time, kind string) string {
-	for _, candidate := range []json.RawMessage{row.EventID, row.RecordID, row.ID} {
-		if sourceID, ok := rawJSONIdentifier(candidate); ok {
-			return fmt.Sprintf("eastmoney:%s:%s", sourceID, kind)
-		}
+func eastmoneyActionID(id market.InstrumentID, exDate time.Time, sourceID, kind string) string {
+	if sourceID != "" {
+		return fmt.Sprintf("eastmoney:%s:%s", sourceID, kind)
 	}
 	return fmt.Sprintf("eastmoney:%s:%s:%s", id.String(), exDate.Format("2006-01-02"), kind)
 }
@@ -683,6 +723,18 @@ func eastmoneyEndpoint(baseURL string, query url.Values) (string, error) {
 	return endpoint.String(), nil
 }
 
+func normalizeEastmoneyBaseURL(baseURL string) string {
+	endpoint, err := url.Parse(baseURL)
+	if err != nil {
+		return baseURL
+	}
+	endpoint.Path = strings.TrimRight(endpoint.Path, "/")
+	if endpoint.RawPath != "" {
+		endpoint.RawPath = strings.TrimRight(endpoint.RawPath, "/")
+	}
+	return endpoint.String()
+}
+
 func parseEastmoneyScaled(value string, scale int64) (int64, error) {
 	ratio, err := parseEastmoneyDecimal(value)
 	if err != nil {
@@ -732,19 +784,59 @@ func rawJSONString(value json.RawMessage) (string, error) {
 	return strings.TrimSpace(text), nil
 }
 
-func rawJSONIdentifier(value json.RawMessage) (string, bool) {
+func eastmoneyResponseCode(value json.RawMessage) (int, bool) {
+	var code int
+	if len(value) == 0 || json.Unmarshal(value, &code) != nil {
+		return 0, false
+	}
+	return code, true
+}
+
+func eastmoneyRecordIdentity(row eastmoneyCorporateActionRow, id market.InstrumentID) (string, string, error) {
+	for _, candidate := range []json.RawMessage{row.EventID, row.RecordID, row.ID} {
+		if len(candidate) == 0 || string(candidate) == "null" {
+			continue
+		}
+		sourceID, err := rawJSONSourceID(candidate)
+		if err != nil {
+			return "", "", fmt.Errorf("%w: invalid source record ID", ErrMalformedResponse)
+		}
+		return "source:" + sourceID, sourceID, nil
+	}
+	parts := []string{id.String()}
+	for _, value := range []json.RawMessage{row.SecurityCode, row.ExDividendDate, row.PretaxBonus, row.BonusRatio, row.ITRatio} {
+		parts = append(parts, canonicalEastmoneyRaw(value))
+	}
+	return "record:" + strings.Join(parts, "\x1f"), "", nil
+}
+
+func rawJSONSourceID(value json.RawMessage) (string, error) {
 	if len(value) == 0 || string(value) == "null" {
-		return "", false
+		return "", errors.New("source ID is absent")
 	}
 	if value[0] == '"' {
-		text, err := rawJSONString(value)
-		return text, err == nil && text != ""
+		var sourceID string
+		if err := json.Unmarshal(value, &sourceID); err != nil || sourceID == "" || strings.TrimSpace(sourceID) == "" {
+			return "", errors.New("source ID is blank")
+		}
+		return sourceID, nil
 	}
-	text := strings.TrimSpace(string(value))
-	if text == "" || !decimalPattern.MatchString(text) {
-		return "", false
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, value); err != nil || compact.Len() == 0 || compact.String() == "null" {
+		return "", errors.New("source ID is invalid")
 	}
-	return text, true
+	return compact.String(), nil
+}
+
+func canonicalEastmoneyRaw(value json.RawMessage) string {
+	if len(value) == 0 {
+		return "<missing>"
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, value); err != nil {
+		return "<invalid>"
+	}
+	return compact.String()
 }
 
 func parseEastmoneyActionDate(value string) (time.Time, error) {
@@ -812,8 +904,13 @@ func parseRetryAfter(value string, now time.Time) (time.Duration, bool) {
 	if value == "" {
 		return 0, false
 	}
-	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil && seconds >= 0 {
+	if isNonNegativeDecimal(value) {
 		const maxDuration = time.Duration(1<<63 - 1)
+		const maxInt64Seconds = "9223372036854775807"
+		if len(value) > len(maxInt64Seconds) || (len(value) == len(maxInt64Seconds) && value > maxInt64Seconds) {
+			return maxDuration, true
+		}
+		seconds, _ := strconv.ParseInt(value, 10, 64)
 		if seconds > int64(maxDuration/time.Second) {
 			return maxDuration, true
 		}
@@ -827,4 +924,13 @@ func parseRetryAfter(value string, now time.Time) (time.Duration, bool) {
 		return 0, true
 	}
 	return when.Sub(now), true
+}
+
+func isNonNegativeDecimal(value string) bool {
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return value != ""
 }

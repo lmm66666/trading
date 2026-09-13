@@ -18,6 +18,7 @@ func TestEastMoneyBrokerImplementsInterface(t *testing.T) {
 
 // TestFetchShibor 端到端测试获取 Shibor 数据
 func TestFetchShibor(t *testing.T) {
+	requireLiveBroker(t)
 	b := NewEastMoneyBroker()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

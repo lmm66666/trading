@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 
 // TestSinaBrokerGetStockTodayInBatch 测试批量获取今日数据
 func TestSinaBrokerGetStockTodayInBatch(t *testing.T) {
+	requireLiveBroker(t)
 	broker := NewSinaBroker()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -37,6 +39,7 @@ func TestSinaBrokerGetStockTodayInBatch(t *testing.T) {
 
 // TestSinaBrokerGetStockToday 测试单个获取今日数据
 func TestSinaBrokerGetStockToday(t *testing.T) {
+	requireLiveBroker(t)
 	broker := NewSinaBroker()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -53,6 +56,7 @@ func TestSinaBrokerGetStockToday(t *testing.T) {
 
 // TestSinaBrokerGetStockHistorical 测试获取历史K线
 func TestSinaBrokerGetStockHistorical(t *testing.T) {
+	requireLiveBroker(t)
 	broker := NewSinaBroker()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -302,6 +306,7 @@ func TestParseFinancialReportResponseAPIError(t *testing.T) {
 
 // TestSinaBrokerGetFinancialReportHistorical 端到端测试财报接口
 func TestSinaBrokerGetFinancialReportHistorical(t *testing.T) {
+	requireLiveBroker(t)
 	broker := NewSinaBroker()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -323,6 +328,13 @@ func TestSinaBrokerGetFinancialReportHistorical(t *testing.T) {
 	for _, r := range reports {
 		t.Logf("Report: %s type=%d, Revenue=%.2f, NetProfit=%.2f, GrossMargin=%.2f, NetMargin=%.2f, ROE=%.2f",
 			r.ReportDate, r.ReportType, r.TotalRevenue, r.NetProfit, r.GrossMargin, r.NetMargin, r.ROE)
+	}
+}
+
+func requireLiveBroker(t *testing.T) {
+	t.Helper()
+	if os.Getenv("BROKER_LIVE_TESTS") != "1" {
+		t.Skip("set BROKER_LIVE_TESTS=1 to run live broker test")
 	}
 }
 
@@ -392,6 +404,7 @@ func TestSinaBrokerRetryAlreadyCancelledCtx(t *testing.T) {
 
 // TestSinaBrokerGetExchangeRate 测试获取单个汇率
 func TestSinaBrokerGetExchangeRate(t *testing.T) {
+	requireLiveBroker(t)
 	broker := NewSinaBroker()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -408,6 +421,7 @@ func TestSinaBrokerGetExchangeRate(t *testing.T) {
 
 // TestSinaBrokerGetExchangeRateBatch 测试批量获取汇率
 func TestSinaBrokerGetExchangeRateBatch(t *testing.T) {
+	requireLiveBroker(t)
 	broker := NewSinaBroker()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
