@@ -28,15 +28,18 @@ type AlignedFeatures struct {
 // NewTimeline defensively copies mappings and validates every feature length
 // and cross-timeframe as-of relation before a strategy can consume it.
 func NewTimeline(primary market.Dataset, features indicator.Set, auxiliary map[market.Timeframe]AlignedFeatures) (Timeline, error) {
-	if err := validateFeatureSet(features, primary.Len()); err != nil {
+	if err := validateDataset(primary); err != nil {
+		return Timeline{}, err
+	}
+	if err := validateFeatureSet(features, primary.Timeframe(), primary.Len()); err != nil {
 		return Timeline{}, err
 	}
 	clonedAuxiliary := make(map[market.Timeframe]AlignedFeatures, len(auxiliary))
 	for timeframe, aligned := range auxiliary {
-		if !timeframe.Valid() || aligned.Dataset.Timeframe() != timeframe || aligned.Dataset.Instrument() != primary.Instrument() {
+		if !timeframe.Valid() || validateDataset(aligned.Dataset) != nil || aligned.Dataset.Timeframe() != timeframe || aligned.Dataset.Instrument() != primary.Instrument() {
 			return Timeline{}, fmt.Errorf("%w: invalid auxiliary dataset", ErrInvalidTimeline)
 		}
-		if err := validateFeatureSet(aligned.Features, aligned.Dataset.Len()); err != nil {
+		if err := validateFeatureSet(aligned.Features, aligned.Dataset.Timeframe(), aligned.Dataset.Len()); err != nil {
 			return Timeline{}, err
 		}
 		if len(aligned.PrimaryToAuxiliary) != primary.Len() {
@@ -47,8 +50,19 @@ func NewTimeline(primary market.Dataset, features indicator.Set, auxiliary map[m
 			if auxiliaryIndex < -1 || auxiliaryIndex >= aligned.Dataset.Len() || auxiliaryIndex < previous {
 				return Timeline{}, fmt.Errorf("%w: auxiliary mapping index", ErrInvalidTimeline)
 			}
-			if auxiliaryIndex >= 0 && aligned.Dataset.Bar(auxiliaryIndex).CloseTime.After(primary.Bar(primaryIndex).CloseTime) {
-				return Timeline{}, fmt.Errorf("%w: auxiliary feature is from the future", ErrInvalidTimeline)
+			primaryCloseTime := primary.Bar(primaryIndex).CloseTime
+			if auxiliaryIndex == -1 {
+				if aligned.Dataset.Len() > 0 && !aligned.Dataset.Bar(0).CloseTime.After(primaryCloseTime) {
+					return Timeline{}, fmt.Errorf("%w: auxiliary mapping is stale", ErrInvalidTimeline)
+				}
+			} else {
+				if aligned.Dataset.Bar(auxiliaryIndex).CloseTime.After(primaryCloseTime) {
+					return Timeline{}, fmt.Errorf("%w: auxiliary feature is from the future", ErrInvalidTimeline)
+				}
+				nextIndex := auxiliaryIndex + 1
+				if nextIndex < aligned.Dataset.Len() && !aligned.Dataset.Bar(nextIndex).CloseTime.After(primaryCloseTime) {
+					return Timeline{}, fmt.Errorf("%w: auxiliary mapping is stale", ErrInvalidTimeline)
+				}
 			}
 			previous = auxiliaryIndex
 		}
@@ -65,9 +79,17 @@ func (t Timeline) Len() int {
 	return t.Primary.Len()
 }
 
-func validateFeatureSet(features indicator.Set, wantLength int) error {
+func validateDataset(dataset market.Dataset) error {
+	if dataset.Instrument().Validate() != nil || !dataset.Timeframe().Valid() {
+		return fmt.Errorf("%w: invalid dataset", ErrInvalidTimeline)
+	}
+	return nil
+}
+
+func validateFeatureSet(features indicator.Set, timeframe market.Timeframe, wantLength int) error {
 	for key, series := range features {
-		if !validFeatureKey(key) || series.Len() != wantLength {
+		ref, valid := parseFeatureKey(key)
+		if !valid || ref.Timeframe != timeframe || series.Len() != wantLength {
 			return fmt.Errorf("%w: feature key or length", ErrInvalidTimeline)
 		}
 	}
@@ -75,40 +97,48 @@ func validateFeatureSet(features indicator.Set, wantLength int) error {
 }
 
 func validFeatureKey(key string) bool {
+	_, valid := parseFeatureKey(key)
+	return valid
+}
+
+func parseFeatureKey(key string) (indicator.Ref, bool) {
 	parts := strings.Split(key, "/")
 	if len(parts) < 4 {
-		return false
+		return indicator.Ref{}, false
 	}
 	ref := indicator.Ref{Kind: indicator.Kind(parts[0]), Timeframe: parseTimeframe(parts[1]), PriceView: parsePriceView(parts[2]), Field: indicator.Field(parts[3])}
 	switch ref.Kind {
 	case indicator.OHLC:
 		if len(parts) != 4 {
-			return false
+			return indicator.Ref{}, false
 		}
 	case indicator.SMAKind, indicator.EMAKind, indicator.VolumeMA, indicator.KDJKind:
 		if len(parts) != 5 {
-			return false
+			return indicator.Ref{}, false
 		}
 		period, ok := featureParameter(parts[4], "p=")
 		if !ok {
-			return false
+			return indicator.Ref{}, false
 		}
 		ref.Period = period
 	case indicator.MACDKind:
 		if len(parts) != 7 {
-			return false
+			return indicator.Ref{}, false
 		}
 		fast, fastOK := featureParameter(parts[4], "f=")
 		slow, slowOK := featureParameter(parts[5], "s=")
 		signal, signalOK := featureParameter(parts[6], "sig=")
 		if !fastOK || !slowOK || !signalOK {
-			return false
+			return indicator.Ref{}, false
 		}
 		ref.Fast, ref.Slow, ref.Signal = fast, slow, signal
 	default:
-		return false
+		return indicator.Ref{}, false
 	}
-	return ref.Validate() == nil && ref.Key() == key
+	if ref.Validate() != nil || ref.Key() != key {
+		return indicator.Ref{}, false
+	}
+	return ref, true
 }
 
 func parseTimeframe(value string) market.Timeframe {

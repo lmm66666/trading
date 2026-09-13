@@ -82,7 +82,7 @@ func (r *Registry) Resolve(id, version string, params map[string]float64) (Strat
 		return nil, ErrInvalidDefinition
 	}
 	definition := strategy.Definition()
-	if definition.ID != registered.definition.ID || definition.Version != registered.definition.Version {
+	if !validDefinition(definition) || !reflect.DeepEqual(definition, registered.definition) {
 		return nil, ErrInvalidDefinition
 	}
 	return strategy, nil

@@ -137,6 +137,30 @@ func TestRegistryReturnsFactoryFailuresAndRejectsNilResolvedInstances(t *testing
 	assert.ErrorIs(t, err, ErrUnknownStrategy)
 }
 
+func TestRegistryRejectsResolvedStrategyWithChangedOrInvalidDefinition(t *testing.T) {
+	for name, dynamic := range map[string]Definition{
+		"changed": {ID: "x", Version: "1", PrimaryTimeframe: market.Day, DefaultHoldBars: 1},
+		"invalid": {ID: "x", Version: "1", PrimaryTimeframe: market.UnknownTimeframe},
+	} {
+		t.Run(name, func(t *testing.T) {
+			registry := &Registry{}
+			registered := Definition{ID: "x", Version: "1", PrimaryTimeframe: market.Day}
+			calls := 0
+			require.NoError(t, registry.Register("x", "1", func(map[string]float64) (Strategy, error) {
+				calls++
+				if calls == 1 {
+					return &testStrategy{definition: registered}, nil
+				}
+				return &testStrategy{definition: dynamic}, nil
+			}))
+
+			_, err := registry.Resolve("x", "1", nil)
+
+			assert.ErrorIs(t, err, ErrInvalidDefinition)
+		})
+	}
+}
+
 type testStrategy struct {
 	definition Definition
 	onBar      func(Context) (Decision, error)

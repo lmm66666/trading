@@ -72,6 +72,43 @@ func TestNewTimelineRejectsFutureOrOutOfRangeAuxiliaryAlignment(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidTimeline)
 }
 
+func TestNewTimelineRequiresValidDatasetsAndMatchingFeatureTimeframes(t *testing.T) {
+	_, err := NewTimeline(market.Dataset{}, nil, nil)
+	assert.ErrorIs(t, err, ErrInvalidTimeline)
+
+	primary := testDataset(t, market.Day, []string{"2026-01-01", "2026-01-02", "2026-01-03"})
+	weeklyRef := indicator.Ref{Kind: indicator.OHLC, Timeframe: market.Week, PriceView: market.Raw, Field: indicator.Close}
+	_, err = NewTimeline(primary, indicator.Set{weeklyRef.Key(): indicator.SMA([]float64{10, 11, 12}, 1)}, nil)
+	assert.ErrorIs(t, err, ErrInvalidTimeline)
+
+	auxiliary := testDataset(t, market.Week, []string{"2026-01-01", "2026-01-03"})
+	_, err = NewTimeline(primary, indicator.Set{closeRef.Key(): indicator.SMA([]float64{10, 11, 12}, 1)}, map[market.Timeframe]AlignedFeatures{
+		market.Week: {
+			Dataset: auxiliary, Features: indicator.Set{closeRef.Key(): indicator.SMA([]float64{20, 21}, 1)},
+			PrimaryToAuxiliary: []int{0, 0, 1},
+		},
+	})
+	assert.ErrorIs(t, err, ErrInvalidTimeline)
+}
+
+func TestNewTimelineRejectsNonLatestAuxiliaryMappings(t *testing.T) {
+	primary := testDataset(t, market.Day, []string{"2026-01-01", "2026-01-02", "2026-01-03"})
+	auxiliary := testDataset(t, market.Week, []string{"2026-01-01", "2026-01-03"})
+	auxRef := indicator.Ref{Kind: indicator.OHLC, Timeframe: market.Week, PriceView: market.Raw, Field: indicator.Close}
+	features := indicator.Set{closeRef.Key(): indicator.SMA([]float64{10, 11, 12}, 1)}
+	auxFeatures := indicator.Set{auxRef.Key(): indicator.SMA([]float64{20, 21}, 1)}
+
+	_, err := NewTimeline(primary, features, map[market.Timeframe]AlignedFeatures{
+		market.Week: {Dataset: auxiliary, Features: auxFeatures, PrimaryToAuxiliary: []int{0, 0, 0}},
+	})
+	assert.ErrorIs(t, err, ErrInvalidTimeline)
+
+	_, err = NewTimeline(primary, features, map[market.Timeframe]AlignedFeatures{
+		market.Week: {Dataset: auxiliary, Features: auxFeatures, PrimaryToAuxiliary: []int{-1, 0, 1}},
+	})
+	assert.ErrorIs(t, err, ErrInvalidTimeline)
+}
+
 func TestContextReadsAuxiliaryFeaturesAsOfTheRequestedPrimaryBar(t *testing.T) {
 	primary := testDataset(t, market.Day, []string{"2026-01-01", "2026-01-02", "2026-01-03"})
 	auxiliary := testDataset(t, market.Week, []string{"2026-01-01", "2026-01-03"})

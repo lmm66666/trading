@@ -31,9 +31,11 @@ func cloneDefinition(definition Definition) Definition {
 	cloned := definition
 	cloned.Features = append([]indicator.Ref(nil), definition.Features...)
 	cloned.Auxiliary = append([]market.Timeframe(nil), definition.Auxiliary...)
-	cloned.Parameters = make(map[string]ParameterSpec, len(definition.Parameters))
-	for name, spec := range definition.Parameters {
-		cloned.Parameters[name] = spec
+	if definition.Parameters != nil {
+		cloned.Parameters = make(map[string]ParameterSpec, len(definition.Parameters))
+		for name, spec := range definition.Parameters {
+			cloned.Parameters[name] = spec
+		}
 	}
 	return cloned
 }
