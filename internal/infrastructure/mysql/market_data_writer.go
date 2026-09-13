@@ -36,7 +36,10 @@ func (r *MarketDataRepository) Publish(ctx context.Context, input port.MarketWri
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// Metadata is unknown until a universe sync supplies it. Never invent
 			// a display name, board, active listing status, or trading lot size.
-			instrument = InstrumentModel{Exchange: string(batch.Instrument.Exchange), Code: batch.Instrument.Code, Source: batch.Source}
+			instrument, err = instrumentModel(batch.Instrument, batch.Source)
+			if err != nil {
+				return err
+			}
 			if err := tx.Create(&instrument).Error; err != nil {
 				return fmt.Errorf("create instrument: %w", err)
 			}

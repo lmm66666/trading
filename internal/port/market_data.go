@@ -128,7 +128,12 @@ func (bundle Bundle) Validate() error {
 }
 
 func validExchange(exchange market.Exchange) bool {
-	return exchange == market.SSE || exchange == market.SZSE || exchange == market.BSE
+	switch exchange {
+	case market.SSE, market.SZSE, market.BSE, market.SHFE, market.INE, market.DCE, market.CZCE:
+		return true
+	default:
+		return false
+	}
 }
 
 func validateInstrument(id market.InstrumentID, field string) error {

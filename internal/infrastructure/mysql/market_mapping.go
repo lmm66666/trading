@@ -22,6 +22,26 @@ func storedTime(t time.Time) error                  { return port.ValidateMarket
 func validateStoredBar(b market.Bar) error          { return port.ValidateMarketBar(b) }
 func validateAction(a market.CorporateAction) error { return port.ValidateCorporateAction(a) }
 
+func instrumentModel(id market.InstrumentID, source string) (InstrumentModel, error) {
+	if err := id.Validate(); err != nil {
+		return InstrumentModel{}, invalid("invalid instrument: %v", err)
+	}
+	delivery, hasDelivery := id.DeliveryMonth()
+	var deliveryMonth *time.Time
+	if hasDelivery {
+		deliveryMonth = &delivery
+	}
+	return InstrumentModel{
+		Exchange:       string(id.Exchange),
+		Code:           id.Code,
+		AssetClass:     string(id.AssetClass()),
+		InstrumentKind: string(id.Kind()),
+		ProductCode:    id.Product(),
+		DeliveryMonth:  deliveryMonth,
+		Source:         source,
+	}, nil
+}
+
 func timeframeName(tf market.Timeframe) string {
 	switch tf {
 	case market.Day:

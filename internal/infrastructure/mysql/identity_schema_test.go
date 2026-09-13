@@ -51,6 +51,20 @@ func TestOpaqueIdentitySchemaPreservesCaseAndTrailingBytes(t *testing.T) {
 	}
 }
 
+func TestInstrumentSchemaStoresCanonicalFuturesClassification(t *testing.T) {
+	s, err := schema.Parse(&InstrumentModel{}, &sync.Map{}, schema.NamingStrategy{})
+	require.NoError(t, err)
+	require.Equal(t, 16, s.FieldsByName["Exchange"].Size)
+	require.Equal(t, 32, s.FieldsByName["Code"].Size)
+	require.NotNil(t, s.FieldsByName["AssetClass"])
+	require.NotNil(t, s.FieldsByName["InstrumentKind"])
+	require.NotNil(t, s.FieldsByName["ProductCode"])
+	require.NotNil(t, s.FieldsByName["DeliveryMonth"])
+	require.NotNil(t, s.FieldsByName["LastTradeDate"])
+	require.NotNil(t, s.FieldsByName["ContractMultiplier"])
+	require.NotNil(t, s.FieldsByName["TickSize"])
+}
+
 func TestUnboundedOrderAndFillIdentityMappingKeepsExactBytes(t *testing.T) {
 	repo, mock := mockRepository(t)
 	for _, id := range []string{"Key", "key", "key ", "成交标识 ", strings.Repeat("长", 500)} {

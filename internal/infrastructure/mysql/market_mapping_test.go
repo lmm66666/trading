@@ -76,3 +76,19 @@ func TestBarMappingPreservesRawMoneyAndPinnedVersion(t *testing.T) {
 	_, err = row.bar(b.Instrument, 12)
 	require.Error(t, err)
 }
+
+func TestInstrumentMappingClassifiesEquityAndFutures(t *testing.T) {
+	equity, err := instrumentModel(market.InstrumentID{Exchange: market.SSE, Code: "600000"}, "fixture")
+	require.NoError(t, err)
+	require.Equal(t, "EQUITY", equity.AssetClass)
+	require.Equal(t, "SPOT_EQUITY", equity.InstrumentKind)
+	require.Empty(t, equity.ProductCode)
+	require.Nil(t, equity.DeliveryMonth)
+
+	future, err := instrumentModel(market.InstrumentID{Exchange: market.SHFE, Code: "AU202612"}, "fixture")
+	require.NoError(t, err)
+	require.Equal(t, "FUTURES", future.AssetClass)
+	require.Equal(t, "FUTURES_CONTRACT", future.InstrumentKind)
+	require.Equal(t, "AU", future.ProductCode)
+	require.Equal(t, time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC), *future.DeliveryMonth)
+}

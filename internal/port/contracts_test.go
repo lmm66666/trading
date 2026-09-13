@@ -59,7 +59,7 @@ func TestBatchRequestValidateRejectsInvalidBoundsAndDoesNotMutateAuxiliary(t *te
 }
 
 func TestPortRequestLimitsAreEnforced(t *testing.T) {
-	validScope := port.InstrumentScope{Exchanges: []market.Exchange{market.SSE, market.SZSE}, ActiveOnly: true, Limit: port.MaxScanInstruments}
+	validScope := port.InstrumentScope{Exchanges: []market.Exchange{market.SSE, market.SZSE, market.SHFE, market.INE, market.DCE, market.CZCE}, ActiveOnly: true, Limit: port.MaxScanInstruments}
 	if err := validScope.Validate(); err != nil {
 		t.Fatalf("InstrumentScope.Validate() error = %v", err)
 	}

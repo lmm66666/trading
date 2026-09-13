@@ -198,7 +198,10 @@ func TestPublishSQLDigestIdempotencyAndUnknownMetadata(t *testing.T) {
 	mock.ExpectBegin()
 	expectVersionLock(mock)
 	mock.ExpectQuery("SELECT .*t_instruments").WillReturnRows(emptyRows())
-	mock.ExpectExec("INSERT INTO `t_instruments`").WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "SSE", "600000", "", "", false, int64(0), "fixture").WillReturnResult(sqlmock.NewResult(41, 1))
+	mock.ExpectExec("INSERT INTO `t_instruments`").WithArgs(
+		sqlmock.AnyArg(), sqlmock.AnyArg(), "SSE", "600000", "EQUITY", "SPOT_EQUITY", "", nil, nil,
+		int64(0), int64(0), "", "", false, int64(0), "fixture",
+	).WillReturnResult(sqlmock.NewResult(41, 1))
 	mock.ExpectQuery("SELECT .*t_market_data_versions").WillReturnRows(emptyRows())
 	mock.ExpectQuery("SELECT .*t_market_data_versions").WillReturnRows(versionRows(0))
 	mock.ExpectExec("INSERT INTO `t_market_data_versions`").WillReturnResult(sqlmock.NewResult(2, 1))
