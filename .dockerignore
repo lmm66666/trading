@@ -2,13 +2,21 @@
 .gitignore
 .idea
 .claude
+.superpowers
+.tmp
 .vscode
 
 # Local build artifact
 trading
 
 # Local config (mount at runtime)
-config.yaml
+config*.yaml
+!config.example.yaml
+.env*
+*.sql
+*.sql.gz
+*.dump
+*.tar
 
 # Docs and meta
 docs

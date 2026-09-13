@@ -35,10 +35,11 @@ type MarketIngestionService struct {
 	config MarketIngestionConfig
 }
 type RefreshResult struct {
-	Instrument            market.InstrumentID
-	Version               market.DataVersion
-	Quality               port.DataQuality
-	DailyBars, WeeklyBars int
+	Instrument market.InstrumentID `json:"instrument"`
+	Version    market.DataVersion  `json:"version"`
+	Quality    port.DataQuality    `json:"quality"`
+	DailyBars  int                 `json:"daily_bars"`
+	WeeklyBars int                 `json:"weekly_bars"`
 }
 
 // 全进程内同一证券只允许一个获取/发布事务，避免较慢请求回写旧观测。

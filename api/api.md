@@ -34,6 +34,7 @@
 | 409 | SIGNAL_SNAPSHOT_NOT_READY | 无匹配的已发布快照 |
 | 409 | RUN_RESULT_NOT_READY | 回测结果尚未成功发布，包括失败/取消 |
 | 409 | AMBIGUOUS_INSTRUMENT | 旧六位代码匹配多个活跃交易所证券 |
+| 429 | MARKET_REFRESH_ALREADY_RUNNING | 已有定时或手工全市场行情刷新运行中 |
 | 500 | internal server error | 未分类内部错误；不含 SQL、凭据、路径或堆栈 |
 
 JSON 创建请求限制1MiB（含空白），拒绝未知字段、超大 body 和尾随第二个 JSON 值。时间使用 RFC3339，输入时区规范化为 UTC；日期范围最多20年。身份精确区分大小写和尾空格：策略/Run/SnapshotID 最多64字节，策略版本32字节，幂等键128字节。证券使用完整 `SSE:600000`、`SZSE:000001` 或 `BSE:920001`。
@@ -102,9 +103,9 @@ Task12 延后的游标输出在此补齐：不可变快照行以1开始连续编
 
 `GET /api/v1/strategies` 返回按 ID、版本排序的已编译目录；`GET /api/v1/strategies/:strategy?version=1` 返回具体版本。含 `strategy,version,primary_timeframe,warmup_bars,default_hold_bars,parameters,features,auxiliary`，每个参数含 default/min/max/integer。内置版本1：daily_b1_buy、weekly_b1_buy、bottom_surge_pullback。未知策略/版本返回404。
 
-### 1. 保存股票历史数据
+### 1. 保存股票历史数据（兼容路径）
 
-从行情数据源（Broker）获取指定股票的历史 K 线数据，清洗后写入数据库。
+按六位代码从活跃证券主数据中精确解析证券，再通过东方财富版本化行情源获取日线、周线、复权因子与公司行动。所有数据校验通过后一次原子发布新的 `COMPLETE` 版本；不会写旧 K 线表。
 
 - **Method**: `POST`
 - **Path**: `/api/stocks/historical`
@@ -114,7 +115,7 @@ Task12 延后的游标输出在此补齐：不可变快照行以1开始连续编
 
 | 字段 | 类型   | 必填 | 说明                     |
 |------|--------|------|--------------------------|
-| code | string | 是   | 股票代码，如 `600312`    |
+| code | string | 是   | 六位股票代码，如 `600312` |
 
 #### 请求示例
 
@@ -130,15 +131,23 @@ curl -X POST http://localhost:8080/api/stocks/historical \
 {
   "code": 0,
   "message": "success",
-  "data": null
+  "data": {
+    "instrument": {"Exchange":"SSE","Code":"600312"},
+    "version": 12,
+    "quality": "COMPLETE",
+    "daily_bars": 4800,
+    "weekly_bars": 960
+  }
 }
 ```
 
+无活跃证券返回404；同一代码落在多个交易所返回409；同证券正在刷新返回429。请求 JSON 限制1MiB，拒绝未知字段和尾随 JSON。
+
 ---
 
-### 2. 补全股票数据
+### 2. 补全股票数据（兼容路径）
 
-手动触发扫描，检查 daily 和 weekly 表中所有股票代码的数据完整性，自动补充缺失的日线和周线数据。
+异步触发一次全市场版本化行情刷新。证券集合来自 `t_instruments` 中的活跃记录，使用配置的 `Worker.ScanBatchSize` 有界并发；同一进程内定时刷新和手工刷新只允许一个运行实例。
 
 - **Method**: `POST`
 - **Path**: `/api/stocks/append`
@@ -156,9 +165,11 @@ curl -X POST http://localhost:8080/api/stocks/append
 {
   "code": 0,
   "message": "success",
-  "data": null
+  "data": {"status":"ACCEPTED"}
 }
 ```
+
+成功 HTTP 状态为202；已有刷新运行时返回429、`MARKET_REFRESH_ALREADY_RUNNING`。任务使用应用根 context，HTTP 请求结束不会终止已接受的刷新，服务停机时会取消并等待退出。
 
 ---
 
@@ -230,9 +241,9 @@ curl -X POST http://localhost:8080/api/stocks/financial-report \
 
 ---
 
-### 5. 查询股价 K 线数据
+### 6. 查询股价 K 线数据（兼容路径）
 
-根据股票代码和周期查询 K 线数据，支持分页。
+从指定或最新 `COMPLETE` 行情版本查询日线/周线，支持原始价和前复权价。六位代码只匹配活跃证券；不回退旧 K 线表。
 
 - **Method**: `GET`
 - **Path**: `/api/stocks/price`
@@ -243,8 +254,10 @@ curl -X POST http://localhost:8080/api/stocks/financial-report \
 |----------|--------|------|----------|--------------------------------------|
 | code     | string | 是   | -        | 股票代码，如 `600312`               |
 | cycle    | string | 否   | `daily`  | 周期：`daily`（日线）或 `weekly`（周线）|
-| pagesize | int    | 否   | `20`     | 每页条数                             |
-| pagenum  | int    | 否   | `1`      | 页码，从 1 开始                      |
+| pagesize | int    | 否   | `20`     | 每页条数，1–1000                     |
+| pagenum  | int    | 否   | `1`      | 页码，从1开始，`pagesize*pagenum` 最大5000 |
+| view     | string | 否   | `raw`    | `raw` 原始价或 `qfq` 前复权价        |
+| version  | uint64 | 否   | `0`      | 0 使用最新 COMPLETE 版本，正数锁定版本 |
 
 #### 请求示例
 
@@ -265,15 +278,19 @@ curl "http://localhost:8080/api/stocks/price?code=600312&cycle=weekly&pagesize=1
   "data": {
     "code": "600312",
     "cycle": "daily",
+    "view": "raw",
+    "data_version": 12,
     "data": [
       {
-        "code": "600312",
-        "date": "2022-01-22",
-        "open": 10.5000,
-        "high": 11.2000,
-        "low": 10.3000,
-        "close": 10.8000,
-        "volume": 1234567
+        "open_time": "2022-01-22T00:00:00Z",
+        "close_time": "2022-01-22T00:00:00Z",
+        "open": 10.5,
+        "high": 11.2,
+        "low": 10.3,
+        "close": 10.8,
+        "volume": 1234567,
+        "amount": 13500000,
+        "trading_status": 0
       }
     ]
   }
@@ -286,23 +303,23 @@ curl "http://localhost:8080/api/stocks/price?code=600312&cycle=weekly&pagesize=1
 |----------|----------|------------------------|
 | code     | string   | 股票代码               |
 | cycle    | string   | 数据周期：daily 或 weekly |
-| data     | []object | K 线数据列表           |
+| view     | string   | raw 或 qfq              |
+| data_version | uint64 | 本次读取的不可变行情版本 |
+| data     | []object | K 线数据列表，按收盘时间升序 |
 
 **data 数组元素字段：**
 
 | 字段   | 类型    | 说明           |
 |--------|---------|----------------|
-| code   | string  | 股票代码       |
-| date   | string  | 日期，格式 YYYY-MM-DD |
-| open   | float64 | 开盘价         |
-| high   | float64 | 最高价         |
-| low    | float64 | 最低价         |
-| close  | float64 | 收盘价         |
-| volume | int64   | 成交量（股）   |
+| open_time / close_time | RFC3339 | UTC Bar 时间 |
+| open / high / low / close | float64 | 按 view 转换后的价格 |
+| volume | int64 | 成交量 |
+| amount | float64 | 成交额 |
+| trading_status | uint8 | 0 可交易、1 停牌 |
 
 ---
 
-### 6. 补全财报数据
+### 7. 补全财报数据
 
 手动触发财报数据补全扫描，检查所有股票代码的财报数据完整性，自动补充缺失的季度财报。
 
@@ -328,7 +345,7 @@ curl -X POST http://localhost:8080/api/stocks/financial-report/append
 
 ---
 
-### 7. 查询财报数据
+### 8. 查询财报数据
 
 根据股票代码查询季度财报数据，支持分页。
 
@@ -431,7 +448,7 @@ curl "http://localhost:8080/api/stocks/financial-report?code=600312&pagesize=5&p
 
 ---
 
-### 8. 财报信号扫描
+### 9. 财报信号扫描
 
 扫描数据库中所有有财报数据的股票，筛选出连续多个季度净利润同比增长超过指定阈值的股票。
 
@@ -482,7 +499,7 @@ curl "http://localhost:8080/api/stocks/financial-report/signal?profit_threshold=
 
 ---
 
-### 9. 查询 Shibor 利率
+### 10. 查询 Shibor 利率
 
 获取 Shibor 利率数据，支持按期限筛选。
 
@@ -545,7 +562,7 @@ curl "http://localhost:8080/api/macro/shibor"
 
 ---
 
-### 10. 查询汇率
+### 11. 查询汇率
 
 获取汇率实时数据，支持按代码筛选。
 

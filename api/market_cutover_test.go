@@ -57,6 +57,8 @@ func TestLegacyMarketEndpointsUseVersionedServices(t *testing.T) {
 	w := kernelRequest(t, f, http.MethodPost, "/api/stocks/historical", `{"code":"600000"}`)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	require.Equal(t, market.InstrumentID{Exchange: market.SSE, Code: "600000"}, ingestion.id)
+	require.Contains(t, w.Body.String(), `"daily_bars":20`)
+	require.NotContains(t, w.Body.String(), `"DailyBars"`)
 
 	w = kernelRequest(t, f, http.MethodPost, "/api/stocks/append", "")
 	require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
