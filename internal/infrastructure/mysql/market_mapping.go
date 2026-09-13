@@ -1,11 +1,7 @@
 package mysql
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"sort"
 	"time"
 	"trading/internal/market"
 	"trading/internal/port"
@@ -15,134 +11,16 @@ func invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: "+format, append([]any{port.ErrInvalidPortValue}, args...)...)
 }
 
-// MarketBatchDigest computes the SHA-256 of the canonical incremental batch.
-// Input version metadata is excluded: the writer assigns publication versions.
+// MarketBatchDigest 保留存储调用方兼容入口；规范化契约由 port 统一维护。
 func MarketBatchDigest(batch port.MarketWriteBatch) (string, error) {
-	batch.Digest = ""
-	_, digest, err := canonicalBatch(batch)
-	return digest, err
+	return port.MarketBatchDigest(batch)
 }
-
-func canonicalBatch(input port.MarketWriteBatch) (port.MarketWriteBatch, string, error) {
-	b := input
-	b.Digest = "canonicalizing"
-	if err := b.Validate(); err != nil {
-		return b, "", err
-	}
-	b.Bars = make(map[market.Timeframe][]market.Bar, len(input.Bars))
-	for tf, bars := range input.Bars {
-		copyBars := make([]market.Bar, len(bars))
-		for i, bar := range bars {
-			bar.Version = 0
-			if err := validateStoredBar(bar); err != nil {
-				return b, "", err
-			}
-			copyBars[i] = bar
-		}
-		dataset, err := market.NewDataset(b.Instrument, tf, 0, copyBars)
-		if err != nil {
-			return b, "", fmt.Errorf("canonical bars: %w", err)
-		}
-		if dataset.Len() > 0 {
-			b.Bars[tf] = dataset.Bars()
-		}
-	}
-	b.Factors = append([]market.AdjustmentFactor{}, input.Factors...)
-	sort.Slice(b.Factors, func(i, j int) bool { return b.Factors[i].EffectiveTime.Before(b.Factors[j].EffectiveTime) })
-	for i := range b.Factors {
-		b.Factors[i].Version = 0
-		if err := storedTime(b.Factors[i].EffectiveTime); err != nil {
-			return b, "", err
-		}
-		if i > 0 && b.Factors[i].EffectiveTime.Equal(b.Factors[i-1].EffectiveTime) {
-			return b, "", invalid("duplicate factor effective time")
-		}
-	}
-	b.Actions = append([]market.CorporateAction{}, input.Actions...)
-	sort.Slice(b.Actions, func(i, j int) bool { return b.Actions[i].ID < b.Actions[j].ID })
-	for i := range b.Actions {
-		b.Actions[i].Version = 0
-		if err := validateAction(b.Actions[i]); err != nil {
-			return b, "", err
-		}
-		if i > 0 && b.Actions[i].ID == b.Actions[i-1].ID {
-			return b, "", invalid("duplicate action ID")
-		}
-	}
-	if len(b.Bars) == 0 && len(b.Factors) == 0 && len(b.Actions) == 0 {
-		return b, "", invalid("batch contains no observations")
-	}
-	b.Digest = ""
-	encoded, err := json.Marshal(b)
-	if err != nil {
-		return b, "", fmt.Errorf("encode canonical batch: %w", err)
-	}
-	hash := sha256.Sum256(encoded)
-	digest := hex.EncodeToString(hash[:])
-	if input.Digest != "" && input.Digest != digest {
-		return b, "", invalid("batch digest does not match canonical SHA-256")
-	}
-	b.Digest = digest
-	return b, digest, nil
+func canonicalBatch(batch port.MarketWriteBatch) (port.MarketWriteBatch, string, error) {
+	return port.CanonicalMarketBatch(batch)
 }
-
-func storedTime(t time.Time) error {
-	if t.IsZero() || t.Location() != time.UTC || t.Year() < 1000 || t.Year() > 9999 || t.Nanosecond()%1000 != 0 {
-		return invalid("timestamp must be UTC and exactly representable by MySQL datetime(6)")
-	}
-	return nil
-}
-
-func validateStoredBar(b market.Bar) error {
-	if err := storedTime(b.OpenTime); err != nil {
-		return err
-	}
-	if err := storedTime(b.CloseTime); err != nil {
-		return err
-	}
-	if b.CloseTime.Before(b.OpenTime) {
-		return invalid("bar closes before it opens")
-	}
-	if b.Trading != market.Tradable && b.Trading != market.Suspended {
-		return invalid("unknown trading status")
-	}
-	if b.Amount < 0 {
-		return invalid("negative bar amount")
-	}
-	if (b.LimitUp != nil && *b.LimitUp <= 0) || (b.LimitDown != nil && *b.LimitDown <= 0) || (b.LimitUp != nil && b.LimitDown != nil && *b.LimitDown > *b.LimitUp) {
-		return invalid("invalid price limits")
-	}
-	return nil
-}
-
-func validateAction(a market.CorporateAction) error {
-	if err := port.ValidateIdentity(a.ID, "source event ID", port.MaxSourceEventIDBytes, false); err != nil {
-		return err
-	}
-	if err := a.Instrument.Validate(); err != nil {
-		return err
-	}
-	if err := storedTime(a.ExDate); err != nil {
-		return err
-	}
-	if a.CashPerShare < 0 || a.ShareNumerator < 0 || a.ShareDenominator < 0 {
-		return invalid("negative corporate action value")
-	}
-	switch a.Kind {
-	case market.CashDividend:
-		if a.ShareNumerator != 0 || a.ShareDenominator != 0 {
-			return invalid("cash dividend has share ratio")
-		}
-	case market.ShareDistribution:
-		if a.ShareNumerator <= 0 || a.ShareDenominator <= 0 {
-			return invalid("share distribution requires a positive ratio")
-		}
-	case market.RightsIssue: // Keep unsupported actions explicit for the engine's fail-fast path.
-	default:
-		return invalid("unknown corporate action kind")
-	}
-	return nil
-}
+func storedTime(t time.Time) error                  { return port.ValidateMarketTime(t) }
+func validateStoredBar(b market.Bar) error          { return port.ValidateMarketBar(b) }
+func validateAction(a market.CorporateAction) error { return port.ValidateCorporateAction(a) }
 
 func timeframeName(tf market.Timeframe) string {
 	switch tf {

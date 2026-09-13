@@ -3,6 +3,7 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"gorm.io/gorm"
 	"sort"
@@ -21,6 +22,9 @@ func NewMarketDataRepository(db *gorm.DB) *MarketDataRepository { return &Market
 func (r *MarketDataRepository) LatestCompleteVersion(ctx context.Context) (market.DataVersion, error) {
 	var row DataVersionModel
 	if err := r.db.WithContext(ctx).Where("version > 0 AND status = ?", versionComplete).Order("version DESC").Take(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, fmt.Errorf("%w: %w", port.ErrMarketDataNotFound, err)
+		}
 		return 0, fmt.Errorf("latest complete market version: %w", err)
 	}
 	return market.DataVersion(row.Version), nil
@@ -32,6 +36,9 @@ func completeVersion(db *gorm.DB, version market.DataVersion) (DataVersionModel,
 		return row, invalid("version zero is reserved")
 	}
 	if err := db.Where("version = ? AND version > 0 AND status = ?", uint64(version), versionComplete).Take(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return row, fmt.Errorf("%w: %w", port.ErrMarketDataNotFound, err)
+		}
 		return row, fmt.Errorf("market version %d is not complete: %w", version, err)
 	}
 	if err := port.DataQuality(row.Quality).Validate(); err != nil {
@@ -129,7 +136,7 @@ func (r *MarketDataRepository) BatchDatasets(ctx context.Context, ids []market.I
 		}
 		for id := range unique {
 			if !found[id] && failures[id] == nil {
-				failures[id] = fmt.Errorf("instrument %s: %w", id, gorm.ErrRecordNotFound)
+				failures[id] = fmt.Errorf("instrument %s: %w: %w", id, port.ErrMarketDataNotFound, gorm.ErrRecordNotFound)
 			}
 		}
 		if len(numeric) == 0 {

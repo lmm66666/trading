@@ -10,11 +10,12 @@ import (
 )
 
 var (
-	ErrTemporary        = errors.New("temporary infrastructure failure")
-	ErrSnapshotNotReady = errors.New("signal snapshot not ready")
-	ErrRunNotFound      = errors.New("run not found")
-	ErrLeaseLost        = errors.New("run lease lost")
-	ErrInvalidPortValue = errors.New("invalid port value")
+	ErrMarketDataNotFound = errors.New("market data not found")
+	ErrTemporary          = errors.New("temporary infrastructure failure")
+	ErrSnapshotNotReady   = errors.New("signal snapshot not ready")
+	ErrRunNotFound        = errors.New("run not found")
+	ErrLeaseLost          = errors.New("run lease lost")
+	ErrInvalidPortValue   = errors.New("invalid port value")
 )
 
 const (
