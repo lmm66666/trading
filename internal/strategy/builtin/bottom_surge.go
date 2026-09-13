@@ -36,7 +36,7 @@ func NewBottomSurge(params map[string]float64) (strategy.Strategy, error) {
 	resolved := resolvedParameters(bottomParameterSpecs(), params)
 	return &bottomSurge{params: resolved, tracker: newPullbackTracker(trackerConfig{
 		MaxPullbackPct: resolved[bottomPullbackPctParam], MaxPullbackBars: int(resolved[bottomPullbackBarsParam]),
-		SurgeGap: int(resolved[bottomSurgeGapParam]), GradualDays: int(resolved[bottomGradualDaysParam]),
+		SurgeGap: int(resolved[bottomSurgeGapParam]), GradualDays: int(resolved[bottomGradualDaysParam]), RequireNearLow: true,
 	})}, nil
 }
 
@@ -62,7 +62,7 @@ func (s *bottomSurge) OnBar(context strategy.Context) (strategy.Decision, error)
 	nearLow := isNearSixtyBarLow(context, s.params[bottomLowBandParam])
 	tracked := s.tracker.Advance(trackerInput{
 		Index: context.Index(), Close: close,
-		Surge:   nearLow && volumeRatio >= s.params[bottomSingleVolumeParam] && rallyPct >= s.params[bottomSingleRallyParam],
+		Surge:   volumeRatio >= s.params[bottomSingleVolumeParam] && rallyPct >= s.params[bottomSingleRallyParam],
 		Gradual: volumeRatio >= s.params[bottomGradualVolumeParam] && rallyPct >= s.params[bottomGradualRallyParam],
 		NearLow: nearLow,
 	})

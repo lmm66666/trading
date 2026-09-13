@@ -29,3 +29,24 @@ func TestBottomSurgeRejectsFractionalAndOutOfRangeParameters(t *testing.T) {
 	_, err = registry.Resolve(bottomSurgeID, strategyVersion, map[string]float64{bottomPullbackPctParam: 101})
 	assert.ErrorIs(t, err, strategy.ErrInvalidParameter)
 }
+
+func TestBottomSurgeExtendsQualifiedFollowOnSurgesAfterLeavingLowBand(t *testing.T) {
+	instance, err := NewBottomSurge(nil)
+	require.NoError(t, err)
+	builtin := instance.(*bottomSurge)
+	timeline := timelineFor(t, builtin.Definition(), fixtureBottomSurgeWithFollowOnSurges(), nil)
+	for index := 0; index <= 70; index++ {
+		decision, err := builtin.OnBar(&replayContext{timeline: timeline, index: index})
+		require.NoError(t, err)
+		if index == 67 {
+			assert.Equal(t, strategy.Hold, decision.Action)
+		}
+	}
+	assert.Equal(t, rally, builtin.tracker.phase)
+	assert.Equal(t, 70, builtin.tracker.lastSurgeIndex)
+
+	decision, err := builtin.OnBar(&replayContext{timeline: timeline, index: 71})
+	require.NoError(t, err)
+	assert.Equal(t, pullback, builtin.tracker.phase)
+	assert.Equal(t, strategy.Hold, decision.Action) // Indicator filters remain independent of window tracking.
+}

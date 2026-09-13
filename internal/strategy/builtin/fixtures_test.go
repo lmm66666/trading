@@ -59,6 +59,21 @@ func fixtureBottomSurge(length int) []market.Bar {
 	return bars
 }
 
+func fixtureBottomSurgeWithFollowOnSurges() []market.Bar {
+	bars := fixtureBottomSurge(90)
+	bars[65] = testBar(65, market.Day, 104.8, 112, 104, 111, 260)
+	bars[66] = testBar(66, market.Day, 111, 115, 110, 114, 120)
+	// These two qualified surge bars have left the 60-bar low band. The first
+	// is within the initial gap; the second is only within the gap renewed by
+	// the first, so it distinguishes a true forward extension from a restart.
+	bars[67] = testBar(67, market.Day, 115, 121, 114, 120, 260)
+	bars[68] = testBar(68, market.Day, 120, 122, 119, 121, 120)
+	bars[69] = testBar(69, market.Day, 121, 123, 120, 122, 120)
+	bars[70] = testBar(70, market.Day, 123, 130, 122, 129, 260)
+	bars[71] = testBar(71, market.Day, 128, 129, 109, 112, 100)
+	return bars
+}
+
 func futureRallyBars() []market.Bar {
 	return []market.Bar{
 		testBar(90, market.Day, 110, 114, 109, 113, 140),
@@ -98,18 +113,70 @@ func fixtureWeeklyEntry() ([]market.Bar, []market.Bar) {
 	return weeks, daily
 }
 
-func replayAll(t *testing.T, id string, primaryBars, auxiliaryBars []market.Bar) []strategy.Decision {
+// replayTimelineDecisions advances one strategy instance over one complete
+// timeline. Unlike rebuilding every prefix, this preserves the production
+// state-transition shape while the context still prevents future reads.
+func replayTimelineDecisions(t *testing.T, id string, primaryBars, auxiliaryBars []market.Bar) []strategy.Decision {
 	t.Helper()
-	decisions := make([]strategy.Decision, len(primaryBars))
-	for length := 1; length <= len(primaryBars); length++ {
-		var aux []market.Bar
-		if auxiliaryBars != nil {
-			aux = auxiliaryBars
-		}
-		decisions[length-1] = replayLatest(t, id, primaryBars[:length], aux)
+	registry := newRegistry(t)
+	instance, err := registry.Resolve(id, strategyVersion, nil)
+	require.NoError(t, err)
+	timeline := timelineFor(t, instance.Definition(), primaryBars, auxiliaryBars)
+	decisions := make([]strategy.Decision, timeline.Len())
+	for index := range decisions {
+		context := &replayContext{timeline: timeline, index: index}
+		decision, err := instance.OnBar(context)
+		require.NoError(t, err)
+		require.NoError(t, context.Err())
+		decisions[index] = decision
 	}
 	return decisions
 }
+
+type replayContext struct {
+	timeline strategy.Timeline
+	index    int
+	err      error
+}
+
+func (c *replayContext) Bar() market.Bar { return c.timeline.Primary.Bar(c.index) }
+
+func (c *replayContext) Index() int { return c.index }
+
+func (c *replayContext) Float(ref indicator.Ref, ago int) (float64, bool) {
+	if ago < 0 {
+		c.err = strategy.ErrFutureAccess
+		return 0, false
+	}
+	index := c.index - ago
+	if index < 0 {
+		return 0, false
+	}
+	if ref.Timeframe == c.timeline.Primary.Timeframe() {
+		series, exists := c.timeline.Features[ref.Key()]
+		if !exists {
+			return 0, false
+		}
+		return series.At(index)
+	}
+	aligned, exists := c.timeline.Auxiliary[ref.Timeframe]
+	if !exists || index >= len(aligned.PrimaryToAuxiliary) {
+		return 0, false
+	}
+	auxiliaryIndex := aligned.PrimaryToAuxiliary[index]
+	if auxiliaryIndex < 0 {
+		return 0, false
+	}
+	series, exists := aligned.Features[ref.Key()]
+	if !exists {
+		return 0, false
+	}
+	return series.At(auxiliaryIndex)
+}
+
+func (c *replayContext) Position() strategy.PositionView { return strategy.PositionView{} }
+
+func (c *replayContext) Err() error { return c.err }
 
 func replayLatest(t *testing.T, id string, primaryBars, auxiliaryBars []market.Bar) strategy.Decision {
 	t.Helper()

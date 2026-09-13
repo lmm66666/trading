@@ -16,6 +16,7 @@ type trackerConfig struct {
 	MaxPullbackBars int
 	SurgeGap        int
 	GradualDays     int
+	RequireNearLow  bool
 }
 
 // trackerInput contains only values confirmed at the current bar. The tracker
@@ -55,20 +56,35 @@ func (p *pullbackTracker) Advance(input trackerInput) trackerOutput {
 		p.phase = invalid
 		return p.output(false)
 	}
+	// A terminal window belongs only to its own candidate. Reset and evaluate
+	// this bar once as idle input so a later independent surge is not lost.
 	if p.phase == idle {
 		p.advanceIdle(input)
 		return p.output(false)
 	}
 	if p.phase == invalid || p.phase == complete {
+		p.reset()
+		p.advanceIdle(input)
 		return p.output(false)
 	}
 
-	if input.Surge && p.config.SurgeGap > 0 && input.Index-p.lastSurgeIndex <= p.config.SurgeGap {
-		p.lastSurgeIndex = input.Index
-		if input.Close >= p.peakClose {
-			p.peakIndex, p.peakClose, p.phase = input.Index, input.Close, rally
+	if input.Surge {
+		if p.config.SurgeGap > 0 && input.Index-p.lastSurgeIndex <= p.config.SurgeGap {
+			p.lastSurgeIndex = input.Index
+			if input.Close >= p.peakClose {
+				p.peakIndex, p.peakClose = input.Index, input.Close
+			}
+			// A follow-on qualified surge extends the rally, even if it is below
+			// the old peak; that same bar is never a pullback signal.
+			p.phase = rally
 			return p.output(false)
 		}
+		// Daily B1 does not merge separate surge days (SurgeGap is zero); a
+		// new surge replaces the unfinished candidate. Bottom-surge candidates
+		// outside their configured gap also restart only when idle permits it.
+		p.reset()
+		p.advanceIdle(input)
+		return p.output(false)
 	}
 	if input.Close >= p.peakClose {
 		p.peakIndex, p.peakClose, p.phase = input.Index, input.Close, rally
@@ -86,7 +102,7 @@ func (p *pullbackTracker) Advance(input trackerInput) trackerOutput {
 }
 
 func (p *pullbackTracker) advanceIdle(input trackerInput) {
-	if input.Surge {
+	if input.Surge && (!p.config.RequireNearLow || input.NearLow) {
 		p.beginSurge(input)
 		return
 	}
@@ -95,7 +111,7 @@ func (p *pullbackTracker) advanceIdle(input trackerInput) {
 		return
 	}
 	if p.gradualCount == 0 {
-		p.gradualEligible = input.NearLow
+		p.gradualEligible = !p.config.RequireNearLow || input.NearLow
 	}
 	p.gradualCount++
 	if p.gradualCount >= p.config.GradualDays && p.gradualEligible {
@@ -103,6 +119,13 @@ func (p *pullbackTracker) advanceIdle(input trackerInput) {
 		// The final gradual bar is itself a confirmed part of the rally.
 		p.phase = rally
 	}
+}
+
+func (p *pullbackTracker) reset() {
+	p.phase = idle
+	p.surgeIndex, p.lastSurgeIndex, p.peakIndex = -1, -1, -1
+	p.peakClose = 0
+	p.gradualCount, p.gradualEligible = 0, false
 }
 
 func (p *pullbackTracker) beginSurge(input trackerInput) {

@@ -10,8 +10,8 @@ import (
 
 func TestDailyB1PastSignalsDoNotChangeWhenFutureBarsAreAppended(t *testing.T) {
 	base := fixtureDailyB1(38)
-	before := replayAll(t, "daily_b1_buy", base, nil)
-	after := replayAll(t, "daily_b1_buy", append(base, futureRallyBars()...), nil)
+	before := replayTimelineDecisions(t, "daily_b1_buy", base, nil)
+	after := replayTimelineDecisions(t, "daily_b1_buy", append(base, futureRallyBars()...), nil)
 	assert.Equal(t, before, after[:len(before)])
 	assert.Equal(t, strategy.EnterLong, before[34].Action)
 	assert.Equal(t, "daily_b1_pullback", before[34].Reason)
@@ -19,8 +19,8 @@ func TestDailyB1PastSignalsDoNotChangeWhenFutureBarsAreAppended(t *testing.T) {
 
 func TestBottomSurgePastSignalsDoNotChangeWhenFutureBarsAreAppended(t *testing.T) {
 	base := fixtureBottomSurge(90)
-	before := replayAll(t, "bottom_surge_pullback", base, nil)
-	after := replayAll(t, "bottom_surge_pullback", append(base, futureRallyBars()...), nil)
+	before := replayTimelineDecisions(t, "bottom_surge_pullback", base, nil)
+	after := replayTimelineDecisions(t, "bottom_surge_pullback", append(base, futureRallyBars()...), nil)
 	assert.Equal(t, before, after[:len(before)])
 	assert.Equal(t, strategy.EnterLong, before[70].Action)
 	assert.Equal(t, "bottom_surge_pullback", before[70].Reason)
