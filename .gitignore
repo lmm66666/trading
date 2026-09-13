@@ -1,7 +1,7 @@
 .idea/
 config.yaml
 config-nas.yaml
-docs/trading
+docs/*
 trading
 *.tar
 coverage.out

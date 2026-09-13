@@ -12,13 +12,13 @@
 
 ```bash
 # 底部倍量回调（日线）
-curl --max-time 120 "http://192.168.31.85:38687/api/stocks/signal?strategy=bottom_surge_pullback"
+curl --max-time 120 "http://192.168.31.85:33907/api/stocks/signal?strategy=bottom_surge_pullback"
 
 # 周线 B1 买点
-curl --max-time 120 "http://192.168.31.85:38687/api/stocks/signal?strategy=weekly_b1_buy"
+curl --max-time 120 "http://192.168.31.85:33907/api/stocks/signal?strategy=weekly_b1_buy"
 
 # 日线 B1 买点
-curl --max-time 120 "http://192.168.31.85:38687/api/stocks/signal?strategy=daily_b1_buy"
+curl --max-time 120 "http://192.168.31.85:33907/api/stocks/signal?strategy=daily_b1_buy"
 ```
 
 | 参数     | 说明                          |
@@ -34,7 +34,7 @@ curl --max-time 120 "http://192.168.31.85:38687/api/stocks/signal?strategy=daily
 ### 3. 查询股价 K 线数据
 
 ```bash
-curl "http://192.168.31.85:38687/api/stocks/price?code=<股票代码>&cycle=<周期>&pagesize=<条数>"
+curl "http://192.168.31.85:33907/api/stocks/price?code=<股票代码>&cycle=<周期>&pagesize=<条数>"
 ```
 
 | 参数     | 说明                          |
@@ -50,7 +50,7 @@ curl "http://192.168.31.85:38687/api/stocks/price?code=<股票代码>&cycle=<周
 ### 4. 查询财报数据
 
 ```bash
-curl "http://192.168.31.85:38687/api/stocks/financial-report?code=<股票代码>&pagesize=20"
+curl "http://192.168.31.85:33907/api/stocks/financial-report?code=<股票代码>&pagesize=20"
 ```
 
 | 参数     | 说明                   |
