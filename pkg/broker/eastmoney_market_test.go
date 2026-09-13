@@ -442,12 +442,15 @@ func TestEastmoneyCorporateActionSupportsNumericFieldsAndRejectsInvalidPrecision
 	for _, body := range [][]byte{
 		[]byte(`{"success":true,"code":0,"result":{"pages":1,"data":null}}`),
 		[]byte(`{"success":true,"code":0,"result":{"pages":1,"data":{}}}`),
-		[]byte(`{"success":true,"code":0,"result":{"pages":1,"data":[{"SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-06-13","PRETAX_BONUS_RMB":"0.0001","BONUS_RATIO":"0","IT_RATIO":"0"}]}}`),
 	} {
 		_, err := ParseEastmoneyCorporateActions(body, id)
-		if !errors.Is(err, ErrMalformedResponse) && string(body) != `{"success":true,"code":0,"result":{"pages":1,"data":null}}` {
+		if !errors.Is(err, ErrMalformedResponse) {
 			t.Fatalf("body %s error = %v", body, err)
 		}
+	}
+	_, err = ParseEastmoneyCorporateActions([]byte(`{"success":true,"code":0,"result":{"count":1,"pages":1,"data":[{"SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-06-13","PRETAX_BONUS_RMB":"0.0001","BONUS_RATIO":"0","IT_RATIO":"0"}]}}`), id)
+	if !errors.Is(err, ErrMalformedResponse) || !strings.Contains(err.Error(), "cash ratio is below fixed-point precision") {
+		t.Fatalf("sub-tick cash ratio error = %v", err)
 	}
 	if _, err := ParseEastmoneyCorporateActions([]byte(`{"success":true,"code":0,"result":{"pages":0,"data":[]}}`), market.InstrumentID{}); !errors.Is(err, ErrMalformedResponse) {
 		t.Fatalf("invalid action instrument error = %v", err)
@@ -605,6 +608,19 @@ func TestEastmoneyCorporateActionsTreatsFirstPage9201AsEmptyOnly(t *testing.T) {
 	}
 }
 
+func TestEastmoneyCorporateAction9201RequiresExplicitFalseSuccess(t *testing.T) {
+	id := eastmoneyInstrument(t, market.SSE, "600000")
+	for _, body := range [][]byte{
+		[]byte(`{"code":9201,"result":null}`),
+		[]byte(`{"success":null,"code":9201,"result":null}`),
+	} {
+		actions, err := ParseEastmoneyCorporateActions(body, id)
+		if !errors.Is(err, ErrMalformedResponse) || actions != nil {
+			t.Fatalf("9201 without explicit false success: actions=%v err=%v", actions, err)
+		}
+	}
+}
+
 func TestEastmoneyCorporateActionsTracksRequestedPageWhenResponseOmitsPageNumber(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("pageNumber") == "1" {
@@ -659,6 +675,22 @@ func TestParseRetryAfterSaturatesDecimalBeyondInt64(t *testing.T) {
 	duration, ok := parseRetryAfter(strings.Repeat("9", 100_000), time.Now())
 	if !ok || duration != time.Duration(1<<63-1) {
 		t.Fatalf("oversized Retry-After = %s, %t", duration, ok)
+	}
+}
+
+func TestParseRetryAfterStripsLeadingZeroesBeforeRangeCheck(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  time.Duration
+	}{
+		{value: strings.Repeat("0", 100_000) + "1", want: time.Second},
+		{value: strings.Repeat("0", 100_000), want: 0},
+		{value: strings.Repeat("0", 100_000) + strings.Repeat("9", 20), want: time.Duration(1<<63 - 1)},
+	} {
+		duration, ok := parseRetryAfter(tc.value, time.Now())
+		if !ok || duration != tc.want {
+			t.Fatalf("Retry-After %q = %s, %t; want %s, true", tc.value[:min(len(tc.value), 32)], duration, ok, tc.want)
+		}
 	}
 }
 

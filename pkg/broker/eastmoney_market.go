@@ -480,7 +480,10 @@ func parseEastmoneyCorporateActionPage(body []byte, id market.InstrumentID) (eas
 		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: invalid JSON", ErrMalformedResponse)
 	}
 	code, hasCode := eastmoneyResponseCode(envelope.Code)
-	if envelope.Success == nil || !*envelope.Success {
+	if envelope.Success == nil {
+		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: success is required", ErrMalformedResponse)
+	}
+	if !*envelope.Success {
 		if hasCode && code == 9201 {
 			return eastmoneyCorporateActionPage{noData: true}, nil
 		}
@@ -907,10 +910,14 @@ func parseRetryAfter(value string, now time.Time) (time.Duration, bool) {
 	if isNonNegativeDecimal(value) {
 		const maxDuration = time.Duration(1<<63 - 1)
 		const maxInt64Seconds = "9223372036854775807"
-		if len(value) > len(maxInt64Seconds) || (len(value) == len(maxInt64Seconds) && value > maxInt64Seconds) {
+		digits := strings.TrimLeft(value, "0")
+		if digits == "" {
+			return 0, true
+		}
+		if len(digits) > len(maxInt64Seconds) || (len(digits) == len(maxInt64Seconds) && digits > maxInt64Seconds) {
 			return maxDuration, true
 		}
-		seconds, _ := strconv.ParseInt(value, 10, 64)
+		seconds, _ := strconv.ParseInt(digits, 10, 64)
 		if seconds > int64(maxDuration/time.Second) {
 			return maxDuration, true
 		}
