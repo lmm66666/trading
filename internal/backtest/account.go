@@ -12,6 +12,7 @@ var (
 	ErrInsufficientCash           = errors.New("backtest: insufficient cash")
 	ErrInsufficientPosition       = errors.New("backtest: insufficient position")
 	ErrInvalidFill                = errors.New("backtest: invalid fill")
+	ErrAccountOverflow            = errors.New("backtest: account transition overflow")
 	ErrDuplicateCorporateAction   = errors.New("backtest: duplicate corporate action")
 	ErrUnsupportedCorporateAction = errors.New("backtest: unsupported corporate action")
 	ErrInvalidCorporateAction     = errors.New("backtest: invalid corporate action")
@@ -65,71 +66,92 @@ func (a Account) hasFilledOrder(orderID string) bool {
 	return exists
 }
 
+// CanApplyFill validates the full account transition without mutating a.
+func (a Account) CanApplyFill(fill Fill) error {
+	_, err := a.previewFill(fill)
+	return err
+}
+
 func (a *Account) ApplyFill(fill Fill) error {
-	if err := validateFill(fill); err != nil {
+	next, err := a.previewFill(fill)
+	if err != nil {
 		return err
 	}
+	*a = next
+	return nil
+}
+
+func (a Account) previewFill(fill Fill) (Account, error) {
+	if err := validateFill(fill); err != nil {
+		return Account{}, err
+	}
 	if _, exists := a.appliedFillIDs[fill.ID]; exists {
-		return ErrDuplicateFill
+		return Account{}, ErrDuplicateFill
 	}
 	if _, exists := a.appliedOrderIDs[fill.OrderID]; exists {
-		return ErrDuplicateFill
+		return Account{}, ErrDuplicateFill
 	}
-	a.ensureMaps()
-	position := a.positions[fill.Instrument]
+	next := Account{
+		cash:             a.cash,
+		positions:        clonePositions(a.positions),
+		appliedFillIDs:   cloneIDs(a.appliedFillIDs),
+		appliedOrderIDs:  cloneIDs(a.appliedOrderIDs),
+		appliedActionIDs: cloneIDs(a.appliedActionIDs),
+	}
+	position := next.positions[fill.Instrument]
 	switch fill.Side {
 	case Buy:
 		debit, ok := fill.TotalDebit()
 		if !ok {
-			return ErrInvalidFill
+			return Account{}, ErrInvalidFill
 		}
-		if a.cash < debit {
-			return ErrInsufficientCash
+		if next.cash < debit {
+			return Account{}, ErrInsufficientCash
 		}
 		costBasis, ok := addMoney(position.CostBasis, debit)
 		if !ok {
-			return ErrInvalidFill
+			return Account{}, ErrAccountOverflow
 		}
 		quantity, ok := addInt64(position.Quantity, fill.Quantity)
 		if !ok {
-			return ErrInvalidFill
+			return Account{}, ErrAccountOverflow
 		}
 		position = makePosition(fill.Instrument, quantity, costBasis)
-		a.cash -= debit
-		a.positions[fill.Instrument] = position
+		next.cash -= debit
+		next.positions[fill.Instrument] = position
 	case Sell:
 		if position.Quantity < fill.Quantity {
-			return ErrInsufficientPosition
+			return Account{}, ErrInsufficientPosition
 		}
 		credit, ok := fill.NetCredit()
 		if !ok {
-			return ErrInvalidFill
+			return Account{}, ErrInvalidFill
 		}
 		remaining := position.Quantity - fill.Quantity
 		var remainingBasis market.Money
 		if remaining > 0 {
 			basis, ok := mulDivFloor(int64(position.CostBasis), remaining, position.Quantity)
 			if !ok {
-				return ErrInvalidFill
+				return Account{}, ErrAccountOverflow
 			}
 			remainingBasis = market.Money(basis)
 		}
-		cash, ok := addMoney(a.cash, credit)
+		cash, ok := addMoney(next.cash, credit)
 		if !ok {
-			return ErrInvalidFill
+			return Account{}, ErrAccountOverflow
 		}
-		a.cash = cash
+		next.cash = cash
 		if remaining == 0 {
-			delete(a.positions, fill.Instrument)
+			delete(next.positions, fill.Instrument)
 		} else {
-			a.positions[fill.Instrument] = makePosition(fill.Instrument, remaining, remainingBasis)
+			next.positions[fill.Instrument] = makePosition(fill.Instrument, remaining, remainingBasis)
 		}
 	default:
-		return ErrInvalidFill
+		return Account{}, ErrInvalidFill
 	}
-	a.appliedFillIDs[fill.ID] = struct{}{}
-	a.appliedOrderIDs[fill.OrderID] = struct{}{}
-	return nil
+	next.appliedFillIDs[fill.ID] = struct{}{}
+	next.appliedOrderIDs[fill.OrderID] = struct{}{}
+	return next, nil
 }
 
 // ApplyCorporateActions validates the complete batch before atomically making
@@ -178,18 +200,6 @@ func (a *Account) ApplyCorporateActions(actions []market.CorporateAction) error 
 	}
 	a.cash, a.positions, a.appliedActionIDs = cash, positions, applied
 	return nil
-}
-
-func (a *Account) ensureMaps() {
-	if a.positions == nil {
-		a.positions = make(map[market.InstrumentID]Position)
-	}
-	if a.appliedFillIDs == nil {
-		a.appliedFillIDs = make(map[string]struct{})
-	}
-	if a.appliedOrderIDs == nil {
-		a.appliedOrderIDs = make(map[string]struct{})
-	}
 }
 
 func validateFill(fill Fill) error {

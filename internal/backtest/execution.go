@@ -1,6 +1,8 @@
 package backtest
 
 import (
+	"errors"
+
 	"trading/internal/market"
 )
 
@@ -21,6 +23,8 @@ const (
 	RejectArithmeticOverflow
 	RejectInvalidBar
 	RejectFeesExceedProceeds
+	RejectAccountOverflow
+	RejectInvalidAccountTransition
 )
 
 // ExecutionModel turns an eligible order into a fill without mutating Account.
@@ -126,6 +130,9 @@ func (m ExecutionModel) buy(order Order, bar market.Bar, account Account, price 
 	if fillReason != RejectNone {
 		return Fill{}, fillReason
 	}
+	if reason := rejectAccountTransition(account.CanApplyFill(fill)); reason != RejectNone {
+		return Fill{}, reason
+	}
 	return fill, RejectNone
 }
 
@@ -145,7 +152,28 @@ func (m ExecutionModel) sell(order Order, bar market.Bar, account Account, price
 	if fillReason != RejectNone {
 		return Fill{}, fillReason
 	}
+	if reason := rejectAccountTransition(account.CanApplyFill(fill)); reason != RejectNone {
+		return Fill{}, reason
+	}
 	return fill, RejectNone
+}
+
+func rejectAccountTransition(err error) RejectReason {
+	if err == nil {
+		return RejectNone
+	}
+	switch {
+	case errors.Is(err, ErrInsufficientCash):
+		return RejectInsufficientCash
+	case errors.Is(err, ErrInsufficientPosition):
+		return RejectInsufficientPosition
+	case errors.Is(err, ErrDuplicateFill):
+		return RejectDuplicateFill
+	case errors.Is(err, ErrAccountOverflow):
+		return RejectAccountOverflow
+	default:
+		return RejectInvalidAccountTransition
+	}
 }
 
 func (m ExecutionModel) makeFill(order Order, bar market.Bar, price market.Price, quantity int64) (Fill, RejectReason) {
