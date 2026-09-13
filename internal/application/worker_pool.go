@@ -185,6 +185,9 @@ func (p *WorkerPool) process(ctx context.Context, run port.Run) error {
 	failure := classifyFailure(err)
 	if at, ok := retryAt(p.config.Clock(), run.Attempts); ok && failure.Retryable {
 		if err = p.queue.Retry(ctx, run.ID, run.LeaseToken, at, failure); err != nil {
+			if errors.Is(err, port.ErrLeaseLost) {
+				return nil
+			}
 			return err
 		}
 		if !nilComputeDependency(p.config.Telemetry) {
@@ -193,5 +196,9 @@ func (p *WorkerPool) process(ctx context.Context, run port.Run) error {
 		return nil
 	}
 	failure.Retryable = false
-	return p.store.Fail(ctx, run.ID, run.LeaseToken, failure)
+	err = p.store.Fail(ctx, run.ID, run.LeaseToken, failure)
+	if errors.Is(err, port.ErrLeaseLost) {
+		return nil
+	}
+	return err
 }

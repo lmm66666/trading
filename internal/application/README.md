@@ -14,6 +14,8 @@ JobQueue 若实现 `port.IdempotentRunReader`（MySQL 实现已提供），重�
 
 `NewWorkerPool` 接收按 RunKind 分派的 Execute 方法。Run 管理固定任务 worker、周期 reaper 和每个活跃任务的续租 goroutine，退出前全部等待结束。续租周期为租期的三分之一，并读取取消状态；失租或续租状态不确定立即取消计算，不尝试用旧 token 写入结果。应用关闭时取消根 context，再等待 pool 返回，最后关闭数据库。每次领取的持久 Attempts 决定250ms、1s、4s退避；只有明确 temporary、timeout 或 transient connection 错误重试，第四次失败进入终态。任务取消/失租不重试；关闭中断保留租约供后续接管。
 
+当 handler 返回后、续租观察停止到 Retry/Fail 落库之间发生取消或重领，存储返回 ErrLeaseLost 只结束当前任务，worker pool 继续处理无关任务。其他落库错误仍传播并触发生命周期退出，不以失租为由吞掉存储故障。
+
 `SlogTelemetry` 仅接受声明的阶段、身份、版本、耗时和计数字段；不接收请求体、配置或原始错误文本。覆盖行情加载、校验、指标、策略、引擎和持久化。当前 queue_wait 测量 Claim 调用等待，Run 端口尚无入队时间戳，不能将它解读为完整队列驻留时间。
 
 ## 行情采集
