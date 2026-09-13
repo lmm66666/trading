@@ -8,6 +8,10 @@
 
 # Local build artifact
 trading
+web/node_modules
+web/dist
+web/coverage
+web/*.tsbuildinfo
 
 # Local config (mount at runtime)
 config*.yaml

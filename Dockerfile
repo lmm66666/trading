@@ -1,3 +1,14 @@
+FROM --platform=$BUILDPLATFORM node:24-alpine AS web-builder
+
+WORKDIR /src/web
+
+COPY web/package.json web/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+
+COPY web/ ./
+RUN npm run build
+
+
 FROM --platform=$BUILDPLATFORM golang:1.25.7-alpine AS builder
 
 WORKDIR /src
@@ -28,6 +39,7 @@ ENV TZ=Asia/Shanghai
 WORKDIR /app
 
 COPY --from=builder /out/trading /app/trading
+COPY --from=web-builder /src/web/dist /app/web/dist
 
 USER app
 

@@ -101,6 +101,12 @@ func run(ctx context.Context, configPath string) error {
 	querySvc := business.NewQueryService(d.FinancialReport())
 	macroSvc := business.NewMacroService(broker.NewEastMoneyBroker(), broker.NewSinaBroker())
 	r := api.NewRouter(financialSvc, financialScheduler, signalSvc, querySvc, macroSvc, kernel.services)
+	if err := api.AttachWebUI(r, "web/dist"); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		log.Printf("Web UI is not built; API-only mode: %v", err)
+	}
 
 	log.Println("Server starting on :8080")
 	server := &http.Server{Addr: ":8080", Handler: r, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}

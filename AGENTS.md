@@ -28,6 +28,7 @@ trading/
 │   ├── port/                       # 应用端口与 DTO
 │   └── infrastructure/mysql/       # 版本化行情、任务、结果和快照适配器
 ├── pkg/broker/                     # 新浪财报/宏观与东方财富版本化行情适配器
+├── web/                            # React 行情工作台、K 线与指标交互
 ├── cmd/migrate-strategy-kernel/    # 旧行情 dry-run、迁移、检查点与重跑命令
 ├── scripts/verify.sh               # 覆盖率、Race、集成、性能和镜像门禁
 └── shell/                          # 旧批量运维脚本
@@ -37,16 +38,18 @@ trading/
 
 ## 本地启动
 
-要求 Go 1.25.7+、MySQL 5.7 或 8.0。创建 `trading` 数据库后：
+要求 Go 1.25.7+、Node.js 24+、MySQL 5.7 或 8.0。创建 `trading` 数据库后：
 
 ```bash
 cp config.example.yaml config.yaml
 # 编辑本地 config.yaml；该文件不会进入镜像
 go mod download
+npm --prefix web ci
+npm --prefix web run build
 go run . -config config.yaml
 ```
 
-服务默认监听 `:8080`。启动时只迁移财报、证券主数据和新策略内核表，不再创建或写入旧技术 K 线表。`Worker` 配置分别控制持久化任务 Worker 数、租约、轮询、兼容接口同步等待时间，以及扫描/行情刷新的有界并发数。
+服务默认监听 `:8080`，同源提供行情工作台与 API。前端开发可运行 `npm --prefix web run dev`，由 Vite 把 `/api` 代理到 `:8080`。启动时只迁移财报、证券主数据和新策略内核表，不再创建或写入旧技术 K 线表。`Worker` 配置分别控制持久化任务 Worker 数、租约、轮询、兼容接口同步等待时间，以及扫描/行情刷新的有界并发数。
 
 ## 运行约束
 
@@ -68,7 +71,7 @@ go run . -config config.yaml
 - 回测/扫描任务持久化在 MySQL，HTTP 请求结束或同步等待超时不会取消任务。任务固定行情版本、证券集合、策略版本、参数、执行配置和引擎版本，可重复复现。
 - 扫描一次批量读取最多 5000 只证券并发布不可变快照；单只证券失败可得到 `PARTIAL_SUCCEEDED`，不会丢弃其他成功结果。
 
-`POST /api/v1/backtest-runs` 与 `POST /api/v1/scan-runs` 创建任务；状态、取消、成交、权益和最新扫描快照详见 `api/api.md`。旧 `/api/stocks/*` 路径保留为兼容适配器，但行情保存、增量刷新、价格查询、信号和回测均已切换到新内核。
+`GET /api/v1/instruments` 搜索证券，`POST /api/v1/chart-queries` 按固定行情版本返回 K 线、成交量与 SMA/EMA/MACD/KDJ 指标。`POST /api/v1/backtest-runs` 与 `POST /api/v1/scan-runs` 创建任务；状态、取消、成交、权益和最新扫描快照详见 `api/api.md`。旧 `/api/stocks/*` 路径保留为兼容适配器，但行情保存、增量刷新、价格查询、信号和回测均已切换到新内核。
 
 ## Docker
 
@@ -133,7 +136,7 @@ docker run -d --name trading -p 8080:8080 \
 
 - 遵循 Go 标准编码规范，新增业务逻辑配套单元测试。
 - 总测试覆盖率保持 80% 以上；`internal/market`、`indicator`、`strategy/...`、`backtest` 各自保持 90% 以上。
-- 快速检查：`go test ./... && go vet ./...`。
+- 快速检查：`npm --prefix web run check && go test ./... && go vet ./...`。
 - 完整交付检查：`bash scripts/verify.sh`。
 - MySQL 集成测试需要 Docker；环境不可用时必须明确报告，不能用 SQL mock 或仅编译代替真实 MySQL 5.7/8.0 验证。
 
