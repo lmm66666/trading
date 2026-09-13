@@ -35,22 +35,31 @@ type MarketTrigger interface {
 type MarketQueries interface {
 	Prices(context.Context, application.PriceQuery) (application.PriceResult, error)
 }
+type InstrumentQueries interface {
+	Search(context.Context, application.InstrumentSearchQuery) ([]port.InstrumentSummary, error)
+	Get(context.Context, market.InstrumentID) (port.InstrumentSummary, error)
+}
+type ChartQueries interface {
+	Query(context.Context, application.ChartQuery) (application.ChartResult, error)
+}
 
 // KernelServices 显式注入持久化用例；旧接口不再回退到旧技术策略引擎。
 type KernelServices struct {
-	Backtests       BacktestRuns
-	Scans           ScanRuns
-	Runs            port.RunStore
-	Registry        *strategy.Registry
-	Instruments     port.InstrumentCodeReader
-	SnapshotKeys    port.PublishedSnapshotKeyReader
-	MarketIngestion MarketIngestion
-	MarketTrigger   MarketTrigger
-	MarketQueries   MarketQueries
-	MarketWorkers   int
-	SyncWaitTimeout time.Duration
-	PollInterval    time.Duration
-	Clock           func() time.Time
+	Backtests         BacktestRuns
+	Scans             ScanRuns
+	Runs              port.RunStore
+	Registry          *strategy.Registry
+	Instruments       port.InstrumentCodeReader
+	SnapshotKeys      port.PublishedSnapshotKeyReader
+	MarketIngestion   MarketIngestion
+	MarketTrigger     MarketTrigger
+	MarketQueries     MarketQueries
+	InstrumentCatalog InstrumentQueries
+	ChartQueries      ChartQueries
+	MarketWorkers     int
+	SyncWaitTimeout   time.Duration
+	PollInterval      time.Duration
+	Clock             func() time.Time
 }
 
 func writeApplicationError(c *gin.Context, op string, err error) {

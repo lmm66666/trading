@@ -1,0 +1,50 @@
+package api
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestAttachWebUI(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<main>workbench</main>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "app.js"), []byte("app"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	router := NewRouter(nil, nil, nil, nil, nil)
+	if err := AttachWebUI(router, dir); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{"/", "/watch/SZSE:002415"} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusOK || response.Body.String() != "<main>workbench</main>" {
+			t.Fatalf("path %s: status=%d body=%q", path, response.Code, response.Body.String())
+		}
+	}
+	asset := httptest.NewRecorder()
+	router.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, "/assets/app.js", nil))
+	if asset.Code != http.StatusOK || asset.Body.String() != "app" {
+		t.Fatalf("asset: status=%d body=%q", asset.Code, asset.Body.String())
+	}
+	missingAPI := httptest.NewRecorder()
+	router.ServeHTTP(missingAPI, httptest.NewRequest(http.MethodGet, "/api/v1/missing", nil))
+	if missingAPI.Code != http.StatusNotFound || missingAPI.Body.String() == "<main>workbench</main>" {
+		t.Fatalf("missing api: status=%d body=%q", missingAPI.Code, missingAPI.Body.String())
+	}
+}
+
+func TestAttachWebUIRequiresBuildOutput(t *testing.T) {
+	if err := AttachWebUI(NewRouter(nil, nil, nil, nil, nil), t.TempDir()); err == nil {
+		t.Fatal("expected missing index error")
+	}
+}

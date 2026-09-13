@@ -101,6 +101,12 @@ func run(ctx context.Context, configPath string) error {
 	querySvc := business.NewQueryService(d.FinancialReport())
 	macroSvc := business.NewMacroService(broker.NewEastMoneyBroker(), broker.NewSinaBroker())
 	r := api.NewRouter(financialSvc, financialScheduler, signalSvc, querySvc, macroSvc, kernel.services)
+	if err := api.AttachWebUI(r, "web/dist"); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		log.Printf("Web UI is not built; API-only mode: %v", err)
+	}
 
 	log.Println("Server starting on :8080")
 	server := &http.Server{Addr: ":8080", Handler: r, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
@@ -127,6 +133,14 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 		return kernelRuntime{}, err
 	}
 	marketData := mysqlinfra.NewMarketDataRepository(db)
+	instrumentQueries, err := application.NewInstrumentQueryService(marketData)
+	if err != nil {
+		return kernelRuntime{}, err
+	}
+	chartQueries, err := application.NewChartQueryService(marketData, marketData)
+	if err != nil {
+		return kernelRuntime{}, err
+	}
 	queue := mysqlinfra.NewJobQueue(db)
 	store := mysqlinfra.NewRunStore(db)
 	snapshots := mysqlinfra.NewSignalSnapshotStore(db)
@@ -159,19 +173,21 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 		return kernelRuntime{}, err
 	}
 	services := api.KernelServices{
-		Backtests:       backtests,
-		Scans:           scans,
-		Runs:            store,
-		Registry:        registry,
-		Instruments:     marketData,
-		SnapshotKeys:    snapshots,
-		MarketIngestion: ingestion,
-		MarketTrigger:   rootMarketTrigger{ctx: rootCtx, scheduler: marketScheduler},
-		MarketQueries:   application.NewMarketQueryService(marketData),
-		MarketWorkers:   settings.ScanBatchSize,
-		SyncWaitTimeout: settings.SyncWaitTimeout,
-		PollInterval:    settings.PollInterval,
-		Clock:           time.Now,
+		Backtests:         backtests,
+		Scans:             scans,
+		Runs:              store,
+		Registry:          registry,
+		Instruments:       marketData,
+		SnapshotKeys:      snapshots,
+		MarketIngestion:   ingestion,
+		MarketTrigger:     rootMarketTrigger{ctx: rootCtx, scheduler: marketScheduler},
+		MarketQueries:     application.NewMarketQueryService(marketData),
+		InstrumentCatalog: instrumentQueries,
+		ChartQueries:      chartQueries,
+		MarketWorkers:     settings.ScanBatchSize,
+		SyncWaitTimeout:   settings.SyncWaitTimeout,
+		PollInterval:      settings.PollInterval,
+		Clock:             time.Now,
 	}
 	return kernelRuntime{services: services, workers: workers, marketScheduler: marketScheduler}, nil
 }

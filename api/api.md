@@ -103,6 +103,37 @@ Task12 延后的游标输出在此补齐：不可变快照行以1开始连续编
 
 `GET /api/v1/strategies` 返回按 ID、版本排序的已编译目录；`GET /api/v1/strategies/:strategy?version=1` 返回具体版本。含 `strategy,version,primary_timeframe,warmup_bars,default_hold_bars,parameters,features,auxiliary`，每个参数含 default/min/max/integer。内置版本1：daily_b1_buy、weekly_b1_buy、bottom_surge_pullback。未知策略/版本返回404。
 
+#### 证券搜索
+
+`GET /api/v1/instruments?q=海康&exchange=SZSE&limit=20` 只搜索活跃证券。`q` 必填且最多128字节：纯数字按六位代码前缀匹配，其他内容按证券名称包含匹配；`exchange` 可选 SSE、SZSE 或 BSE；`limit` 默认20、范围1–50。无匹配返回空 items。
+
+每项包含完整 `instrument`、`code`、`name`、`exchange`、`board` 和 `lot_size`。搜索依赖 `t_instruments` 的名称和激活状态，上线前必须先完成证券主数据补齐。
+
+#### 图表查询
+
+`POST /api/v1/chart-queries` 在一个固定的 COMPLETE 行情版本上返回 K 线和技术指标：
+
+```json
+{
+  "instrument": "SZSE:002415",
+  "timeframe": "DAY",
+  "price_view": "QFQ",
+  "limit": 400,
+  "data_version": 0,
+  "indicators": [
+    {"kind":"SMA","period":5},
+    {"kind":"SMA","period":20},
+    {"kind":"SMA","period":60}
+  ]
+}
+```
+
+`timeframe` 支持 DAY、WEEK；`price_view` 支持 RAW、QFQ；`limit` 默认400、范围100–1000。`data_version=0` 在首次请求解析最新版本，向前加载时必须回传响应中的正版本。`before` 是可选的 RFC3339 排他游标。
+
+指标最多16个：SMA/EMA 使用1–500的 period；MACD 使用正数 fast/slow/signal 且 slow>fast；KDJ 使用1–500的 period。服务端还会按指标类型和周期执行总计算成本门禁，拒绝可能造成 CPU 放大的极端组合。响应的 series 按请求顺序返回，MACD 展开为 dif/dea/histogram，KDJ 展开为 k/d/j；预热期无效点不输出，客户端取消后会在指标计算边界停止。
+
+响应 Bar 按 close_time 升序。`has_more` 表示当前游标之前、项目统一的20年查询边界内是否仍有数据；它不承诺提供20年以前的数据。`has_more=true` 时，使用 `next_before` 和相同 `data_version` 获取更早一页。服务先在完整历史上下文计算指标，再裁剪响应页，避免页边界指标跳变。
+
 ### 1. 保存股票历史数据（兼容路径）
 
 按六位代码从活跃证券主数据中精确解析证券，再通过东方财富版本化行情源获取日线、周线、复权因子与公司行动。所有数据校验通过后一次原子发布新的 `COMPLETE` 版本；不会写旧 K 线表。

@@ -1,6 +1,7 @@
 package indicator
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -11,13 +12,25 @@ import (
 type Set map[string]Series
 
 func Build(dataset market.Dataset, factors []market.AdjustmentFactor, refs []Ref) (Set, error) {
-	return buildWithComputer(dataset, factors, refs, compute)
+	return BuildContext(context.Background(), dataset, factors, refs)
+}
+
+// BuildContext computes a feature set and observes cancellation between refs.
+func BuildContext(ctx context.Context, dataset market.Dataset, factors []market.AdjustmentFactor, refs []Ref) (Set, error) {
+	return buildWithComputerContext(ctx, dataset, factors, refs, compute)
 }
 
 func buildWithComputer(dataset market.Dataset, factors []market.AdjustmentFactor, refs []Ref, computer func(market.Dataset, []market.AdjustmentFactor, Ref) (Series, error)) (Set, error) {
+	return buildWithComputerContext(context.Background(), dataset, factors, refs, computer)
+}
+
+func buildWithComputerContext(ctx context.Context, dataset market.Dataset, factors []market.AdjustmentFactor, refs []Ref, computer func(market.Dataset, []market.AdjustmentFactor, Ref) (Series, error)) (Set, error) {
 	unique := make([]Ref, 0, len(refs))
 	seen := make(map[string]struct{}, len(refs))
 	for _, ref := range refs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if err := ref.Validate(); err != nil {
 			return nil, err
 		}
@@ -31,11 +44,17 @@ func buildWithComputer(dataset market.Dataset, factors []market.AdjustmentFactor
 
 	result := make(Set, len(unique))
 	for _, ref := range unique {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		series, err := computer(dataset, factors, ref)
 		if err != nil {
 			return nil, fmt.Errorf("compute %s: %w", ref.Key(), err)
 		}
 		result[ref.Key()] = series
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

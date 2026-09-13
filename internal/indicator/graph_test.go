@@ -1,6 +1,7 @@
 package indicator
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -9,6 +10,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"trading/internal/market"
 )
+
+func TestBuildContextHonorsCancellationBeforeComputing(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := BuildContext(ctx, market.Dataset{}, nil, nil)
+	require.ErrorIs(t, err, context.Canceled)
+}
 
 func TestBuildComputesDuplicateReferenceOnce(t *testing.T) {
 	ref := Ref{Kind: SMAKind, Timeframe: market.Day, PriceView: market.Raw, Field: Close, Period: 3}
