@@ -12,9 +12,10 @@ import (
 // Timeline joins primary bars and their precomputed features with explicitly
 // as-of aligned auxiliary datasets.
 type Timeline struct {
-	Primary   market.Dataset
-	Features  indicator.Set
-	Auxiliary map[market.Timeframe]AlignedFeatures
+	Primary     market.Dataset
+	Features    indicator.Set
+	Auxiliary   map[market.Timeframe]AlignedFeatures
+	featureRefs map[indicator.Ref]indicator.Series
 }
 
 // AlignedFeatures maps each primary bar index to the latest confirmed
@@ -23,6 +24,7 @@ type AlignedFeatures struct {
 	Dataset            market.Dataset
 	Features           indicator.Set
 	PrimaryToAuxiliary []int
+	featureRefs        map[indicator.Ref]indicator.Series
 }
 
 // NewTimeline defensively copies mappings and validates every feature length
@@ -31,7 +33,8 @@ func NewTimeline(primary market.Dataset, features indicator.Set, auxiliary map[m
 	if err := validateDataset(primary); err != nil {
 		return Timeline{}, err
 	}
-	if err := validateFeatureSet(features, primary.Timeframe(), primary.Len()); err != nil {
+	primaryRefs, err := validateFeatureSet(features, primary.Timeframe(), primary.Len())
+	if err != nil {
 		return Timeline{}, err
 	}
 	clonedAuxiliary := make(map[market.Timeframe]AlignedFeatures, len(auxiliary))
@@ -39,7 +42,8 @@ func NewTimeline(primary market.Dataset, features indicator.Set, auxiliary map[m
 		if !timeframe.Valid() || validateDataset(aligned.Dataset) != nil || aligned.Dataset.Timeframe() != timeframe || aligned.Dataset.Instrument() != primary.Instrument() {
 			return Timeline{}, fmt.Errorf("%w: invalid auxiliary dataset", ErrInvalidTimeline)
 		}
-		if err := validateFeatureSet(aligned.Features, aligned.Dataset.Timeframe(), aligned.Dataset.Len()); err != nil {
+		featureRefs, err := validateFeatureSet(aligned.Features, aligned.Dataset.Timeframe(), aligned.Dataset.Len())
+		if err != nil {
 			return Timeline{}, err
 		}
 		if len(aligned.PrimaryToAuxiliary) != primary.Len() {
@@ -70,9 +74,10 @@ func NewTimeline(primary market.Dataset, features indicator.Set, auxiliary map[m
 			Dataset:            aligned.Dataset,
 			Features:           cloneFeatureSet(aligned.Features),
 			PrimaryToAuxiliary: append([]int(nil), aligned.PrimaryToAuxiliary...),
+			featureRefs:        featureRefs,
 		}
 	}
-	return Timeline{Primary: primary, Features: cloneFeatureSet(features), Auxiliary: clonedAuxiliary}, nil
+	return Timeline{Primary: primary, Features: cloneFeatureSet(features), Auxiliary: clonedAuxiliary, featureRefs: primaryRefs}, nil
 }
 
 func (t Timeline) Len() int {
@@ -86,14 +91,16 @@ func validateDataset(dataset market.Dataset) error {
 	return nil
 }
 
-func validateFeatureSet(features indicator.Set, timeframe market.Timeframe, wantLength int) error {
+func validateFeatureSet(features indicator.Set, timeframe market.Timeframe, wantLength int) (map[indicator.Ref]indicator.Series, error) {
+	refs := make(map[indicator.Ref]indicator.Series, len(features))
 	for key, series := range features {
 		ref, valid := parseFeatureKey(key)
 		if !valid || ref.Timeframe != timeframe || series.Len() != wantLength {
-			return fmt.Errorf("%w: feature key or length", ErrInvalidTimeline)
+			return nil, fmt.Errorf("%w: feature key or length", ErrInvalidTimeline)
 		}
+		refs[ref] = series
 	}
-	return nil
+	return refs, nil
 }
 
 func validFeatureKey(key string) bool {
@@ -203,7 +210,7 @@ func (c *contextView) Float(ref indicator.Ref, ago int) (float64, bool) {
 		return 0, false
 	}
 	if ref.Timeframe == c.timeline.Primary.Timeframe() {
-		series, exists := c.timeline.Features[ref.Key()]
+		series, exists := c.timeline.featureRefs[ref]
 		if !exists {
 			return 0, false
 		}
@@ -217,7 +224,7 @@ func (c *contextView) Float(ref indicator.Ref, ago int) (float64, bool) {
 	if auxiliaryIndex < 0 {
 		return 0, false
 	}
-	series, exists := aligned.Features[ref.Key()]
+	series, exists := aligned.featureRefs[ref]
 	if !exists {
 		return 0, false
 	}

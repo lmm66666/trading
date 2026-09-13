@@ -2,6 +2,7 @@ package indicator
 
 import (
 	"fmt"
+	"sort"
 
 	"trading/internal/market"
 )
@@ -97,18 +98,33 @@ func compute(dataset market.Dataset, factors []market.AdjustmentFactor, ref Ref)
 
 func priceSeries(dataset market.Dataset, factors []market.AdjustmentFactor, view market.PriceView, field Field) (Series, error) {
 	result := invalidSeries(dataset.Len())
-	for index, bar := range dataset.Bars() {
-		raw := priceField(bar, field)
-		if view == market.Raw {
-			result.values[index] = float64(raw) / float64(market.ValueScale)
+	if view == market.Raw {
+		for index := 0; index < dataset.Len(); index++ {
+			bar := dataset.Bar(index)
+			result.values[index] = float64(priceField(bar, field)) / float64(market.ValueScale)
 			result.valid[index] = true
-			continue
 		}
-		adjusted, ok := market.AdjustedPrice(raw, bar.CloseTime, factors)
-		if !ok {
+		return result, nil
+	}
+
+	// Dataset bars are already ordered. Sort one response-owned factor copy and
+	// advance a cursor once instead of cloning/sorting factors for every Bar.
+	knownFactors := append([]market.AdjustmentFactor(nil), factors...)
+	sort.SliceStable(knownFactors, func(i, j int) bool {
+		return knownFactors[i].EffectiveTime.Before(knownFactors[j].EffectiveTime)
+	})
+	factorIndex := -1
+	for index := 0; index < dataset.Len(); index++ {
+		bar := dataset.Bar(index)
+		raw := priceField(bar, field)
+		for factorIndex+1 < len(knownFactors) && !knownFactors[factorIndex+1].EffectiveTime.After(bar.CloseTime) {
+			factorIndex++
+		}
+		if factorIndex < 0 || knownFactors[factorIndex].Numerator <= 0 || knownFactors[factorIndex].Denominator <= 0 {
 			return Series{}, fmt.Errorf("indicator: missing valid adjustment factor at bar %d", index)
 		}
-		result.values[index] = adjusted
+		factor := knownFactors[factorIndex]
+		result.values[index] = (float64(raw) / float64(market.ValueScale)) * float64(factor.Numerator) / float64(factor.Denominator)
 		result.valid[index] = true
 	}
 	return result, nil
@@ -129,7 +145,8 @@ func priceField(bar market.Bar, field Field) market.Price {
 
 func volumeSeries(dataset market.Dataset) Series {
 	result := invalidSeries(dataset.Len())
-	for index, bar := range dataset.Bars() {
+	for index := 0; index < dataset.Len(); index++ {
+		bar := dataset.Bar(index)
 		result.values[index] = float64(bar.Volume)
 		result.valid[index] = true
 	}

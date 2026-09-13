@@ -73,6 +73,18 @@ func TestBuildRejectsMissingFactorAndMismatchedTimeframe(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestBuildAdjustedSeriesAllocationsAreBoundedPerSeries(t *testing.T) {
+	dataset := testDataset(t, 140)
+	ref := indicator.Ref{Kind: indicator.OHLC, Timeframe: market.Day, PriceView: market.ForwardAdjusted, Field: indicator.Close}
+	factors := adjustmentFactors()
+	var buildErr error
+	allocations := testing.AllocsPerRun(10, func() {
+		_, buildErr = indicator.Build(dataset, factors, []indicator.Ref{ref})
+	})
+	require.NoError(t, buildErr)
+	require.Less(t, allocations, 50.0, "复权因子不能按每根 Bar 重复复制和排序")
+}
+
 func TestSeriesRejectsInvalidIndexesAndRanges(t *testing.T) {
 	series := indicator.SMA([]float64{1, 2, 3}, 2)
 	_, valid := series.At(-1)
