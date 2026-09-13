@@ -97,7 +97,7 @@ func (s *BacktestService) Create(ctx context.Context, req BacktestRequest) (port
 	}
 	run, err := enqueueCompute(ctx, s.queue, port.RunBacktest, req.StrategyID, req.StrategyVersion, req.IdempotencyKey, hash, version, s.config.EngineVersion, req)
 	if err == nil {
-		return run, nil
+		return reuseBacktestSubmission(s.registry, req, run)
 	}
 	winner, found, err := collidedSubmission(ctx, s.queue, port.RunBacktest, req.IdempotencyKey, err)
 	if !found {

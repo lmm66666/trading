@@ -130,7 +130,7 @@ func (s *ScanService) Create(ctx context.Context, request ScanRequest) (port.Run
 	}
 	run, err := enqueueCompute(ctx, s.queue, port.RunScan, request.StrategyID, request.StrategyVersion, request.IdempotencyKey, hash, version, s.config.EngineVersion, input)
 	if err == nil {
-		return run, nil
+		return reuseScanSubmission(s.registry, request, run)
 	}
 	winner, found, err := collidedSubmission(ctx, s.queue, port.RunScan, request.IdempotencyKey, err)
 	if !found {

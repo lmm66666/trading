@@ -12,6 +12,8 @@
 
 JobQueue 若实现 `port.IdempotentRunReader`（MySQL 实现已提供），重复提交会在解析新行情版本或新证券集合前读取原 Run；相同幂等键的配置冲突返回 `port.ErrIdempotencyConflict`（兼容 ErrInvalidPortValue）。Enqueue 通过数据库唯一约束仲裁并发首次提交；碰撞后应用重读胜出 Run，严格解码全部保存字段并核验其摘要，再比较原用户请求的完整参数、范围、scope和执行配置。系统在竞争期间解析到的新数据/引擎版本、证券集合或前快照不会误判同一用户请求为冲突，复用始终采用胜出者已锁定的输入；其他存储错误不按碰撞处理。生产装配应保留两个扩展端口能力，不能用功能不完整的包装器隐藏它们。
 
+Enqueue 成功返回同样经过完整保存字段、摘要与用户请求核验，包括本次新建候选和同 hash 并发返回的已有 Run；不能只在前查命中或显式碰撞错误时验证，否则旧格式或异常保存请求可能绕过校验。
+
 `NewWorkerPool` 接收按 RunKind 分派的 Execute 方法。Run 管理固定任务 worker、周期 reaper 和每个活跃任务的续租 goroutine，退出前全部等待结束。续租周期为租期的三分之一，并读取取消状态；失租或续租状态不确定立即取消计算，不尝试用旧 token 写入结果。应用关闭时取消根 context，再等待 pool 返回，最后关闭数据库。每次领取的持久 Attempts 决定250ms、1s、4s退避；只有明确 temporary、timeout 或 transient connection 错误重试，第四次失败进入终态。任务取消/失租不重试；关闭中断保留租约供后续接管。
 
 当 handler 返回后、续租观察停止到 Retry/Fail 落库之间发生取消或重领，存储返回 ErrLeaseLost 只结束当前任务，worker pool 继续处理无关任务。其他落库错误仍传播并触发生命周期退出，不以失租为由吞掉存储故障。
