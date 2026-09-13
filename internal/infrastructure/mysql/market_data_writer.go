@@ -56,6 +56,11 @@ func (r *MarketDataRepository) Publish(ctx context.Context, input port.MarketWri
 		if err := tx.Order("version DESC").Take(&latest).Error; err != nil {
 			return fmt.Errorf("allocate market version: %w", err)
 		}
+		// An initial migration commits bounded batches behind this real,
+		// unreadable version. A newer COMPLETE version must not expose them.
+		if latest.Source == legacyMigrationSource && latest.Status == string(port.DataIncomplete) {
+			return ErrLegacyMigrationBusy
+		}
 		if latest.Version == math.MaxUint64 {
 			return invalid("market version exhausted")
 		}
