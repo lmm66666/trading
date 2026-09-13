@@ -85,7 +85,7 @@ func streamLegacySource(sourceDB, checkpointDB *gorm.DB, opts MigrationOptions, 
 								tf = market.Week
 								dates = &report.WeeklyDates
 							}
-							bar, err := legacyBar(old, tf)
+							closeTime, err := legacyDate(old)
 							if err != nil {
 								return err
 							}
@@ -94,11 +94,11 @@ func streamLegacySource(sourceDB, checkpointDB *gorm.DB, opts MigrationOptions, 
 							} else {
 								report.WeeklyBarCount++
 							}
-							if dates.From.IsZero() || bar.CloseTime.Before(dates.From) {
-								dates.From = bar.CloseTime
+							if dates.From.IsZero() || closeTime.Before(dates.From) {
+								dates.From = closeTime
 							}
-							if bar.CloseTime.After(dates.To) {
-								dates.To = bar.CloseTime
+							if closeTime.After(dates.To) {
+								dates.To = closeTime
 							}
 						}
 					}

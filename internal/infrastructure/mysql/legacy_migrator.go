@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
@@ -281,32 +280,11 @@ type legacyInstrument struct {
 	Bars map[market.Timeframe][]model.StockKline
 }
 
-func legacyBar(old model.StockKline, tf market.Timeframe) (market.Bar, error) {
-	id, err := MapLegacyInstrument(old.Code)
-	if err != nil {
-		return market.Bar{}, err
+func legacyDate(old model.StockKline) (time.Time, error) {
+	if _, err := MapLegacyInstrument(old.Code); err != nil {
+		return time.Time{}, err
 	}
-	at, err := time.ParseInLocation("2006-01-02", old.Date, time.UTC)
-	if err != nil {
-		return market.Bar{}, invalid("invalid legacy trading date")
-	}
-	prices := []float64{old.Open, old.High, old.Low, old.Close}
-	scaled := make([]market.Price, 4)
-	for i, p := range prices {
-		v := math.Round(p * float64(market.ValueScale))
-		if math.IsNaN(v) || math.IsInf(v, 0) || v <= 0 || v >= float64(math.MaxInt64) {
-			return market.Bar{}, invalid("legacy price out of range")
-		}
-		scaled[i] = market.Price(v)
-	}
-	b := market.Bar{Instrument: id, Timeframe: tf, OpenTime: at, CloseTime: at, Open: scaled[0], High: scaled[1], Low: scaled[2], Close: scaled[3], Volume: old.Volume}
-	if old.Volume == 0 {
-		b.Trading = market.Suspended
-	}
-	if _, err := market.NewDataset(id, tf, 0, []market.Bar{b}); err != nil {
-		return market.Bar{}, err
-	}
-	return b, nil
+	return time.ParseInLocation("2006-01-02", old.Date, time.UTC)
 }
 
 // Legacy prices have no reliable adjustment provenance. The source supplies the
@@ -326,19 +304,19 @@ func backfillLegacy(ctx context.Context, source port.MarketSource, item legacyIn
 		dates := map[time.Time]bool{}
 		var from, to time.Time
 		for _, row := range old {
-			bar, err := legacyBar(row, tf)
+			closeTime, err := legacyDate(row)
 			if err != nil {
 				return batch, err
 			}
-			if dates[bar.CloseTime] {
+			if dates[closeTime] {
 				return batch, market.ErrDuplicateBar
 			}
-			dates[bar.CloseTime] = true
-			if from.IsZero() || bar.CloseTime.Before(from) {
-				from = bar.CloseTime
+			dates[closeTime] = true
+			if from.IsZero() || closeTime.Before(from) {
+				from = closeTime
 			}
-			if bar.CloseTime.After(to) {
-				to = bar.CloseTime
+			if closeTime.After(to) {
+				to = closeTime
 			}
 		}
 		bars, factors, err := source.FetchBars(ctx, item.ID, tf, from, to)

@@ -6,7 +6,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm/schema"
-	"math"
 	"sync"
 	"testing"
 	"time"
@@ -90,18 +89,17 @@ func TestLegacyBackfillRequiresExactDatesAndAdjustmentCoverage(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestLegacyBarConversionRejectsCorruptValues(t *testing.T) {
-	item, _ := legacyFixture(t)
-	old := item.Bars[market.Day][0]
-	got, err := legacyBar(old, market.Day)
+func TestLegacyBackfillUsesAuthoritativeOHLCForCorruptLegacyRows(t *testing.T) {
+	item, source := legacyFixture(t)
+	item.Bars[market.Day][0].Open = 0
+	item.Bars[market.Day][0].High = 0
+	item.Bars[market.Day][0].Low = 0
+	item.Bars[market.Day][0].Volume = 0
+
+	batch, err := backfillLegacy(context.Background(), source, item)
+
 	require.NoError(t, err)
-	require.Equal(t, market.Price(100000), got.Close)
-	for _, tc := range []struct {
-		name   string
-		mutate func(*model.StockKline)
-	}{{"date", func(b *model.StockKline) { b.Date = "yesterday" }}, {"ohlc", func(b *model.StockKline) { b.Low = 20 }}, {"volume", func(b *model.StockKline) { b.Volume = -1 }}, {"code", func(b *model.StockKline) { b.Code = "123456" }}} {
-		t.Run(tc.name, func(t *testing.T) { b := old; tc.mutate(&b); _, err := legacyBar(b, market.Day); require.Error(t, err) })
-	}
+	require.Equal(t, source.bars[market.Day], batch.Bars[market.Day])
 }
 
 func TestMigrationOptionsRejectInvalidBatchBeforeDBAccess(t *testing.T) {
@@ -149,21 +147,6 @@ func expectLegacySchema(mock sqlmock.Sqlmock) {
 
 func migrationVersionRows(version uint64, status string) *sqlmock.Rows {
 	return sqlmock.NewRows([]string{"version", "source", "status", "quality"}).AddRow(version, legacyMigrationSource, status, status)
-}
-
-func TestLegacyBarRejectsNonFiniteOverflowAndHandlesSuspension(t *testing.T) {
-	item, _ := legacyFixture(t)
-	old := item.Bars[market.Day][0]
-	for _, price := range []float64{math.NaN(), math.Inf(1), math.MaxFloat64, 0, -1} {
-		b := old
-		b.Open = price
-		_, err := legacyBar(b, market.Day)
-		require.Error(t, err)
-	}
-	old.Volume = 0
-	got, err := legacyBar(old, market.Day)
-	require.NoError(t, err)
-	require.Equal(t, market.Suspended, got.Trading)
 }
 
 func TestLegacyBackfillRejectsDuplicateDatesAndEmptyHistory(t *testing.T) {
