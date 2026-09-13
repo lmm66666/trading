@@ -49,11 +49,11 @@ func run(ctx context.Context, args []string, out io.Writer, runner migrationRunn
 		return errors.New("迁移参数无效；批次大小须为 1–10000")
 	}
 	report, err := runner(ctx, *configPath, kernel.MigrationOptions{DryRun: *dryRun, BatchSize: *batchSize})
-	if err != nil && !errors.Is(err, kernel.ErrMigrationIncomplete) {
-		return errors.New("迁移失败；请检查配置、数据库连接、维护窗口和迁移检查点")
-	}
 	if encodeErr := json.NewEncoder(out).Encode(report); encodeErr != nil {
 		return errors.New("无法输出迁移报告")
+	}
+	if err != nil && !errors.Is(err, kernel.ErrMigrationIncomplete) {
+		return errors.New("迁移失败；请检查配置、数据库连接、维护窗口和迁移检查点")
 	}
 	if err != nil {
 		return kernel.ErrMigrationIncomplete

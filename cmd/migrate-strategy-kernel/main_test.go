@@ -18,6 +18,7 @@ import (
 	"gorm.io/gorm/logger"
 	"trading/config"
 	kernel "trading/internal/infrastructure/mysql"
+	"trading/internal/market"
 	"trading/internal/port"
 )
 
@@ -60,6 +61,23 @@ func TestCommandReportsIncompleteAndReturnsFailure(t *testing.T) {
 	})
 	require.ErrorIs(t, err, kernel.ErrMigrationIncomplete)
 	require.Contains(t, output.String(), `"BacktestEnabled":false`)
+}
+
+func TestCommandStorageFailurePreservesSafeReport(t *testing.T) {
+	var output bytes.Buffer
+	failure := errors.New("root:password@tcp(secret)/db: write failed")
+	err := run(context.Background(), []string{"-batch-size", "10000"}, &output, func(_ context.Context, _ string, opts kernel.MigrationOptions) (kernel.MigrationReport, error) {
+		require.Equal(t, 10000, opts.BatchSize)
+		return kernel.MigrationReport{Version: 1, Quality: port.DataIncomplete, LastLegacyIDs: map[string]uint64{"daily": 42}, Failures: []kernel.MigrationFailure{{Instrument: market.InstrumentID{Exchange: market.SSE, Code: "600000"}, Category: "STORAGE_FAILURE"}}}, failure
+	})
+	require.Error(t, err)
+	require.NotErrorIs(t, err, failure)
+	for _, fragment := range []string{`"Version":1`, `"Quality":"INCOMPLETE"`, `"BacktestEnabled":false`, `"daily":42`, `"600000"`, `"STORAGE_FAILURE"`} {
+		require.Contains(t, output.String(), fragment)
+	}
+	for _, secret := range []string{"root", "password", "secret", "write failed"} {
+		require.NotContains(t, output.String()+err.Error(), secret)
+	}
 }
 func TestCommandMissingConfigDoesNotEchoPath(t *testing.T) {
 	_, err := execute(context.Background(), "/nonexistent/password", kernel.MigrationOptions{DryRun: true, BatchSize: 1})

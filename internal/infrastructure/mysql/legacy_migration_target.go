@@ -159,21 +159,50 @@ func insertLegacyTargetChunk(tx *gorm.DB, id, version uint64, batch port.MarketW
 		for _, bar := range batch.Bars[tf][start:end] {
 			rows = append(rows, barModel(id, bar, 1, version))
 		}
-		return tx.Create(&rows).Error
+		return createLegacyTargetRows(tx, rows)
 	case 2:
 		rows := make([]AdjustmentFactorModel, 0, end-start)
 		for _, factor := range batch.Factors[start:end] {
 			rows = append(rows, AdjustmentFactorModel{InstrumentID: id, EffectiveTime: factor.EffectiveTime, DataVersion: version, Numerator: factor.Numerator, Denominator: factor.Denominator, ValidFromVersion: version})
 		}
-		return tx.Create(&rows).Error
+		return createLegacyTargetRows(tx, rows)
 	case 3:
 		rows := make([]CorporateActionModel, 0, end-start)
 		for _, action := range batch.Actions[start:end] {
 			rows = append(rows, actionModel(id, action, version))
 		}
-		return tx.Create(&rows).Error
+		return createLegacyTargetRows(tx, rows)
 	}
 	return invalid("unknown legacy target kind")
+}
+
+// MySQL 5.7/8.0 每条预处理语句最多绑定 65535 个参数，预留 1024。
+// 只拆 SQL，不另开事务：调用方的外部批次及其检查点仍原子提交。
+func createLegacyTargetRows[T any](tx *gorm.DB, rows []T) error {
+	statement := &gorm.Statement{DB: tx}
+	if err := statement.Parse(&rows); err != nil {
+		return err
+	}
+	columns := 0
+	for _, field := range statement.Schema.Fields {
+		// 这些新建目标行的自增 ID 均为零，不参与 INSERT；其余可写列
+		// 按最大绑定数计入，避免模型新增字段后仍沿用过时的固定行数。
+		if field.DBName != "" && field.Creatable && !field.AutoIncrement {
+			columns++
+		}
+	}
+	const parameterBudget = 65535 - 1024
+	if columns == 0 || columns > parameterBudget {
+		return invalid("invalid legacy target column count")
+	}
+	size := parameterBudget / columns
+	for start := 0; start < len(rows); start += size {
+		chunk := rows[start:min(start+size, len(rows))]
+		if err := tx.Create(&chunk).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // 校验只加载当前证券；完整摘要包含 count、日期和全部 OHLCV/因子/事件。
