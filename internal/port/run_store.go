@@ -99,8 +99,20 @@ func (run Run) Validate() error {
 			return err
 		}
 	}
-	if (run.LeaseOwner == "") != (run.LeaseToken == "") {
-		return invalidPortValue("lease owner and token must be set together")
+	leaseOwner := strings.TrimSpace(run.LeaseOwner)
+	leaseToken := strings.TrimSpace(run.LeaseToken)
+	if (run.LeaseOwner != "" && leaseOwner == "") || (run.LeaseToken != "" && leaseToken == "") {
+		return invalidPortValue("lease owner and token cannot be whitespace")
+	}
+	switch run.Status {
+	case RunRunning:
+		if leaseOwner == "" || leaseToken == "" {
+			return invalidPortValue("running run requires lease owner and token")
+		}
+	default:
+		if leaseOwner != "" || leaseToken != "" {
+			return invalidPortValue("non-running run cannot have a lease")
+		}
 	}
 	return nil
 }

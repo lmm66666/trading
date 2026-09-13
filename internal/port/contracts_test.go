@@ -150,6 +150,53 @@ func TestPortPayloadValidationCoversStableDTOs(t *testing.T) {
 	}
 }
 
+func TestRunValidateEnforcesLeaseStateInvariantsWithoutMutation(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  port.RunStatus
+		owner   string
+		token   string
+		wantErr bool
+	}{
+		{"running missing lease", port.RunRunning, "", "", true},
+		{"running owner only", port.RunRunning, "worker-1", "", true},
+		{"running token only", port.RunRunning, "", "token-1", true},
+		{"running whitespace lease", port.RunRunning, " ", "\t", true},
+		{"running valid lease", port.RunRunning, "worker-1", "token-1", false},
+		{"pending with lease", port.RunPending, "worker-1", "token-1", true},
+		{"succeeded with lease", port.RunSucceeded, "worker-1", "token-1", true},
+		{"partial succeeded with lease", port.RunPartialSucceeded, "worker-1", "token-1", true},
+		{"failed with lease", port.RunFailed, "worker-1", "token-1", true},
+		{"cancelled with lease", port.RunCancelled, "worker-1", "token-1", true},
+		{"pending empty lease", port.RunPending, "", "", false},
+		{"succeeded empty lease", port.RunSucceeded, "", "", false},
+		{"partial succeeded empty lease", port.RunPartialSucceeded, "", "", false},
+		{"failed empty lease", port.RunFailed, "", "", false},
+		{"cancelled empty lease", port.RunCancelled, "", "", false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			run := validRun()
+			run.Status = test.status
+			run.LeaseOwner = test.owner
+			run.LeaseToken = test.token
+			before := run
+
+			err := run.Validate()
+			if test.wantErr && !errors.Is(err, port.ErrInvalidPortValue) {
+				t.Fatalf("Validate() error = %v, want ErrInvalidPortValue", err)
+			}
+			if !test.wantErr && err != nil {
+				t.Fatalf("Validate() error = %v, want nil", err)
+			}
+			if !reflect.DeepEqual(run, before) {
+				t.Fatalf("Validate() mutated Run: got %#v, want %#v", run, before)
+			}
+		})
+	}
+}
+
 func TestSnapshotEventAndTelemetryValidationCoversInvalidBranches(t *testing.T) {
 	row := validSnapshot().Rows[0]
 	for _, mutate := range []func(*port.SnapshotRow){
