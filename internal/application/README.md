@@ -2,6 +2,20 @@
 
 应用服务只依赖领域值对象与 port，不导入 GORM、Gin 或旧 K 线模型。DTO 中的时间使用 UTC，传输层 JSON 按 RFC3339 输出。
 
+## 回测、扫描与持久化 worker
+
+`NewBacktestService` 注入 Registry、BacktestEngine、MarketData、JobQueue、RunStore 和 ComputeConfig；EngineVersion 必须由装配层显式提供。Create 验证稳定策略定义、补齐默认参数，锁定一次最新 COMPLETE 版本，并对策略定义、完整成本/执行配置、UTC 日期、参数和数据/引擎版本计算 canonical SHA-256。JSON 对象键排序，浮点使用固定十进制表达，整数金额不转浮点。执行重新校验保存的摘要，只读取锁定版本；数据质量/归属/版本检查在指标和引擎前进行，暖机行情只用于预计算指标，账户从请求窗口开始。取消、引擎错误和失效租约均不能发布结果。
+
+`NewScanService` 通过 ScanConfig 注入1–64个固定 worker。Create 固定证券集合（最多5000）、窗口、参数和数据版本；日期规范化为 UTC 微秒，与 MySQL DATETIME(6) 身份一致。Execute 通过一次 BatchDatasets 同时加载主/辅助周期，为每只证券创建新的策略实例，并记录成功信号与脱敏失败。无买入信号为 skipped；输出按 InstrumentID 排序后由 RunStore 原子发布。每个证券和仓储批次边界检查执行 context，Replay 在 Bar 边界再次检查。
+
+扫描的 ParametersHash 覆盖策略定义、参数、引擎、窗口起点、scope 和固定证券集合。只有同一 AsOf/配置/证券集合的前快照可增量复用；更换窗口或配置完整重算。MarketData 若同时实现 `port.MarketChangeReader`（MySQL 实现已提供），纯 Bar 修订只重算 dirty 证券，并重试前快照失败项；任一因子或公司行动修订使整个快照失效。缺少变化分类能力时安全全量重建。前快照 ID 被纳入任务摘要，读取每个后续页均绑定该 ID，不能随着新发布切换快照。Latest 的续页同样要求 SnapshotID。
+
+JobQueue 若实现 `port.IdempotentRunReader`（MySQL 实现已提供），重复提交会在解析新行情版本或新证券集合前读取原 Run；相同幂等键的配置冲突被拒绝。Enqueue 仍通过数据库唯一约束仲裁并发首次提交。生产装配应保留两个扩展端口能力，不能用功能不完整的包装器隐藏它们。
+
+`NewWorkerPool` 接收按 RunKind 分派的 Execute 方法。Run 管理固定任务 worker、周期 reaper 和每个活跃任务的续租 goroutine，退出前全部等待结束。续租周期为租期的三分之一，并读取取消状态；失租或续租状态不确定立即取消计算，不尝试用旧 token 写入结果。应用关闭时取消根 context，再等待 pool 返回，最后关闭数据库。每次领取的持久 Attempts 决定250ms、1s、4s退避；只有明确 temporary、timeout 或 transient connection 错误重试，第四次失败进入终态。任务取消/失租不重试；关闭中断保留租约供后续接管。
+
+`SlogTelemetry` 仅接受声明的阶段、身份、版本、耗时和计数字段；不接收请求体、配置或原始错误文本。覆盖行情加载、校验、指标、策略、引擎和持久化。当前 queue_wait 测量 Claim 调用等待，Run 端口尚无入队时间戳，不能将它解读为完整队列驻留时间。
+
 ## 行情采集
 
 `NewMarketIngestionService` 接收 MarketSource、MarketData、MarketDataWriter，以及显式 Source、HistoryStart、Clock 和可共享的 UpstreamLimiter。生产装配应注入已有 `pkg/indicator.Limiter`；同一 limiter 可服务多个来源调用。时间范围最多20年，每个周期最多10000根 Bar/因子，公司行动最多10000条。

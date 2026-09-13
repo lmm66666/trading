@@ -178,3 +178,5 @@ docker save -o trading.tar trading:latest
 - 行情发布是增量 upsert，缺省键不代表删除；保留版本 0 只作发布锁，所有业务读取必须使用大于 0 的 COMPLETE 版本。
 - Docker 集成测试带 `integration` 标签；无 Docker 必须报告环境失败，不能把编译检查或 SQL mock 结果当作真实 MySQL 验证通过。
 - 不透明身份字段必须精确区分大小写和尾空格：有界字段使用 VARBINARY 并与 port UTF-8 字节长度验证一致；无界且不索引的订单/成交标识使用 LONGBLOB，普通展示字段不做二进制化。
+- 回测/扫描应用编排位于 `internal/application/`，进入前先读 README。生产装配须显式设置 EngineVersion，并保留 MySQL 的 IdempotentRunReader/MarketChangeReader 能力；任务执行不得重新解析最新行情版本。
+- 同一业务条件允许不同 Run 重扫生成新的不可变快照；Migrate 显式移除旧 `uq_snapshot_business`，保留 RunID/SnapshotID 唯一性与 SnapshotID 续页绑定。
