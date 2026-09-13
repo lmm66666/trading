@@ -91,9 +91,15 @@ func TestApplyFillRejectsOverflowingFeesBeforeCashMutation(t *testing.T) {
 
 func TestFillAmountViewsAndAdditionalBuyMaintainExactCostBasis(t *testing.T) {
 	fill := backtest.Fill{Gross: 1_000, Commission: 11, StampDuty: 7, TransferFee: 2}
-	assert.Equal(t, market.Money(20), fill.TotalFees())
-	assert.Equal(t, market.Money(1_020), fill.TotalDebit())
-	assert.Equal(t, market.Money(980), fill.NetCredit())
+	fees, feesOK := fill.TotalFees()
+	debit, debitOK := fill.TotalDebit()
+	credit, creditOK := fill.NetCredit()
+	assert.True(t, feesOK)
+	assert.Equal(t, market.Money(20), fees)
+	assert.True(t, debitOK)
+	assert.Equal(t, market.Money(1_020), debit)
+	assert.True(t, creditOK)
+	assert.Equal(t, market.Money(980), credit)
 
 	account := fundedPosition(t, 100)
 	err := account.ApplyFill(backtest.Fill{ID: "add", OrderID: "add", Side: backtest.Buy, Instrument: testInstrument, Time: openTime("2026-01-06"), Price: 120_000, Quantity: 50, Gross: 6_000_000})

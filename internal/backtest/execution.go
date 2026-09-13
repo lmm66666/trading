@@ -20,6 +20,7 @@ const (
 	RejectDuplicateFill
 	RejectArithmeticOverflow
 	RejectInvalidBar
+	RejectFeesExceedProceeds
 )
 
 // ExecutionModel turns an eligible order into a fill without mutating Account.
@@ -34,13 +35,19 @@ func NewExecutionModel(config Config) (ExecutionModel, error) {
 }
 
 func (m ExecutionModel) Execute(order Order, bar market.Bar, account Account) (Fill, RejectReason) {
+	if m.config.LotSize <= 0 {
+		return Fill{}, RejectInvalidLot
+	}
 	if err := m.config.Validate(); err != nil {
 		return Fill{}, RejectInvalidConfig
 	}
 	if !order.validFor(bar) {
 		return Fill{}, RejectInvalidOrder
 	}
-	if !bar.CloseTime.After(order.CreatedAt) {
+	if !validBarInterval(bar) {
+		return Fill{}, RejectInvalidBar
+	}
+	if !bar.OpenTime.After(order.CreatedAt) {
 		return Fill{}, RejectNotYetActive
 	}
 	if account.hasFilledOrder(order.ID) {
@@ -75,6 +82,10 @@ func (m ExecutionModel) canFill(order Order, bar market.Bar) RejectReason {
 	return RejectNone
 }
 
+func validBarInterval(bar market.Bar) bool {
+	return !bar.OpenTime.IsZero() && !bar.CloseTime.IsZero() && bar.CloseTime.After(bar.OpenTime)
+}
+
 func (m ExecutionModel) buy(order Order, bar market.Bar, account Account, price market.Price) (Fill, RejectReason) {
 	budget, ok := mulDivFloor(int64(account.Cash()), m.config.CashFractionBPS, basisPoints)
 	if !ok {
@@ -87,17 +98,18 @@ func (m ExecutionModel) buy(order Order, bar market.Bar, account Account, price 
 	maxLots := maxQuantity / m.config.LotSize
 	low, high := int64(0), maxLots
 	for low < high {
-		mid := low + (high-low+1)/2
+		mid := high - (high-low)/2
 		quantity, ok := mulDivFloor(mid, m.config.LotSize, 1)
 		if !ok {
 			return Fill{}, RejectArithmeticOverflow
 		}
-		fill, ok := m.makeFill(order, bar, price, quantity)
-		if !ok {
+		fill, fillReason := m.makeFill(order, bar, price, quantity)
+		if fillReason != RejectNone {
 			high = mid - 1
 			continue
 		}
-		if fill.TotalDebit() <= market.Money(budget) {
+		debit, ok := fill.TotalDebit()
+		if ok && debit <= market.Money(budget) {
 			low = mid
 		} else {
 			high = mid - 1
@@ -110,9 +122,9 @@ func (m ExecutionModel) buy(order Order, bar market.Bar, account Account, price 
 	if !ok {
 		return Fill{}, RejectArithmeticOverflow
 	}
-	fill, ok := m.makeFill(order, bar, price, quantity)
-	if !ok {
-		return Fill{}, RejectArithmeticOverflow
+	fill, fillReason := m.makeFill(order, bar, price, quantity)
+	if fillReason != RejectNone {
+		return Fill{}, fillReason
 	}
 	return fill, RejectNone
 }
@@ -129,24 +141,38 @@ func (m ExecutionModel) sell(order Order, bar market.Bar, account Account, price
 	if quantity > position.Quantity {
 		return Fill{}, RejectInsufficientPosition
 	}
-	fill, ok := m.makeFill(order, bar, price, quantity)
-	if !ok {
-		return Fill{}, RejectArithmeticOverflow
+	fill, fillReason := m.makeFill(order, bar, price, quantity)
+	if fillReason != RejectNone {
+		return Fill{}, fillReason
 	}
 	return fill, RejectNone
 }
 
-func (m ExecutionModel) makeFill(order Order, bar market.Bar, price market.Price, quantity int64) (Fill, bool) {
+func (m ExecutionModel) makeFill(order Order, bar market.Bar, price market.Price, quantity int64) (Fill, RejectReason) {
 	gross, ok := mulDivFloor(int64(price), quantity, 1)
 	if !ok {
-		return Fill{}, false
+		return Fill{}, RejectArithmeticOverflow
 	}
 	commission, stampDuty, transferFee, ok := tradeFees(m.config, order.Side, market.Money(gross))
 	if !ok {
-		return Fill{}, false
+		return Fill{}, RejectArithmeticOverflow
 	}
-	if _, ok = addMoney(market.Money(gross), commission, stampDuty, transferFee); !ok {
-		return Fill{}, false
+	fill := Fill{ID: order.ID + "@" + bar.OpenTime.UTC().Format("20060102T150405.999999999Z"), OrderID: order.ID, Side: order.Side, Instrument: bar.Instrument, Time: bar.OpenTime, Price: price, Quantity: quantity, Gross: market.Money(gross), Commission: commission, StampDuty: stampDuty, TransferFee: transferFee}
+	if order.Side == Buy {
+		if _, ok = fill.TotalDebit(); !ok {
+			return Fill{}, RejectArithmeticOverflow
+		}
+	} else {
+		fees, feesOK := fill.TotalFees()
+		if !feesOK {
+			return Fill{}, RejectArithmeticOverflow
+		}
+		if fees > fill.Gross {
+			return Fill{}, RejectFeesExceedProceeds
+		}
+		if _, ok = fill.NetCredit(); !ok {
+			return Fill{}, RejectArithmeticOverflow
+		}
 	}
-	return Fill{ID: order.ID + "@" + bar.OpenTime.UTC().Format("20060102T150405.999999999Z"), OrderID: order.ID, Side: order.Side, Instrument: bar.Instrument, Time: bar.OpenTime, Price: price, Quantity: quantity, Gross: market.Money(gross), Commission: commission, StampDuty: stampDuty, TransferFee: transferFee}, true
+	return fill, RejectNone
 }

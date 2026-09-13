@@ -79,7 +79,7 @@ func (a *Account) ApplyFill(fill Fill) error {
 	position := a.positions[fill.Instrument]
 	switch fill.Side {
 	case Buy:
-		debit, ok := fillDebit(fill)
+		debit, ok := fill.TotalDebit()
 		if !ok {
 			return ErrInvalidFill
 		}
@@ -101,7 +101,7 @@ func (a *Account) ApplyFill(fill Fill) error {
 		if position.Quantity < fill.Quantity {
 			return ErrInsufficientPosition
 		}
-		credit, ok := fillCredit(fill)
+		credit, ok := fill.NetCredit()
 		if !ok {
 			return ErrInvalidFill
 		}
@@ -201,30 +201,15 @@ func validateFill(fill Fill) error {
 	if !ok || fill.Gross != market.Money(gross) {
 		return ErrInvalidFill
 	}
-	if _, ok := fillDebit(fill); !ok {
+	if fill.Side == Buy {
+		_, ok = fill.TotalDebit()
+	} else {
+		_, ok = fill.NetCredit()
+	}
+	if !ok {
 		return ErrInvalidFill
 	}
 	return nil
-}
-
-func fillFees(fill Fill) (market.Money, bool) {
-	return addMoney(fill.Commission, fill.StampDuty, fill.TransferFee)
-}
-
-func fillDebit(fill Fill) (market.Money, bool) {
-	fees, ok := fillFees(fill)
-	if !ok {
-		return 0, false
-	}
-	return addMoney(fill.Gross, fees)
-}
-
-func fillCredit(fill Fill) (market.Money, bool) {
-	fees, ok := fillFees(fill)
-	if !ok || fees > fill.Gross {
-		return 0, false
-	}
-	return fill.Gross - fees, true
 }
 
 func validateCorporateAction(action market.CorporateAction) error {

@@ -47,7 +47,9 @@ func TestBuyAccountsForSlippageAndEveryFeeWithoutNegativeCash(t *testing.T) {
 	assert.Equal(t, market.Money(90_900_000), fill.Gross)
 	assert.Equal(t, market.Money(90_900), fill.Commission)
 	assert.Equal(t, market.Money(9_090), fill.TransferFee)
-	assert.Equal(t, market.Money(90_999_990), fill.TotalDebit())
+	debit, ok := fill.TotalDebit()
+	require.True(t, ok)
+	assert.Equal(t, market.Money(90_999_990), debit)
 	require.NoError(t, account.ApplyFill(fill))
 	assert.Equal(t, market.Money(9_000_010), account.Cash())
 }
@@ -168,7 +170,7 @@ func TestExecutionModelRejectsInvalidConfigurationAtConstructionAndUse(t *testin
 	assert.ErrorIs(t, err, backtest.ErrInvalidConfig)
 
 	_, reason := (backtest.ExecutionModel{}).Execute(backtest.NewNextOpenOrder(backtest.Buy, closeTime("2026-01-05"), "signal"), testBar("2026-01-06", 100_000, 99_000, 101_000, 1), newAccount(t, 100_000_000))
-	assert.Equal(t, backtest.RejectInvalidConfig, reason)
+	assert.Equal(t, backtest.RejectInvalidLot, reason)
 
 }
 
@@ -178,7 +180,7 @@ func TestExecutionRejectsCostOverflowForAFullSell(t *testing.T) {
 
 	_, reason := model.Execute(backtest.NewNextOpenOrder(backtest.Sell, closeTime("2026-01-05"), "exit"), testBar("2026-01-06", 1, 1, 1, 1), account)
 
-	assert.Equal(t, backtest.RejectArithmeticOverflow, reason)
+	assert.Equal(t, backtest.RejectFeesExceedProceeds, reason)
 }
 
 func TestExecutionRejectsOrderForAnotherInstrument(t *testing.T) {
