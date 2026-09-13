@@ -21,10 +21,11 @@ import (
 )
 
 const (
-	eastmoneyKlineURL      = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
-	eastmoneyDataCenterURL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
-	eastmoneyResponseLimit = 4 << 20
-	eastmoneyMaxPages      = 10_000
+	eastmoneyKlineURL       = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
+	eastmoneyDataCenterURL  = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+	eastmoneyResponseLimit  = 4 << 20
+	eastmoneyMaxPages       = 10_000
+	eastmoneyActionPageSize = 500
 )
 
 var (
@@ -53,6 +54,12 @@ func NewEastmoneyMarketSource() *EastmoneyMarketSource {
 func NewEastmoneyMarketSourceWithClient(client *http.Client, klineBaseURL, dataCenterBaseURL string) *EastmoneyMarketSource {
 	if client == nil {
 		client = &http.Client{Timeout: eastmoneyHTTPTimeout}
+	} else {
+		copied := *client
+		client = &copied
+		if client.Timeout <= 0 {
+			client.Timeout = eastmoneyHTTPTimeout
+		}
 	}
 	if klineBaseURL == "" {
 		klineBaseURL = eastmoneyKlineURL
@@ -110,14 +117,14 @@ func (s *EastmoneyMarketSource) FetchCorporateActions(ctx context.Context, id ma
 	}
 
 	var actions []market.CorporateAction
-	pages := 1
-	for page := 1; page <= pages; page++ {
+	var expectedCount, expectedPages, receivedRecords int
+	for page := 1; ; page++ {
 		query := url.Values{
 			"reportName":  {"RPT_SHAREBONUS_DET"},
-			"columns":     {"SECURITY_CODE,EX_DIVIDEND_DATE,PRETAX_BONUS_RMB,BONUS_RATIO,IT_RATIO"},
+			"columns":     {"ALL"},
 			"filter":      {fmt.Sprintf(`(SECURITY_CODE="%s")`, id.Code)},
 			"pageNumber":  {strconv.Itoa(page)},
-			"pageSize":    {"500"},
+			"pageSize":    {strconv.Itoa(eastmoneyActionPageSize)},
 			"sortColumns": {"EX_DIVIDEND_DATE"},
 			"sortTypes":   {"1"},
 			"source":      {"WEB"},
@@ -127,19 +134,32 @@ func (s *EastmoneyMarketSource) FetchCorporateActions(ctx context.Context, id ma
 		if err != nil {
 			return nil, err
 		}
-		pageActions, responsePages, err := parseEastmoneyCorporateActionPage(body, id)
+		response, err := parseEastmoneyCorporateActionPage(body, id)
 		if err != nil {
 			return nil, err
 		}
 		if page == 1 {
-			pages = responsePages
-			if pages > eastmoneyMaxPages {
+			expectedCount, expectedPages = response.count, response.pages
+			if expectedPages > eastmoneyMaxPages {
 				return nil, fmt.Errorf("%w: pages exceeds limit", ErrMalformedResponse)
 			}
-		} else if responsePages != pages {
-			return nil, fmt.Errorf("%w: pagination changed from %d to %d", ErrMalformedResponse, pages, responsePages)
+			if expectedCount == 0 {
+				return nil, nil
+			}
+		} else if response.count != expectedCount || response.pages != expectedPages {
+			return nil, fmt.Errorf("%w: pagination metadata changed", ErrIncompleteData)
 		}
-		actions = append(actions, pageActions...)
+		if response.pageNumber != page {
+			return nil, fmt.Errorf("%w: response page %d for request %d", ErrIncompleteData, response.pageNumber, page)
+		}
+		receivedRecords += response.recordCount
+		actions = append(actions, response.actions...)
+		if page == expectedPages {
+			if receivedRecords != expectedCount {
+				return nil, fmt.Errorf("%w: received %d of %d records", ErrIncompleteData, receivedRecords, expectedCount)
+			}
+			break
+		}
 	}
 
 	sort.SliceStable(actions, func(i, j int) bool {
@@ -151,19 +171,20 @@ func (s *EastmoneyMarketSource) FetchCorporateActions(ctx context.Context, id ma
 		}
 		return actions[i].ExDate.Before(actions[j].ExDate)
 	})
-	for i := 1; i < len(actions); i++ {
-		if actions[i].ID == actions[i-1].ID {
-			return nil, fmt.Errorf("%w: duplicate action %q", ErrMalformedResponse, actions[i].ID)
-		}
+	if err := validateEastmoneyActionIDs(actions); err != nil {
+		return nil, err
 	}
 	return actions, nil
 }
 
 func (s *EastmoneyMarketSource) get(ctx context.Context, baseURL string, query url.Values) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, upstreamError(ErrRequestCanceled, err, 0, "")
+		return nil, classifyEastmoneyRequestError(err)
 	}
-	endpoint := baseURL + "?" + query.Encode()
+	endpoint, err := eastmoneyEndpoint(baseURL, query)
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: create request", ErrMalformedResponse)
@@ -268,8 +289,14 @@ func ParseEastmoneyCorporateActions(body []byte, id market.InstrumentID) ([]mark
 	if err := id.Validate(); err != nil {
 		return nil, fmt.Errorf("%w: invalid instrument: %v", ErrMalformedResponse, err)
 	}
-	actions, _, err := parseEastmoneyCorporateActionPage(body, id)
-	return actions, err
+	page, err := parseEastmoneyCorporateActionPage(body, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateEastmoneyActionIDs(page.actions); err != nil {
+		return nil, err
+	}
+	return page.actions, nil
 }
 
 type eastmoneyKline struct {
@@ -406,6 +433,9 @@ func eastmoneyOHLCMatches(raw, qfq eastmoneyKline, factor market.AdjustmentFacto
 }
 
 type eastmoneyCorporateActionRow struct {
+	ID             json.RawMessage `json:"ID"`
+	RecordID       json.RawMessage `json:"RECORD_ID"`
+	EventID        json.RawMessage `json:"EVENT_ID"`
 	SecurityCode   json.RawMessage `json:"SECURITY_CODE"`
 	ExDividendDate json.RawMessage `json:"EX_DIVIDEND_DATE"`
 	PretaxBonus    json.RawMessage `json:"PRETAX_BONUS_RMB"`
@@ -413,54 +443,69 @@ type eastmoneyCorporateActionRow struct {
 	ITRatio        json.RawMessage `json:"IT_RATIO"`
 }
 
-func parseEastmoneyCorporateActionPage(body []byte, id market.InstrumentID) ([]market.CorporateAction, int, error) {
+type eastmoneyCorporateActionPage struct {
+	actions     []market.CorporateAction
+	count       int
+	pages       int
+	pageNumber  int
+	recordCount int
+}
+
+func parseEastmoneyCorporateActionPage(body []byte, id market.InstrumentID) (eastmoneyCorporateActionPage, error) {
 	var envelope struct {
 		Success *bool           `json:"success"`
 		Code    json.RawMessage `json:"code"`
 		Result  json.RawMessage `json:"result"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return nil, 0, fmt.Errorf("%w: invalid JSON", ErrMalformedResponse)
+		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: invalid JSON", ErrMalformedResponse)
 	}
 	if envelope.Success == nil || !*envelope.Success {
-		return nil, 0, upstreamError(ErrUpstream, nil, 0, "")
+		return eastmoneyCorporateActionPage{}, upstreamError(ErrUpstream, nil, 0, "")
 	}
 	var code int
 	if len(envelope.Code) == 0 || json.Unmarshal(envelope.Code, &code) != nil || code != 0 {
 		if len(envelope.Code) > 0 && string(envelope.Code) != "0" {
-			return nil, 0, upstreamError(ErrUpstream, nil, 0, "")
+			return eastmoneyCorporateActionPage{}, upstreamError(ErrUpstream, nil, 0, "")
 		}
-		return nil, 0, fmt.Errorf("%w: invalid code", ErrMalformedResponse)
+		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: invalid code", ErrMalformedResponse)
 	}
 	if len(envelope.Result) == 0 || string(envelope.Result) == "null" {
-		return nil, 0, fmt.Errorf("%w: result is required", ErrMalformedResponse)
+		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: result is required", ErrMalformedResponse)
 	}
 	var result struct {
-		Pages *int            `json:"pages"`
-		Data  json.RawMessage `json:"data"`
+		Count      *int            `json:"count"`
+		Pages      *int            `json:"pages"`
+		PageNumber *int            `json:"pageNumber"`
+		Data       json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(envelope.Result, &result); err != nil {
-		return nil, 0, fmt.Errorf("%w: invalid result", ErrMalformedResponse)
+		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: invalid result", ErrMalformedResponse)
 	}
-	if result.Pages == nil || *result.Pages < 0 || len(result.Data) == 0 {
-		return nil, 0, fmt.Errorf("%w: pages and data are required", ErrMalformedResponse)
+	if result.Count == nil || result.Pages == nil || result.PageNumber == nil || *result.Count < 0 || *result.Pages < 0 || len(result.Data) == 0 {
+		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: count, pages, pageNumber and data are required", ErrMalformedResponse)
 	}
 	if string(result.Data) == "null" {
-		return nil, *result.Pages, nil
+		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: data must be an array", ErrMalformedResponse)
 	}
 	var rows []eastmoneyCorporateActionRow
 	if err := json.Unmarshal(result.Data, &rows); err != nil {
-		return nil, 0, fmt.Errorf("%w: invalid corporate actions", ErrMalformedResponse)
+		return eastmoneyCorporateActionPage{}, fmt.Errorf("%w: invalid corporate actions", ErrMalformedResponse)
+	}
+	page := eastmoneyCorporateActionPage{count: *result.Count, pages: *result.Pages, pageNumber: *result.PageNumber, recordCount: len(rows)}
+	if err := validateEastmoneyActionPage(page); err != nil {
+		return eastmoneyCorporateActionPage{}, err
 	}
 	actions := make([]market.CorporateAction, 0, len(rows)*2)
 	for _, row := range rows {
 		rowActions, err := parseEastmoneyCorporateAction(row, id)
 		if err != nil {
-			return nil, 0, err
+			return eastmoneyCorporateActionPage{}, err
 		}
 		actions = append(actions, rowActions...)
 	}
-	return actions, *result.Pages, nil
+	page.actions = actions
+	return page, nil
 }
 
 func parseEastmoneyCorporateAction(row eastmoneyCorporateActionRow, id market.InstrumentID) ([]market.CorporateAction, error) {
@@ -497,7 +542,7 @@ func parseEastmoneyCorporateAction(row eastmoneyCorporateActionRow, id market.In
 			return nil, fmt.Errorf("%w: cash ratio is below fixed-point precision", ErrMalformedResponse)
 		}
 		actions = append(actions, market.CorporateAction{
-			ID:           fmt.Sprintf("eastmoney:%s:%s:cash:%d", id.String(), exDate.Format("2006-01-02"), value),
+			ID:           eastmoneyActionID(row, id, exDate, "cash"),
 			Instrument:   id,
 			ExDate:       exDate,
 			Kind:         market.CashDividend,
@@ -513,7 +558,7 @@ func parseEastmoneyCorporateAction(row eastmoneyCorporateActionRow, id market.In
 			return nil, fmt.Errorf("%w: invalid share ratio", ErrMalformedResponse)
 		}
 		actions = append(actions, market.CorporateAction{
-			ID:               fmt.Sprintf("eastmoney:%s:%s:share:%d/%d", id.String(), exDate.Format("2006-01-02"), numerator, denominator),
+			ID:               eastmoneyActionID(row, id, exDate, "share"),
 			Instrument:       id,
 			ExDate:           exDate,
 			Kind:             market.ShareDistribution,
@@ -523,6 +568,51 @@ func parseEastmoneyCorporateAction(row eastmoneyCorporateActionRow, id market.In
 		})
 	}
 	return actions, nil
+}
+
+func validateEastmoneyActionPage(page eastmoneyCorporateActionPage) error {
+	if page.count == 0 {
+		if page.pages != 0 || page.recordCount != 0 || (page.pageNumber != 0 && page.pageNumber != 1) {
+			return fmt.Errorf("%w: empty result metadata is inconsistent", ErrIncompleteData)
+		}
+		return nil
+	}
+	if page.pages < 1 || page.pageNumber < 1 || page.pageNumber > page.pages {
+		return fmt.Errorf("%w: invalid pagination metadata", ErrIncompleteData)
+	}
+	expectedPages := (page.count + eastmoneyActionPageSize - 1) / eastmoneyActionPageSize
+	if page.pages != expectedPages {
+		return fmt.Errorf("%w: count and pages are inconsistent", ErrIncompleteData)
+	}
+	remaining := page.count - (page.pageNumber-1)*eastmoneyActionPageSize
+	expectedRecords := eastmoneyActionPageSize
+	if remaining < expectedRecords {
+		expectedRecords = remaining
+	}
+	if page.recordCount != expectedRecords {
+		return fmt.Errorf("%w: page %d contains %d of %d records", ErrIncompleteData, page.pageNumber, page.recordCount, expectedRecords)
+	}
+	return nil
+}
+
+func validateEastmoneyActionIDs(actions []market.CorporateAction) error {
+	seen := make(map[string]struct{}, len(actions))
+	for _, action := range actions {
+		if _, exists := seen[action.ID]; exists {
+			return fmt.Errorf("%w: ambiguous duplicate action %q", ErrIncompleteData, action.ID)
+		}
+		seen[action.ID] = struct{}{}
+	}
+	return nil
+}
+
+func eastmoneyActionID(row eastmoneyCorporateActionRow, id market.InstrumentID, exDate time.Time, kind string) string {
+	for _, candidate := range []json.RawMessage{row.EventID, row.RecordID, row.ID} {
+		if sourceID, ok := rawJSONIdentifier(candidate); ok {
+			return fmt.Sprintf("eastmoney:%s:%s", sourceID, kind)
+		}
+	}
+	return fmt.Sprintf("eastmoney:%s:%s:%s", id.String(), exDate.Format("2006-01-02"), kind)
 }
 
 func validateEastmoneyBarRequest(id market.InstrumentID, tf market.Timeframe, from, to time.Time) error {
@@ -580,6 +670,19 @@ func cloneValues(values url.Values) url.Values {
 	return cloned
 }
 
+func eastmoneyEndpoint(baseURL string, query url.Values) (string, error) {
+	endpoint, err := url.Parse(baseURL)
+	if err != nil || endpoint.Scheme == "" || endpoint.Host == "" || endpoint.Fragment != "" {
+		return "", fmt.Errorf("%w: invalid base URL", ErrInvalidRequest)
+	}
+	merged := endpoint.Query()
+	for key, values := range query {
+		merged[key] = append([]string(nil), values...)
+	}
+	endpoint.RawQuery = merged.Encode()
+	return endpoint.String(), nil
+}
+
 func parseEastmoneyScaled(value string, scale int64) (int64, error) {
 	ratio, err := parseEastmoneyDecimal(value)
 	if err != nil {
@@ -627,6 +730,21 @@ func rawJSONString(value json.RawMessage) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(text), nil
+}
+
+func rawJSONIdentifier(value json.RawMessage) (string, bool) {
+	if len(value) == 0 || string(value) == "null" {
+		return "", false
+	}
+	if value[0] == '"' {
+		text, err := rawJSONString(value)
+		return text, err == nil && text != ""
+	}
+	text := strings.TrimSpace(string(value))
+	if text == "" || !decimalPattern.MatchString(text) {
+		return "", false
+	}
+	return text, true
 }
 
 func parseEastmoneyActionDate(value string) (time.Time, error) {
@@ -695,6 +813,10 @@ func parseRetryAfter(value string, now time.Time) (time.Duration, bool) {
 		return 0, false
 	}
 	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil && seconds >= 0 {
+		const maxDuration = time.Duration(1<<63 - 1)
+		if seconds > int64(maxDuration/time.Second) {
+			return maxDuration, true
+		}
 		return time.Duration(seconds) * time.Second, true
 	}
 	when, err := http.ParseTime(value)

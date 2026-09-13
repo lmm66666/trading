@@ -2,7 +2,9 @@
   "success": true,
   "code": 0,
   "result": {
+    "count": 1,
     "pages": 1,
+    "pageNumber": 1,
     "data": [
       {
         "SECURITY_CODE": "600000",

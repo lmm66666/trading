@@ -13,6 +13,7 @@ var (
 	ErrUpstream          = errors.New("broker: upstream failure")
 	ErrUpstreamTimeout   = errors.New("broker: upstream timeout")
 	ErrRequestCanceled   = errors.New("broker: request canceled")
+	ErrInvalidRequest    = errors.New("broker: invalid request")
 	ErrMalformedResponse = errors.New("broker: malformed upstream response")
 	ErrIncompleteData    = errors.New("broker: incomplete market data")
 )
@@ -28,13 +29,25 @@ type UpstreamError struct {
 }
 
 func (e *UpstreamError) Error() string {
+	message := safeUpstreamKind(e.Kind)
 	if e.StatusCode != 0 {
-		return fmt.Sprintf("%v: status=%d", e.Kind, e.StatusCode)
+		message = fmt.Sprintf("%s: status=%d", message, e.StatusCode)
 	}
-	if e.Cause != nil {
-		return fmt.Sprintf("%v: %v", e.Kind, e.Cause)
+	if e.HasRetryAfter {
+		message = fmt.Sprintf("%s: retry_after=%s", message, e.RetryAfter)
 	}
-	return e.Kind.Error()
+	return message
+}
+
+func safeUpstreamKind(kind error) string {
+	switch {
+	case errors.Is(kind, ErrUpstreamTimeout):
+		return ErrUpstreamTimeout.Error()
+	case errors.Is(kind, ErrRequestCanceled):
+		return ErrRequestCanceled.Error()
+	default:
+		return ErrUpstream.Error()
+	}
 }
 
 func (e *UpstreamError) Unwrap() error {

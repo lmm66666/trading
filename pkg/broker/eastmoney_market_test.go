@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -240,10 +242,11 @@ func TestEastmoneyMarketSourcePaginatesAndSplitsSameDayActions(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		if r.URL.Query().Get("pageNumber") == "1" {
-			_, _ = w.Write([]byte(`{"success":true,"code":0,"result":{"pages":2,"data":[{"SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-06-13","PRETAX_BONUS_RMB":"4.20","BONUS_RATIO":"1.50","IT_RATIO":"0.50"}]}}`))
+			rows := `{"SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-06-13","PRETAX_BONUS_RMB":"4.20","BONUS_RATIO":"1.50","IT_RATIO":"0.50"}` + strings.Repeat(`,{"SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-06-14","PRETAX_BONUS_RMB":"0","BONUS_RATIO":"0","IT_RATIO":"0"}`, eastmoneyActionPageSize-1)
+			_, _ = w.Write(eastmoneyActionPageJSON(501, 2, 1, rows))
 			return
 		}
-		_, _ = w.Write([]byte(`{"success":true,"code":0,"result":{"pages":2,"data":[{"SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-07-01","PRETAX_BONUS_RMB":"1.00","BONUS_RATIO":"0","IT_RATIO":"0"}]}}`))
+		_, _ = w.Write(eastmoneyActionPageJSON(501, 2, 2, `{"SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-07-01","PRETAX_BONUS_RMB":"1.00","BONUS_RATIO":"0","IT_RATIO":"0"}`))
 	}))
 	defer srv.Close()
 
@@ -427,7 +430,7 @@ func TestEastmoneyFixedPointAndTransportHelpers(t *testing.T) {
 
 func TestEastmoneyCorporateActionSupportsNumericFieldsAndRejectsInvalidPrecision(t *testing.T) {
 	id := eastmoneyInstrument(t, market.SSE, "600000")
-	numeric := []byte(`{"success":true,"code":0,"result":{"pages":0,"data":[{"SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-06-13 00:00:00","PRETAX_BONUS_RMB":1.2,"BONUS_RATIO":0,"IT_RATIO":1.25}]}}`)
+	numeric := []byte(`{"success":true,"code":0,"result":{"count":1,"pages":1,"pageNumber":1,"data":[{"SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-06-13 00:00:00","PRETAX_BONUS_RMB":1.2,"BONUS_RATIO":0,"IT_RATIO":1.25}]}}`)
 	actions, err := ParseEastmoneyCorporateActions(numeric, id)
 	if err != nil || len(actions) != 2 || actions[0].CashPerShare != 1200 || actions[1].ShareNumerator != 9 || actions[1].ShareDenominator != 8 {
 		t.Fatalf("numeric action parsing: actions=%+v err=%v", actions, err)
@@ -451,19 +454,24 @@ func TestEastmoneyMarketSourceRejectsChangingOrExcessivePagination(t *testing.T)
 	for _, tc := range []struct {
 		name string
 		page func(int) string
+		want error
 	}{
 		{
 			name: "excessive pages",
-			page: func(int) string { return `{"success":true,"code":0,"result":{"pages":10001,"data":[]}}` },
+			page: func(int) string {
+				return string(eastmoneyActionPageJSON(5_000_001, 10_001, 1, eastmoneyZeroActionRows(eastmoneyActionPageSize)))
+			},
+			want: ErrMalformedResponse,
 		},
 		{
 			name: "changed pages",
 			page: func(page int) string {
 				if page == 1 {
-					return `{"success":true,"code":0,"result":{"pages":2,"data":[]}}`
+					return string(eastmoneyActionPageJSON(501, 2, 1, eastmoneyZeroActionRows(eastmoneyActionPageSize)))
 				}
-				return `{"success":true,"code":0,"result":{"pages":1,"data":[]}}`
+				return string(eastmoneyActionPageJSON(1, 1, 1, eastmoneyZeroActionRows(1)))
 			},
+			want: ErrIncompleteData,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -473,8 +481,8 @@ func TestEastmoneyMarketSourceRejectsChangingOrExcessivePagination(t *testing.T)
 			defer srv.Close()
 			source := NewEastmoneyMarketSourceWithClient(&http.Client{Timeout: time.Second}, srv.URL, srv.URL)
 			_, err := source.FetchCorporateActions(context.Background(), eastmoneyInstrument(t, market.SSE, "600000"))
-			if !errors.Is(err, ErrMalformedResponse) {
-				t.Fatalf("error = %v, want ErrMalformedResponse", err)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("error = %v, want %v", err, tc.want)
 			}
 		})
 	}
@@ -520,6 +528,14 @@ func intQuery(t *testing.T, query url.Values, name string) int {
 	return value
 }
 
+func eastmoneyActionPageJSON(count, pages, page int, rows string) []byte {
+	return []byte(fmt.Sprintf(`{"success":true,"code":0,"result":{"count":%d,"pages":%d,"pageNumber":%d,"data":[%s]}}`, count, pages, page, rows))
+}
+
+func eastmoneyZeroActionRows(count int) string {
+	return strings.TrimPrefix(strings.Repeat(`,{"SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-06-14","PRETAX_BONUS_RMB":"0","BONUS_RATIO":"0","IT_RATIO":"0"}`, count), ",")
+}
+
 type eastmoneyTimeoutError struct{}
 
 func (eastmoneyTimeoutError) Error() string   { return "timeout" }
@@ -536,5 +552,141 @@ func TestParseEastmoneyDividendFixtureConvertsPerTenShares(t *testing.T) {
 	}
 	if !reflect.DeepEqual(actions[0].Instrument, eastmoneyInstrument(t, market.SSE, "600000")) {
 		t.Errorf("instrument = %+v", actions[0].Instrument)
+	}
+}
+
+func TestEastmoneyCorporateActionIDIsStableAcrossPayloadCorrections(t *testing.T) {
+	id := eastmoneyInstrument(t, market.SSE, "600000")
+	before := []byte(`{"success":true,"code":0,"result":{"count":1,"pages":1,"pageNumber":1,"data":[{"SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-06-13","PRETAX_BONUS_RMB":"4.20","BONUS_RATIO":"1.50","IT_RATIO":"0.50"}]}}`)
+	after := []byte(`{"success":true,"code":0,"result":{"count":1,"pages":1,"pageNumber":1,"data":[{"SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-06-13","PRETAX_BONUS_RMB":"4.50","BONUS_RATIO":"2.00","IT_RATIO":"0.25"}]}}`)
+	oldActions, err := ParseEastmoneyCorporateActions(before, id)
+	if err != nil {
+		t.Fatalf("parse before: %v", err)
+	}
+	newActions, err := ParseEastmoneyCorporateActions(after, id)
+	if err != nil {
+		t.Fatalf("parse after: %v", err)
+	}
+	if len(oldActions) != 2 || len(newActions) != 2 || oldActions[0].ID != newActions[0].ID || oldActions[1].ID != newActions[1].ID {
+		t.Fatalf("corrected payload changed source IDs: before=%+v after=%+v", oldActions, newActions)
+	}
+}
+
+func TestEastmoneyCorporateActionsRejectAmbiguousSameKindSameDay(t *testing.T) {
+	id := eastmoneyInstrument(t, market.SSE, "600000")
+	body := []byte(`{"success":true,"code":0,"result":{"count":2,"pages":1,"pageNumber":1,"data":[{"SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-06-13","PRETAX_BONUS_RMB":"4.20","BONUS_RATIO":"0","IT_RATIO":"0"},{"SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-06-13","PRETAX_BONUS_RMB":"4.50","BONUS_RATIO":"0","IT_RATIO":"0"}]}}`)
+	actions, err := ParseEastmoneyCorporateActions(body, id)
+	if !errors.Is(err, ErrIncompleteData) || actions != nil {
+		t.Fatalf("actions=%v err=%v, want atomic ErrIncompleteData", actions, err)
+	}
+}
+
+func TestEastmoneyCorporateActionsUseUpstreamRecordIDWhenAvailable(t *testing.T) {
+	id := eastmoneyInstrument(t, market.SSE, "600000")
+	body := []byte(`{"success":true,"code":0,"result":{"count":2,"pages":1,"pageNumber":1,"data":[{"ID":"record-a","SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-06-13","PRETAX_BONUS_RMB":"4.20","BONUS_RATIO":"0","IT_RATIO":"0"},{"ID":"record-b","SECURITY_CODE":"600000","EX_DIVIDEND_DATE":"2024-06-13","PRETAX_BONUS_RMB":"4.20","BONUS_RATIO":"0","IT_RATIO":"0"}]}}`)
+	actions, err := ParseEastmoneyCorporateActions(body, id)
+	if err != nil || len(actions) != 2 || actions[0].ID == actions[1].ID {
+		t.Fatalf("upstream record IDs were not preserved: actions=%+v err=%v", actions, err)
+	}
+}
+
+func TestEastmoneyCorporateActionPaginationRequiresCompleteMetadataAndRows(t *testing.T) {
+	id := eastmoneyInstrument(t, market.SSE, "600000")
+	for _, tc := range []struct {
+		name string
+		body string
+		want error
+	}{
+		{"null data", `{"success":true,"code":0,"result":{"count":0,"pages":0,"pageNumber":1,"data":null}}`, ErrMalformedResponse},
+		{"empty nonempty page", `{"success":true,"code":0,"result":{"count":1,"pages":1,"pageNumber":1,"data":[]}}`, ErrIncompleteData},
+		{"wrong page count", `{"success":true,"code":0,"result":{"count":501,"pages":1,"pageNumber":1,"data":[]}}`, ErrIncompleteData},
+		{"zero pages with data", `{"success":true,"code":0,"result":{"count":0,"pages":0,"pageNumber":1,"data":[{}]}}`, ErrIncompleteData},
+		{"missing count", `{"success":true,"code":0,"result":{"pages":0,"pageNumber":1,"data":[]}}`, ErrMalformedResponse},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			actions, err := ParseEastmoneyCorporateActions([]byte(tc.body), id)
+			if !errors.Is(err, tc.want) || actions != nil {
+				t.Fatalf("actions=%v err=%v, want atomic %v", actions, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestUpstreamErrorRedactsCauseButKeepsUnwrap(t *testing.T) {
+	secret := "https://example.test/path?token=secret"
+	cause := &url.Error{Op: "Get", URL: secret, Err: context.DeadlineExceeded}
+	err := upstreamError(ErrUpstreamTimeout, cause, http.StatusGatewayTimeout, "3")
+	if strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), "example.test") {
+		t.Fatalf("unsafe upstream error text: %q", err)
+	}
+	if !errors.Is(err, ErrUpstreamTimeout) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("unwrap lost error identity: %v", err)
+	}
+	if unsafe := upstreamError(errors.New("kind token=secret"), cause, 0, ""); strings.Contains(unsafe.Error(), "secret") {
+		t.Fatalf("unsafe custom kind text: %q", unsafe)
+	}
+}
+
+func TestEastmoneyClientDefaultsWithoutMutatingInjectedClient(t *testing.T) {
+	injected := &http.Client{}
+	source := NewEastmoneyMarketSourceWithClient(injected, "", "")
+	if injected.Timeout != 0 || source.client == injected || source.client.Timeout != eastmoneyHTTPTimeout {
+		t.Fatalf("injected=%+v source=%+v", injected, source.client)
+	}
+	positive := &http.Client{Timeout: time.Second}
+	withPositive := NewEastmoneyMarketSourceWithClient(positive, "", "")
+	if positive.Timeout != time.Second || withPositive.client.Timeout != time.Second {
+		t.Fatalf("positive timeout was not preserved: injected=%s source=%s", positive.Timeout, withPositive.client.Timeout)
+	}
+}
+
+func TestEastmoneyRequestPreservesBaseQueryRejectsFragmentsAndClassifiesPastDeadline(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nested/kline" || r.URL.Query().Get("fixed") != "yes" {
+			t.Fatalf("request path/query = %s?%s", r.URL.Path, r.URL.RawQuery)
+		}
+		if r.URL.Query().Get("fqt") == "0" {
+			_, _ = w.Write(readEastmoneyFixture(t, "eastmoney_kline_raw.json"))
+			return
+		}
+		_, _ = w.Write(readEastmoneyFixture(t, "eastmoney_kline_qfq.json"))
+	}))
+	defer srv.Close()
+	source := NewEastmoneyMarketSourceWithClient(&http.Client{Timeout: time.Second}, srv.URL+"/nested/kline?fixed=yes", srv.URL)
+	_, _, err := source.FetchBars(context.Background(), eastmoneyInstrument(t, market.SSE, "600000"), market.Day, eastmoneyDate(2), eastmoneyDate(3))
+	if err != nil {
+		t.Fatalf("base query request: %v", err)
+	}
+	fragment := NewEastmoneyMarketSourceWithClient(&http.Client{Timeout: time.Second}, srv.URL+"/nested/kline#fragment", srv.URL)
+	_, _, err = fragment.FetchBars(context.Background(), eastmoneyInstrument(t, market.SSE, "600000"), market.Day, eastmoneyDate(2), eastmoneyDate(3))
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("fragment error = %v, want ErrInvalidRequest", err)
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	_, _, err = source.FetchBars(ctx, eastmoneyInstrument(t, market.SSE, "600000"), market.Day, eastmoneyDate(2), eastmoneyDate(3))
+	if !errors.Is(err, ErrUpstreamTimeout) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("past deadline error = %v", err)
+	}
+}
+
+func TestEastmoneyTimeoutAlsoBoundsResponseBodyRead(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+	source := NewEastmoneyMarketSourceWithClient(&http.Client{Timeout: 30 * time.Millisecond}, srv.URL, srv.URL)
+	_, _, err := source.FetchBars(context.Background(), eastmoneyInstrument(t, market.SSE, "600000"), market.Day, eastmoneyDate(2), eastmoneyDate(3))
+	if !errors.Is(err, ErrUpstreamTimeout) {
+		t.Fatalf("body-read timeout error = %v", err)
+	}
+}
+
+func TestParseRetryAfterNeverOverflowsNegative(t *testing.T) {
+	duration, ok := parseRetryAfter("9223372036854775807", time.Now())
+	if !ok || duration < 0 {
+		t.Fatalf("overflow Retry-After = %s, %t", duration, ok)
 	}
 }
