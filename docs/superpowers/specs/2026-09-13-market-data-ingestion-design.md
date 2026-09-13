@@ -1,103 +1,128 @@
-# 商品期货日线接入设计（保留现有新浪 A 股）
+# 商品期货日线接入设计
 
 ## 1. 背景
 
-当前系统通过新浪财经逐股票拉取 A 股日线和周线。新浪接口存在频率限制，全市场同步需要数小时，但在没有满足长期免费、稳定且可验证条件的替代源之前，系统接受该限制并继续使用现有链路。
+项目已经完成策略与回测内核切换。股票行情不再经过旧 `business.StockDataService`、旧调度器和旧 K 线表，而是通过东方财富 `MarketSource` 进入统一行情应用服务，发布到版本化行情表。新浪目前保留给财报、汇率和宏观数据使用。
 
-系统下一阶段新增国内商品期货日线，第一批覆盖黄金、白银、原油、燃料油、焦炭、焦煤和动力煤，用于指标和信号研究。A 股数据源、同步调度和存储不在本次改造范围内。
+本次只增加国内商品期货日线，首批覆盖黄金、白银、原油、燃料油、焦炭、焦煤和动力煤。期货数据来自 AKShare 封装的交易所公开数据；Go 服务继续负责领域校验、版本发布、查询、主力合约选择和连续序列计算。
 
-本设计采用固定版本的 AKShare Python sidecar 采集国内期货交易所日线。Go 服务拥有领域校验、持久化、数据版本、调度、主力映射和连续合约构造的最终控制权。
+这是个人项目，允许停机更新。设计优先复用当前内核和数据库，不建设双写、灰度切换、影子表、跨进程采集集群或长期兼容层。
 
-### 1.1 与现有内核设计的关系
+## 2. 当前架构带来的调整
 
-本文是期货行情接入、期货行情版本和连续合约的权威设计。它细化并覆盖《Go 策略与回测内核整体迁移设计》中以下旧假设：
+此前设计基于旧股票链路，已经不再适用：
 
-- 期货数据来源不能只挂在 `Instrument` 上；同一合约的不同日期和修订可能来自不同 observation，来源必须属于 Bar 版本和 observation。
-- A 股继续使用现有新浪实现。原设计中拟议的东方财富 Raw/QFQ provider 和已提交文档中拟议的 Tushare provider 均不实施。
-- 期货连续合约不是外部提供方 Instrument，而是由真实合约日线、版本化主力映射和连续规则派生。
+- 不再假设新浪承担股票日线；当前股票行情源是 `pkg/broker.EastmoneyMarketSource`。
+- 不再新建平行的 `internal/futuresdata/application/domain/infrastructure` 栈。
+- 期货领域值放入 `internal/market`，用例放入 `internal/application`，接口放入 `internal/port`，MySQL 实现放入现有 `internal/infrastructure/mysql`。
+- AKShare Go 客户端属于外部数据源 adapter，放入 `pkg/broker`；Python 服务放入 `sidecar/akshare-futures`。
+- 继续使用现有 `t_instruments`、`t_market_data_versions`、`t_market_bars` 和 `COMPLETE` 版本读取语义。
+- 数据库升级采用一次停机迁移，不再设计在线多阶段切换流程。
 
-现有内核设计中的无未来函数、dataset version、指标前缀一致性和回测可复现要求继续有效。后续实施计划必须据本文同步修订相关任务，不能同时实现两套冲突的数据语义。
+## 3. 目标
 
-## 2. 目标
+1. 接入 SHFE、INE、DCE、CZCE 的指定商品期货日线。
+2. 保存真实合约 OHLCV、结算价、前结算价、成交量、持仓量和成交额。
+3. 生成无未来数据的主力合约映射、原始主力序列和比例连续序列。
+4. 让现有指标、扫描和行情查询能够读取期货日线，同时不改变股票行情行为。
+5. 每条期货数据可追溯到交易所、AKShare 版本、原始代码和行情版本。
+6. 保持总体测试覆盖率大于 80%，期货领域计算覆盖率大于 90%。
 
-1. 使用隔离、固定版本、严格协议的 AKShare sidecar 接入国内期货日线，并消除“空 DataFrame 被当作成功”的风险。
-2. 建立支持期货真实合约和期货连续合约的市场数据边界，同时保留结算价、持仓量等专有字段。
-3. 主力换月和连续价格序列无未来数据污染、可解释、可重放，并满足前缀一致性。
-4. 每一条发布的期货数据都可追溯至采集运行、原始来源、提供方版本和数据版本。
-5. 新增期货能力不改变现有新浪 A 股采集行为、接口和表结构。
+## 4. 非目标
 
-## 3. 非目标
-
+- 不修改当前东方财富股票行情链路，也不新增 Tushare 或新浪股票行情 adapter。
 - 不采集分钟线、Tick、盘口或实时行情。
-- 不在第一阶段提供境外期货、外盘现货或贵金属国际报价。
-- 不建设期货下单、保证金、夜盘逐笔撮合、交割和组合级回测。
-- 不替换、重构或加速现有新浪 A 股日线和周线采集。
-- 不引入 Tushare、东方财富或其他新的 A 股行情提供方。
-- 不允许 Go 服务动态调用任意 AKShare 函数，也不接受客户端传入 URL、文件路径或 Python 代码。
+- 不接入境外期货、国际现货或场外报价。
+- 不实现期货下单、保证金、交割、夜盘逐笔撮合和期货回测执行模型。
+- 不允许 Go 动态调用任意 AKShare 函数，也不允许请求方传入 URL、Python 代码或文件路径。
+- 不建设分布式采集、跨进程租约、Kafka、Redis 或独立数据平台。
+- 不承诺交易所公开页面或 AKShare 具备商业 SLA；异常数据必须拒绝发布。
 
-## 4. 总体架构
-
-```text
-新浪财经 -> 现有 Broker/Service/Repo -> 现有 A 股日线与周线（保持不变）
-
-交易所公开数据 <- AKShare <- Python sidecar <- Go 期货采集适配器
-                                                    |
-                                                    v
-                                           观测层 + 版本发布
-                                                    |
-                                 +------------------+------------------+
-                                 |                  |                  |
-                           期货合约日线        数据质量事件       采集运行审计
-                                 |
-                           主力映射/连续序列
-                                 |
-                                 v
-                         指标、扫描和查询数据集
-```
-
-核心原则如下：
-
-- 以下原则只约束新增期货链路，不反向改造现有股票链路。
-- AKShare 返回的是 observation，不是立即可用的业务事实。
-- 数据先经过结构、单位、OHLC、日期和覆盖率校验，再作为新 dataset version 原子发布。
-- Go 是唯一的业务控制面；sidecar 只是无状态的、受限的数据提取适配器。
-- 原始数据不可静默覆盖。提供方修订通过版本可见区间保留历史状态。
-- 真实合约价格、主力映射和连续价格分别建模，不把加工结果冒充原始行情。
-
-## 5. 模块边界
-
-建议新增以下模块，现有 `pkg/broker/sina.go`、`business/stock_service.go`、`business/stock_scheduler.go` 和股票仓储保持原样：
+## 5. 目标架构
 
 ```text
-internal/
-  market/                         扩展 Instrument 以支持期货，不改变股票构造器
-  futuresdata/
-    application/                  期货同步用例、发布编排
-    domain/                       期货观测、分区状态和质量规则
-    provider/akshare/             Go sidecar HTTP 客户端
-    futures/                      合约规范化、主力映射、连续序列
-    infrastructure/mysql/         采集和行情仓储
-cmd/futures-sync/                 显式日期范围的运维 CLI
-sidecar/akshare-futures/          Python 服务、协议模型、适配器和测试
+股票行情（保持现状）
+东方财富 -> EastmoneyMarketSource -> MarketIngestionService
+        -> MarketDataRepository -> 版本化股票行情
+
+期货行情（新增）
+交易所公开数据 -> AKShare -> Python sidecar
+                              |
+                              v
+                    AkshareFuturesSource
+                              |
+                              v
+                   FuturesIngestionService
+                              |
+                              v
+                    FuturesRepository
+           复用版本分配并原子写入通用 Bar 与期货字段
+                              |
+                              v
+              MarketDataRepository / FuturesDataReader
+                              |
+                              v
+                    指标、扫描、查询数据集
 ```
 
-`internal/market` 保持纯领域模型，不依赖 HTTP、GORM 或具体提供方。`futuresdata/application` 只依赖 provider 和 repository port；具体网络客户端与 MySQL 实现在外层。
+依赖方向遵循项目现有规范：
 
-## 6. A 股保持现状
+```text
+api / pkg / infrastructure -> application -> port / market
+```
 
-本次不修改 A 股数据路径：
+`internal/market` 不依赖 Python、AKShare、HTTP、GORM 或 MySQL。`main.go` 只装配 sidecar client、repository、application service 和 scheduler。
 
-- 历史日线继续调用新浪 `CN_MarketData.getKLineData`，`scale=240`。
-- 历史周线继续调用同一接口，`scale=1680`。
-- 增量日线每只股票回看 30 根，增量周线每只股票回看 10 根。
-- 所有新浪请求继续共用 3 秒、burst 1 的全局限流器。
-- 股票数据继续写入现有 `t_stock_kline_daily` 和 `t_stock_kline_weekly`，现有 API 行为不变。
+## 6. 模块设计
 
-全市场同步耗时较长是当前已接受约束。新增期货链路必须使用独立 provider、限流器、调度器和表，不得挤占新浪请求配额，也不得借本次需求改变股票同步语义。
+```text
+internal/market/
+  instrument.go                    扩展交易所和期货代码校验
+  futures_daily.go                 期货专有日线值对象
+  futures_main.go                  主力状态、选择规则和连续因子
 
-## 7. 期货数据方案
+internal/port/
+  futures_source.go                按交易所/日期获取期货日线
+  futures_data.go                  期货专有数据读写接口
 
-### 7.1 首批范围
+internal/application/
+  futures_ingestion_service.go     拉取、规范化、校验和发布
+  futures_scheduler.go             单进程日常调度
+  futures_query_service.go         真实/主力/连续日线查询
+
+internal/infrastructure/mysql/
+  futures_daily_model.go
+  futures_main_mapping_model.go
+  futures_repository.go
+
+pkg/broker/
+  akshare_futures.go               Go sidecar HTTP adapter
+
+sidecar/akshare-futures/
+  app/                             固定协议的 Python 服务
+  tests/                           交易所 fixture 与协议测试
+
+cmd/futures-sync/
+  main.go                          历史回补和人工重跑
+```
+
+不创建新的通用 repository、版本系统或任务框架。只有期货专有字段和按交易所分区拉取方式使用新 port。
+
+应用层每个真实合约只调用一次 `FuturesDataWriter.PublishContract`。MySQL `FuturesRepository` 在同一事务中复用现有版本分配和 Bar 修订 helper，再写入期货专有字段；应用层不能分别调用两个 repository 拼接事务。
+
+## 7. 股票行情边界
+
+股票行情保持当前实现：
+
+- `EastmoneyMarketSource` 按证券和日期范围获取 Raw/QFQ 日线、周线及公司行动。
+- `MarketIngestionService` 校验复权因子、日周一致性和增量窗口。
+- `MarketDataRepository` 原子发布 `PENDING -> COMPLETE` 版本。
+- 查询、扫描和回测固定读取一个大于 0 的 `COMPLETE` 数据版本。
+- 新浪不参与股票行情发布，只继续服务现有财报、汇率和宏观用途。
+
+期货改造不得恢复旧 `StockDataService`、旧股票调度器或旧 K 线表，也不得改变东方财富 adapter 的协议和限流。
+
+## 8. 首批期货范围
 
 | 交易所 | 品种 | 含义 |
 |---|---|---|
@@ -106,20 +131,20 @@ sidecar/akshare-futures/          Python 服务、协议模型、适配器和测
 | DCE | J、JM | 焦炭、焦煤 |
 | CZCE | ZC | 动力煤 |
 
-首期仅接入国内交易所日线。品种和交易所必须来自配置白名单，未登记品种直接拒绝。
+交易所和品种均来自服务端配置白名单。未配置的交易所、品种或合成代码直接拒绝，不转发给 sidecar。
 
-### 7.2 为什么使用 Python sidecar
+## 9. AKShare sidecar
 
-AKShare 已封装 SHFE、INE、DCE、CZCE 等交易所公开数据的格式差异，适合快速覆盖多个交易所，但其上游页面和解析逻辑会变化。将这些适配逻辑直接移植到 Go 会复制大量易变代码，并长期承担与 AKShare 相同的维护成本。
+### 9.1 选择 sidecar
 
-因此采用薄 sidecar：Python 负责调用固定版本 AKShare 并把结果转换为稳定协议；Go 负责重试、语义校验、持久化、版本发布和所有业务派生。未来若某交易所接口足够稳定，可用新的 Go provider 替换该交易所，而不改变领域层和存储契约。
+AKShare 已处理多个交易所公开数据格式。直接把这些解析逻辑移植到 Go 会复制易变实现，因此 Python 只负责“调用固定 AKShare 函数并转换为稳定 JSON”；所有业务判断仍在 Go。
 
-### 7.3 Sidecar 请求协议
+sidecar 固定使用 Python 3.12 和 `akshare==1.18.94`。升级 AKShare 必须先更新 fixture 并通过契约测试，不能在容器启动时自动升级。
 
-唯一业务端点：
+### 9.2 请求
 
 ```http
-POST /v1/futures/daily-partition
+POST /v1/futures/daily
 Content-Type: application/json
 ```
 
@@ -132,7 +157,9 @@ Content-Type: application/json
 }
 ```
 
-一次请求只允许一个交易所、一个交易日和白名单内的有限品种集合。成功响应示例：
+一次请求只包含一个交易所和一个交易日。sidecar 内部只能映射到 `get_futures_daily`，不能接受函数名。
+
+### 9.3 响应
 
 ```json
 {
@@ -141,57 +168,49 @@ Content-Type: application/json
   "provider_version": "1.18.94",
   "exchange": "SHFE",
   "trade_date": "2026-09-11",
-  "status": "OK",
-  "coverage": {"AU": 8, "AG": 10, "FU": 6},
-  "row_count": 24,
-  "payload_sha256": "...",
-  "fetched_at": "2026-09-11T18:31:12+08:00",
-  "source_url": "https://...",
-  "rows": []
+  "rows": [
+    {
+      "raw_symbol": "au2612",
+      "product": "AU",
+      "open": "612.34",
+      "high": "618.20",
+      "low": "610.12",
+      "close": "616.88",
+      "settlement": "615.42",
+      "pre_settlement": "611.20",
+      "volume_lots": "123456",
+      "open_interest_lots": "198765",
+      "turnover_10k_cny": "987654.32"
+    }
+  ]
 }
 ```
 
-每行至少包含 `raw_symbol`、标准化 `product`、`trade_date`、OHLC、`settlement`、`pre_settlement`、`volume_lots`、`open_interest_lots`、`turnover_10k_cny` 和 `statistics_basis`。数值以 JSON 字符串传输，由 Go 十进制解析。
+价格和数量使用十进制字符串，Go 侧转换为定点整数。sidecar 不连接数据库、不生成主力合约、不做连续复权。
 
-仅当 sidecar 能验证该日休市或品种尚未上市时，才允许 `200` 返回空结果并给出明确状态。无法解释的空 DataFrame 必须转为错误，不能视为成功。
+### 9.4 空数据和错误
 
-### 7.4 Sidecar 错误契约
+sidecar 必须区分：
 
-| HTTP | 错误码 | 是否可重试 |
-|---:|---|---|
-| 400 | `INVALID_ARGUMENT` | 否 |
-| 422 | `UNSUPPORTED_EXCHANGE_OR_DATE` | 否 |
-| 502 | `UPSTREAM_BAD_PAYLOAD` | 视原因 |
-| 502 | `UPSTREAM_UNEXPECTED_EMPTY` | 是 |
-| 503 | `UPSTREAM_UNAVAILABLE` | 是 |
-| 503 | `UPSTREAM_RATE_LIMITED` | 是 |
-| 504 | `UPSTREAM_TIMEOUT` | 是 |
+- 已确认休市或品种尚未上市：成功响应，`rows=[]` 并返回明确 `empty_reason`。
+- AKShare 意外返回空 DataFrame：`502 UPSTREAM_UNEXPECTED_EMPTY`。
+- 上游 HTML、字段变化或无法解析：`502 UPSTREAM_BAD_PAYLOAD`。
+- 网络超时：`504 UPSTREAM_TIMEOUT`。
+- 参数或白名单错误：`400 INVALID_ARGUMENT`。
 
-错误响应包含 `request_id`、`retryable`、`upstream_status`、`content_type` 和 `body_hash`。禁止把上游 HTML、Cookie、完整 URL 查询参数或堆栈直接返回给 Go 或写入日志。
+错误响应只包含 `request_id`、稳定错误码和 `retryable`，不返回上游 HTML、Cookie 或堆栈。
 
-### 7.5 Sidecar 运行时和安全
+## 10. 领域模型
 
-- Python 3.12 固定 patch 版本或固定镜像 digest。
-- `akshare==1.18.94`，依赖通过 lockfile 和 hash 固定；禁止启动时自动升级。
-- 非 root、只读根文件系统、临时目录限额、CPU/内存/超时限制。
-- 只在内部网络监听，不暴露公网。
-- 出站网络仅允许配置的交易所域名。
-- 不持有数据库凭据或应用密钥。
-- `/livez` 只检查进程；`/readyz` 检查本地依赖和配置，不调用上游。
+### 10.1 Instrument
 
-### 7.6 期货调度和回看
+现有 Instrument 扩展以下概念：
 
-默认 18:30 首次同步，20:30 和下一交易日 08:30 重试失败分区。采集原子单位为“交易所 × 交易日”，同一分区在一个事务中发布。
+- `AssetClass`: `EQUITY`、`FUTURE`。
+- `InstrumentKind`: `SPOT_EQUITY`、`FUTURE_CONTRACT`、`FUTURE_CONTINUOUS`。
+- `Exchange`: 增加 `SHFE`、`INE`、`DCE`、`CZCE`。
 
-每日重抓最近 10 个已观测交易日以吸收交易所修订；每月对最近 90 天做 checksum 审计。相同 payload hash 不创建无意义新版本，不同 hash 触发字段级比较和新版本发布。
-
-夜盘数据归属遵循交易所公布的 `trade_date`，不能按请求发起时的自然日期重新解释。
-
-## 8. 期货合约规范化
-
-### 8.1 标识
-
-真实合约使用完整四位年份月份：
+真实合约使用完整年月：
 
 ```text
 SHFE:AU202612
@@ -199,255 +218,242 @@ INE:SC202612
 CZCE:ZC202609
 ```
 
-连续合约是独立的合成 Instrument：
+主力连续合约使用：
 
 ```text
 SHFE:AU.MAIN
 INE:SC.MAIN
 ```
 
-原始代码必须保存在 `raw_symbol`。对历史别名如 `TC -> ZC` 使用带有效期的映射规则，规范化后仍保留来源符号和规则版本，避免历史语义丢失。
+股票仍必须是六位数字；期货代码使用独立校验器。原始交易所代码保存在期货专有记录中。郑商所三位年份代码必须结合交易日期解析为完整年份，并保留解析规则版本。
 
-`Instrument` 扩展为：
+### 10.2 通用 Bar 与期货字段
 
-- `AssetClass`: `EQUITY`、`FUTURE`。
-- `InstrumentKind`: `SPOT_EQUITY`、`FUTURE_CONTRACT`、`FUTURE_CONTINUOUS`。
-- `Exchange`: 在 SSE、SZSE、BSE 基础上增加 SHFE、INE、DCE、CZCE、GFEX。
+通用 `market.Bar` 继续保存 OHLCV、时间、交易状态和版本。期货专有值对象额外包含：
 
-现有“仅六位数字股票代码”的校验必须移到股票专用构造器，不能继续作为通用 Instrument 约束。
+- `PreSettlement`、`Settlement`；
+- `VolumeLots`、`OpenInterestLots`；
+- `Turnover`；
+- `RawSymbol`、`Product`；
+- `StatisticsBasis`；
+- `ProviderVersion`。
 
-### 8.2 专有字段
+空价格不能转成零。交易所返回的指数、统计或连续代码，例如 0、88、888、99，不得作为真实合约写入。
 
-通用 `market.Bar` 保留 OHLCV 和时序字段。期货专有真值存入 `FuturesContractDaily`：
+成交量和持仓量历史统计口径发生变化时保存 `StatisticsBasis`，不在接入层擅自换算。FU 等存在制度边界的品种不自动跨边界拼接连续序列。
 
+## 11. 数据库设计
+
+### 11.1 复用表
+
+- `t_instruments`：同时保存股票、真实期货和连续期货。
+- `t_market_data_versions`：沿用全局版本分配和 `COMPLETE` 状态。
+- `t_market_bars`：保存真实合约和连续合约的通用 OHLCV。
+
+`t_instruments` 停机迁移时直接扩展：
+
+- `exchange` 长度从 8 扩到 16；
+- `code` 长度从 6 扩到 32；
+- 增加 `asset_class`、`instrument_kind`、`product_code`、`delivery_month`；
+- 增加可空的 `last_trade_date`、`contract_multiplier` 和 `tick_size`；没有可靠来源时保持空值；
+- 现有记录一次性回填为 `EQUITY`、`SPOT_EQUITY`；
+- 重建 `(exchange, code)` 唯一索引后执行重复检查。
+
+### 11.2 新增表
+
+`t_futures_contract_daily` 保存与 `t_market_bars` 同版本的期货专有字段：
+
+- `instrument_id`、`trade_date`；
 - `pre_settlement`、`settlement`；
-- `volume_lots`、`open_interest_lots`；
-- `turnover_10k_cny`；
-- `statistics_basis`；
-- `observation_status`；
-- 来源、采集运行、提供方版本和 payload hash。
+- `volume_lots`、`open_interest_lots`、`turnover`；
+- `raw_symbol`、`statistics_basis`、`provider_version`；
+- `valid_from_version`、`valid_to_version`。
 
-空 OHLC 必须是缺失值，不能写成零。交易所返回的 0、88、888、99 等指数或连续代码不得进入真实合约表。
+唯一键包含 `instrument_id + trade_date + revision`，当前版本查询使用 `instrument_id + trade_date + valid_to_version` 索引。
 
-交易所成交量或持仓量统计口径存在历史上的双边/单边切换，`statistics_basis` 必须随数据保存。系统不能静默把边界前后的数值当作完全同口径。FU 在 2018 年前后的合约制度差异也作为 regime boundary 保存，默认不自动跨边界构造连续序列。
+`t_futures_main_mappings` 保存：
 
-### 8.3 合约元数据
+- 连续 Instrument、交易日期、真实合约 Instrument；
+- 决策日期、规则版本、换月原因；
+- 旧/新合约持仓量和成交量；
+- 连续价格因子；
+- `valid_from_version`、`valid_to_version`。
 
-`delivery_month` 从规范化合约代码确定；`listed_from`、`last_trade_date`、合约乘数、最小变动价位和 regime boundary 属于版本化合约元数据，不从每日 OHLC 行临时猜测。
+不新增 observation、quality issue、ingestion run、跨进程 lease 或 trading session 表。采集失败保留旧 `COMPLETE` 版本，并通过调度摘要和结构化日志暴露。
 
-元数据来源按优先级为交易所公开合约资料、受控人工导入、保守规则推断。每条元数据保存 source、effective range 和版本。无法可靠获得 `last_trade_date` 时保持为空，并使用“进入交割月”的保守强制换月规则；不得伪造精确日期。
+### 11.3 发布语义
 
-## 9. 主力合约换月
+sidecar 按交易所返回分区，Go 校验后按真实合约拆分。每个合约使用现有全局版本分配器，在一个事务中写入：
 
-### 9.1 策略定义
+1. `PENDING` 数据版本；
+2. 通用 `t_market_bars` 修订；
+3. `t_futures_contract_daily` 修订；
+4. 将版本更新为 `COMPLETE`。
 
-默认规则版本为 `main_oi_hysteresis_v1`。交易日 `d` 收盘后仅使用 `<= d` 的数据做出决策，映射从下一交易日生效。任何策略在 `d` 当天都不能使用当天收盘后才确定的新主力合约。
+同一合约任一步失败则全部回滚。一个交易所中部分合约失败不回滚已经成功发布的其他合约，但该品种当日不生成新的主力映射，避免在候选不完整时换月。
 
-候选合约必须满足：
+主力映射和连续 Bar 使用独立 `COMPLETE` 版本发布，并记录其依赖的真实合约最高版本。查询固定版本后不得重新解析 latest。
 
-- 同交易所、同品种、真实合约；
-- 交割月份不早于当前月份；
-- 已知下一交易日可交易；
-- 当日 settlement 或 close 有效；
-- `volume_lots > 0`。
+## 12. 主力合约规则
 
-“下一交易日可交易”在实现上表示：合约按已知元数据在下一有效 session 仍处于挂牌期，且没有已知的终止状态。若系统尚不知道下一 session 的自然日期，则先保存决策；下一次观测到有效 session 时，才把上一 session 的决策物化为当日映射。物化过程不读取当日 OI、成交量或收盘价，因此不构成未来数据污染。
+默认规则版本为 `main_oi_hysteresis_v1`。交易日 `d` 只使用 `<= d` 的数据做决策，结果从下一个实际观测交易日生效。
 
-排序依次为：持仓量降序、成交量降序、交割月份升序、标准合约代码字典序。
+候选必须是同交易所、同品种的真实合约，交割月不早于当前月份，价格有效且 `volume_lots > 0`。排序顺序为：
 
-### 9.2 常规换月和快速换月
+1. 持仓量降序；
+2. 成交量降序；
+3. 交割月份升序；
+4. 标准合约代码字典序。
 
-若当前主力为 `C`，排名第一候选为 `N`：
+换月条件：
 
-- 常规换月：`OI(N) >= OI(C) * 1.10` 连续 2 个交易日。
-- 快速换月：`OI(N) >= OI(C) * 1.25` 连续 1 个交易日。
-- 最短持有期：当前主力至少保持 3 个交易日；快速换月不能绕过最短持有期。
-- 防倒退：不得从较远月份回滚到更近月份。
+- 常规：候选 OI 至少为当前主力的 110%，连续 2 个交易日。
+- 快速：候选 OI 至少为当前主力的 125%，持续 1 个交易日。
+- 当前主力最短保持 3 个交易日；快速条件不能绕过该限制。
+- 不允许从较远交割月回滚到较近交割月。
 
-首次出现某品种时，当日只产生选择决策，下一交易日才开始映射，避免首日策略使用收盘后信息。
+以下情况可强制换月，但仍从下一交易日生效：
 
-### 9.3 强制换月
+- 距可靠最后交易日不超过 5 个交易日；
+- 缺少最后交易日元数据时，当前合约已经进入交割月；
+- 当前合约停止出现或连续 2 日无有效成交；
+- 当前持仓量为零且存在有效远月候选。
 
-以下情况允许绕过确认天数和最短持有期，但仍在下一交易日生效：
+`last_trade_date` 只接受交易所资料或受控人工配置；没有可靠值时保持空并使用“进入交割月”的保守规则，不从行情缺失反推出精确日期。
 
-- 距可靠的最后交易日不超过 5 个交易日；
-- 缺少到期元数据时，当前合约已进入交割月份；
-- 当前合约停止出现或明确不可交易；
-- 当前合约连续 2 日无有效成交，同时远月候选有效；
-- 当前持仓量为零，同时远月候选有效。
+不存在候选时不延用失效合约，返回 `NO_ELIGIBLE_MAIN` 或 `NO_LIQUID_MAIN`。
 
-无候选时输出 `NO_ELIGIBLE_MAIN`；有候选但全部缺乏有效流动性时输出 `NO_LIQUID_MAIN`。禁止偷偷沿用已经失效的合约。
+历史构建按日期正序执行。首次出现某品种的当天只做选择，下一交易日才产生第一条主力映射。
 
-### 9.4 决策审计
+## 13. 连续价格
 
-每次决策保存：规则版本、决策日、生效日、旧合约、新合约、候选排序、各候选 OI/成交量/交割月、阈值、连续计数、强制原因和使用的数据版本。相同输入和规则版本必须产生相同输出。
+提供两种视图：
 
-## 10. 连续合约价格
+- `RAW_MAIN`：直接拼接主力真实合约，保留换月跳空。
+- `FORWARD_RATIO`：默认指标视图，保持最早历史段不变，只调整新合约及后续价格。
 
-系统提供两个明确视图：
-
-1. `RAW_MAIN`：按主力映射拼接真实合约原始价格，换月处允许跳空。用于来源审计和未来真实合约执行研究。
-2. `FORWARD_RATIO`：默认指标视图，保持最早历史段不变，在换月后缩放新合约及其未来后缀。
-
-换月决策日的旧、新合约都有有效 close 时：
+换月决策日旧、新合约均有有效 close 时：
 
 ```text
-q(d) = close(new, d) / close(old, d)
-factor(new segment) = factor(old segment) / q(d)
-adjustedPrice = rawPrice * segmentFactor
+ratio = close(new) / close(old)
+new_factor = old_factor / ratio
+adjusted_price = raw_price * segment_factor
 ```
 
-同一因子作用于 OHLC 和 settlement；成交量、持仓量不调整。v1 固定以 Close 为换月锚点，规则升级必须变更版本号。
+同一因子用于 OHLC 和 settlement；成交量、持仓量不调整。若换月锚点缺失，`RAW_MAIN` 可继续，`FORWARD_RATIO` 从该点停止并返回 `NO_ROLL_FACTOR`，不得使用未来日期补因子。
 
-若锚点任一价格缺失，主力映射仍可按规则换月，`RAW_MAIN` 继续发布；`FORWARD_RATIO` 从该点停止并记录 `NO_ROLL_FACTOR`，不能用未来某天价格回填当前因子。
-
-传统“当前端锚定”的后复权/前复权连续序列会在新增未来数据后重写全部历史，只能作为带 `as_of` 的查询时派生视图，不能成为策略默认输入。
-
-所有派生器必须满足：
+主力映射和连续序列必须满足前缀一致性：
 
 ```text
 Build(all)[:k] == Build(all[:k])
 ```
 
-测试还要对截点后的输入做 suffix poisoning，证明未来价格、未来 OI 和未来合约不会改变截点前的主力映射或连续价格。
+## 14. 采集、调度与查询
 
-## 11. 存储与版本
+### 14.1 日常同步
 
-### 11.1 核心表
+- 默认每天 18:30 执行一次。
+- 单进程 scheduler 按配置交易所顺序调用 sidecar，并使用独立于股票行情的有界并发。
+- 每次重抓最近 10 个已观测交易日；相同内容不创建新版本。
+- 网络和可重试上游错误最多重试 3 次，使用带抖动的指数退避。
+- 单个分区失败记录在本轮摘要，下一轮或人工命令重试，不引入持久化采集任务。
+- 夜盘归属完全采用交易所数据中的 `trade_date`，不按请求时间重新解释。
 
-| 表 | 用途 | 关键约束 |
-|---|---|---|
-| `t_instruments` | 真实期货和连续合约主数据 | 业务 ID 唯一，含品种和有效期；首期不迁移股票 |
-| `t_market_data_versions` | 可发布数据集版本 | 状态、范围、父版本、发布时间 |
-| `t_market_bars` | 规范化通用 Bar | instrument/timeframe/open_time/版本区间 |
-| `t_market_bar_observations` | 原始提供方观测 | provider/run/target/payload hash 唯一 |
-| `t_market_ingestion_runs` | 期货采集运行和 checkpoint | 类型、状态、计数和错误摘要 |
-| `t_market_day_states` | 市场日期观测状态 | market/date 唯一可见状态 |
-| `t_trading_sessions` | 已观测或未来官方交易日历 | market/date/source/version |
-| `t_futures_contract_daily` | 期货专有日线真值 | contract/date/版本区间 |
-| `t_continuous_contract_mappings` | 连续合约到真实合约映射 | synthetic/date/policy/version |
-| `t_futures_roll_events` | 换月决策审计 | policy/decision/effective 唯一 |
-| `t_data_quality_issues` | 质量问题和处置状态 | scope/code/run/version |
-
-版本化事实表使用 `valid_from_version`、`valid_to_version` 表示可见区间。读取版本 V 时选择 `valid_from_version <= V` 且 `valid_to_version` 为空或大于 V 的记录。
-
-### 11.2 发布事务
-
-每个分区遵循：
+### 14.2 历史回补
 
 ```text
-FETCHED -> NORMALIZED -> VALIDATED -> STAGED -> PUBLISHED
-                                  \-> QUARANTINED
+futures-sync --from 2018-01-01 --to 2026-09-11
 ```
 
-只有 `PUBLISHED` 版本可被扫描和回测读取。发布事务同时关闭旧事实的可见区间、插入新事实、更新日状态并把版本改为 `PUBLISHED`；任一步失败则整体回滚。外部网络请求不放在数据库事务中。
+命令按日期正序执行，已存在且 digest 相同的合约跳过。失败时返回非零状态并打印最后成功日期；再次运行从指定日期安全重做即可，不额外建设 checkpoint 表。
 
-## 12. 配置设计
+### 14.3 查询
 
-```yaml
-market_data:
-  futures_daily:
-    enabled: true
-    schedule: "18:30"
-    retry_schedules: ["20:30", "next-day 08:30"]
-    recent_recheck_sessions: 10
-    sidecar_url: "http://akshare-futures:8081"
-    exchanges:
-      SHFE: [AU, AG, FU]
-      INE: [SC, LU]
-      DCE: [J, JM]
-      CZCE: [ZC]
-    continuous:
-      main_policy: "main_oi_hysteresis_v1"
-      price_view: "forward_ratio_v1"
-```
+新增只读接口：
 
-该配置只新增期货节点，不改变现有股票配置和默认值。sidecar 地址必须是配置的内部服务地址，不能由 API 请求动态指定。
+- `GET /api/v1/futures/bars`：真实合约、`RAW_MAIN` 或 `FORWARD_RATIO` 日线。
+- `GET /api/v1/futures/main-mappings`：主力映射、决策日期和换月原因。
 
-## 13. 调度、幂等与并发
+请求必须包含 Instrument、日期范围和价格视图，可选数据版本。版本为空时只解析一次 latest `COMPLETE`，随后固定该版本完成全部查询。
 
-- 调度器只创建带唯一业务键的任务；重复触发不会产生并行重复采集。
-- 期货分区键为 `FUTURE:exchange:trade_date`。
-- 同一分区同时只允许一个执行者，使用数据库租约并带过期时间，进程崩溃后可恢复。
-- provider 请求带稳定 request ID；写 observation 和发布操作均为幂等 upsert。
-- HTTP 超时或连接中断后，先按业务键检查 observation，再决定是否重试，避免重复发布。
-- 日常同步优先于历史回补；二者使用相同并发和退避策略，避免同时压垮交易所公开接口。
+第一阶段不增加公网同步接口。同步只由内部 scheduler 或 CLI 触发。
 
-## 14. API 与运维入口
+## 15. 错误与日志
 
-当前写接口没有完善鉴权，因此第一阶段不新增可从公网直接触发期货同步的 HTTP API。写入入口仅采用内部调度器和 `futures-sync` 运维 CLI。
+- Go adapter 把 sidecar 错误映射为稳定的参数错误、临时上游错误、超时和坏数据错误。
+- 领域校验错误不可重试；网络超时和明确临时错误可重试。
+- 失败发布保持旧版本可读，不写半条 Bar，也不把缺失价格写成零。
+- 新期货链路使用注入的 `slog`/Telemetry，不在领域计算中直接日志。
+- 日志至少包含 `component`、`operation`、`exchange`、`trade_date`、`request_id`、`attempt`、`duration_ms` 和稳定 `error_code`。
+- 不记录上游正文、Cookie、完整配置或数据库连接信息；同一错误只在负责处理的边界记录一次。
 
-建议只增加只读接口：
+## 16. 停机迁移
 
-- `GET /api/v1/futures/bars`：按真实或连续 Instrument、价格视图和 dataset version 查询日线。
-- `GET /api/v1/futures/main-mappings`：查询主力映射和换月依据。
-- `GET /api/v1/data-quality/issues`：查询隔离批次、缺口和待处理质量问题。
+本次允许停机，执行流程固定为：
 
-响应必须返回实际使用的 dataset version、price view、provider provenance 和数据质量状态。不能在客户端未请求时静默从派生视图降级到 Raw。
+1. 合并代码并完成测试，但保持期货调度关闭。
+2. 停止服务，备份当前数据库。
+3. 执行 `t_instruments` 显式 ALTER 和新表迁移。
+4. 校验股票 Instrument 数量、唯一键、字段回填和现有版本读取。
+5. 启动新版本，先运行少量日期的 `futures-sync`。
+6. 核对真实合约、主力映射和连续序列后启用日常调度。
 
-## 15. 失败处理与可观测性
+不实施双写、影子表、在线回填和旧新 schema 长期兼容。失败时停止服务，恢复数据库备份并运行旧版本。
 
-关键指标包括：
+## 17. 测试
 
-- AKShare sidecar 的请求数、延迟、错误码和重试数。
-- 每日期货分区行数、各品种合约覆盖数和隔离数量。
-- sidecar unexpected empty、上游内容类型异常和 payload hash 变化。
-- 新增/修订/未变化 Bar 数量，数据发布耗时。
-- 主力换月次数、强制换月、无候选和连续因子失败数量。
-- 最新成功交易日与当前日期的 lag。
+### 17.1 Go
 
-日志使用结构化字段，只记录上游 body hash 和受控摘要，不记录未经清洗的响应正文。告警按“日常任务失败、数据覆盖异常、连续序列中断”分级。
+- Instrument 股票/期货分流校验、郑商所年份解析和指数代码过滤。
+- sidecar 响应缺字段、坏数值、错误日期、重复合约和意外空集。
+- 期货专有字段与通用 Bar 同版本事务发布。
+- 常规、快速、强制换月，最短持有、防倒退和无候选。
+- 连续比例因子、缺锚点、前缀一致性和 suffix poisoning。
+- scheduler 有界并发、重试、取消和部分失败摘要。
+- 查询固定版本，不在一次请求中漂移到新版本。
 
-## 16. 测试策略
+期货领域、主力和连续序列包覆盖率大于 90%；项目总体大于 80%。
 
-### 16.1 Go 单元测试
+### 17.2 Python
 
-- sidecar 响应字段缺失、日期不匹配、重复合约、精度和单位转换。
-- 交易所分区覆盖率下降、未知空日期、重试和隔离状态机。
-- 期货符号、郑商所年份解析、别名、指数代码过滤和 regime boundary。
-- 主力常规/快速/强制换月、最短持有、防倒退、无候选。
-- 连续因子、缺锚点、前缀一致性和 suffix poisoning。
+- SHFE、INE、DCE、CZCE 冻结响应 fixture。
+- 空 DataFrame、HTML 错页、字段变化、超时和白名单错误。
+- JSON schema、数值字符串和 AKShare 版本输出。
 
-parser、adapter、reconciler 和 continuous builder 目标覆盖率不低于 90%，项目整体覆盖率保持 80% 以上。
+### 17.3 集成
 
-### 16.2 Sidecar 测试
+- 默认测试使用 fixture 和 `httptest`，不访问公网。
+- MySQL 5.7、8.0 验证 Instrument 停机迁移、事务回滚、版本读取和索引。
+- 完整交付运行 `bash scripts/verify.sh`。
+- 在线 smoke test 只作为人工或夜间检查，不作为普通单元测试门禁。
 
-- 使用冻结的各交易所响应 fixture 测试 AKShare 结果适配。
-- 空 DataFrame、HTML 错页、JSON decode error、字段变化、超时和频控映射为明确错误。
-- 协议 schema、hash、数值字符串、白名单和请求大小限制。
-- pytest 覆盖率不低于 90%。
+## 18. 实施顺序
 
-### 16.3 集成和在线冒烟
+1. 扩展 Instrument、数据库字段和迁移校验。
+2. 实现期货领域值、source/writer port 和单元测试。
+3. 实现固定版本 AKShare sidecar 及 fixture 测试。
+4. 实现 Go adapter、真实合约发布和 MySQL 集成测试。
+5. 实现主力映射与连续序列。
+6. 实现 scheduler、CLI 和只读 API。
+7. 停机迁移并完成小范围数据验证。
 
-- 默认 CI 只使用 `httptest`、fixture 和本地 sidecar mock，不访问公网。
-- MySQL 5.7 和 8.0 验证迁移、事务发布、租约和版本读取。
-- 运行 `go test -race ./...` 检查并发安全。
-- 夜间 opt-in smoke test 各请求一个最近日期，只验证契约和告警，不作为合并门禁。
+实施开始前必须以合并后的 `main` 为基线重新检查文件和接口；本设计不授权在当前 worktree 或当前功能分支继续写代码。
 
-## 17. 迁移顺序
+## 19. 验收标准
 
-1. 扩展 Instrument 和 Bar 边界以支持期货，建立期货版本、观测、运行与质量表；股票表和股票服务不迁移。
-2. 上线固定版本 AKShare sidecar、Go 期货适配器、整批校验和 `futures-sync` 历史回补 CLI。
-3. 先发布真实期货合约日线，验证各交易所字段和历史统计口径边界。
-4. 补齐合约元数据、主力规则和审计表，再发布 `RAW_MAIN`。
-5. 通过前缀一致性验证后发布 `FORWARD_RATIO` 给指标和扫描。
-6. 观察至少两个完整同步周期后启用默认期货调度；新浪股票调度始终保持原样。
+1. 股票行情仍由当前东方财富版本化链路提供，股票查询、扫描和回测行为不变。
+2. 首批 8 个商品品种能够保存真实合约日线及期货专有字段。
+3. sidecar 对意外空集和坏上游内容返回错误，不发布空成功数据。
+4. 每根期货 Bar 可追溯至交易所、原始代码、AKShare 版本和数据版本。
+5. 主力映射从决策后的下一交易日生效，不读取未来 OI 或价格。
+6. `RAW_MAIN` 和 `FORWARD_RATIO` 可查询；连续序列通过前缀一致性测试。
+7. 任一数据库事务失败不产生半发布版本，旧 `COMPLETE` 版本仍可读取。
+8. 停机迁移后现有股票 Instrument 和版本化行情校验通过。
+9. 项目总体覆盖率大于 80%，期货核心计算覆盖率大于 90%。
 
-每个阶段都能独立回滚到上一已发布 dataset version。回滚不删除 observation 或修订历史。
-
-## 18. 验收标准
-
-1. 现有新浪股票 Broker、Service、Scheduler、表和 HTTP API 行为不变，项目中不新增 Tushare 或东方财富股票依赖。
-2. Sidecar 对意外空集和坏上游内容返回明确错误，不发布空成功分区。
-3. 每根期货合约日线都能追溯到 exchange、raw symbol、AKShare 版本、采集运行和 payload hash。
-4. 主力决策在下一交易日生效，任何映射和连续价格不读取未来数据。
-5. 主力映射与连续序列通过前缀一致性和 suffix poisoning 测试。
-6. 质量隔离数据不会被查询、扫描或回测作为默认可用版本读取。
-7. Go 与 Python 新增核心逻辑达到各自覆盖率目标，集成测试同时通过 MySQL 5.7 和 8.0。
-
-## 19. 外部接口依据
+## 20. 外部依据
 
 - AKShare 期货日线接口：<https://akshare.akfamily.xyz/data/futures/futures.html>
-- 固定使用的 AKShare 版本：<https://pypi.org/project/akshare/>
+- 固定 AKShare 版本：<https://pypi.org/project/akshare/>
 
-这些外部接口可能变化。实际实现必须用契约测试和固定 fixture 捕获变更，不能仅依赖文档描述。
+公开接口可能变化。实现必须通过固定 fixture 和契约测试发现变化，不能把“请求成功”直接等同于“数据正确”。
