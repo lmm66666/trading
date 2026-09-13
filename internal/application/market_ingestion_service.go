@@ -168,11 +168,15 @@ func validateFinalMarketBars(stored, updates map[market.Timeframe][]market.Bar) 
 		}
 	}
 	dailyWeekCloses := map[[2]int]time.Time{}
+	var latestDailyClose time.Time
 	for at := range final[market.Day] {
 		year, week := at.ISOWeek()
 		key := [2]int{year, week}
 		if at.After(dailyWeekCloses[key]) {
 			dailyWeekCloses[key] = at
+		}
+		if at.After(latestDailyClose) {
+			latestDailyClose = at
 		}
 	}
 	knownDailyWeeks := map[[2]int]bool{}
@@ -181,8 +185,8 @@ func validateFinalMarketBars(stored, updates map[market.Timeframe][]market.Bar) 
 		knownDailyWeeks[[2]int{year, week}] = true
 	}
 	for key, at := range dailyWeekCloses {
-		// 已存日线发现的缺口必须补齐；仅新增且无已确认周收盘的末尾周组保留未知状态。
-		if !knownDailyWeeks[key] && at.After(latestWeeklyClose) {
+		// 只有最终日线最新 ISO 周组可保持未知；后续日线周组本身证明更早周组已经结束。
+		if at.Equal(latestDailyClose) && !knownDailyWeeks[key] && at.After(latestWeeklyClose) {
 			continue
 		}
 		if _, ok := final[market.Week][at]; !ok {

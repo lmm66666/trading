@@ -119,3 +119,63 @@ func TestRefreshFinalStateAcceptsRepairedGapAndConsistentRetainedBoundary(t *tes
 		})
 	}
 }
+
+func TestRefreshFinalStateOnlyNewestISOWeekMayLackWeeklyBar(t *testing.T) {
+	for _, scenario := range []struct{ name, oldFriday, newMonday, latestMonday string }{
+		{"february", "2026-02-13", "2026-02-16", "2026-02-23"},
+		{"iso_year_rollover", "2025-12-19", "2025-12-22", "2025-12-29"},
+		{"week_spans_calendar_year", "2025-12-26", "2025-12-29", "2026-01-05"},
+	} {
+		for _, repair := range []bool{false, true} {
+			name := scenario.name + "/missing_earlier_week"
+			if repair {
+				name = scenario.name + "/earlier_week_repaired"
+			}
+			t.Run(name, func(t *testing.T) {
+				svc, src, data, writer := ingestionFixture(t)
+				parse := func(value string) time.Time {
+					at, err := time.Parse("2006-01-02", value)
+					require.NoError(t, err)
+					return at
+				}
+				oldFriday, newMonday, latestMonday := parse(scenario.oldFriday), parse(scenario.newMonday), parse(scenario.latestMonday)
+				barAt := func(tf market.Timeframe, at time.Time) market.Bar {
+					bar := marketBar(tf, 1)
+					bar.OpenTime = at
+					bar.CloseTime = at
+					return bar
+				}
+				data.latest = 7
+				data.stored = map[market.Timeframe][]market.Bar{
+					market.Day: {barAt(market.Day, oldFriday)}, market.Week: {barAt(market.Week, oldFriday)},
+				}
+				src.bars = map[market.Timeframe][]market.Bar{
+					market.Day:  append([]market.Bar(nil), data.stored[market.Day]...),
+					market.Week: append([]market.Bar(nil), data.stored[market.Week]...),
+				}
+				for day := 0; day < 5; day++ {
+					src.bars[market.Day] = append(src.bars[market.Day], barAt(market.Day, newMonday.AddDate(0, 0, day)))
+				}
+				src.bars[market.Day] = append(src.bars[market.Day], barAt(market.Day, latestMonday))
+				if repair {
+					src.bars[market.Week] = append(src.bars[market.Week], barAt(market.Week, newMonday.AddDate(0, 0, 4)))
+				}
+				factor := market.AdjustmentFactor{EffectiveTime: oldFriday, Numerator: 4, Denominator: 5}
+				src.factors = map[market.Timeframe][]market.AdjustmentFactor{market.Day: {factor}, market.Week: {factor}}
+				src.actions = nil
+				data.factors = []market.AdjustmentFactor{factor}
+				svc.config.HistoryStart = oldFriday
+				svc.config.Clock = func() time.Time { return latestMonday }
+				result, err := svc.Refresh(context.Background(), marketID)
+				if repair {
+					require.NoError(t, err)
+					require.NotZero(t, result.Version)
+					require.Len(t, writer.batches, 1)
+				} else {
+					require.ErrorIs(t, err, ErrIncompleteMarketData)
+					require.Empty(t, writer.batches, "后续日线周组已经证明更早的新周结束，不得豁免缺失周线")
+				}
+			})
+		}
+	}
+}
