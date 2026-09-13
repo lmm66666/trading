@@ -12,11 +12,13 @@ import (
 )
 
 const (
-	DefaultChartLimit  = 400
-	MinChartLimit      = 100
-	MaxChartLimit      = 1000
-	MaxChartIndicators = 16
-	MaxIndicatorPeriod = 500
+	DefaultChartLimit     = 400
+	MinChartLimit         = 100
+	MaxChartLimit         = 1000
+	MaxChartIndicators    = 16
+	MaxIndicatorPeriod    = 500
+	MaxChartIndicatorCost = 2000
+	maxChartComputations  = 4
 )
 
 type IndicatorKind string
@@ -73,13 +75,14 @@ type ChartQueryService struct {
 	data    port.MarketData
 	catalog port.InstrumentCatalog
 	clock   func() time.Time
+	compute chan struct{}
 }
 
 func NewChartQueryService(data port.MarketData, catalog port.InstrumentCatalog) (*ChartQueryService, error) {
 	if data == nil || catalog == nil {
 		return nil, invalidRequest("chart query dependencies are required")
 	}
-	return &ChartQueryService{data: data, catalog: catalog, clock: time.Now}, nil
+	return &ChartQueryService{data: data, catalog: catalog, clock: time.Now, compute: make(chan struct{}, maxChartComputations)}, nil
 }
 
 func (s *ChartQueryService) Query(ctx context.Context, query ChartQuery) (ChartResult, error) {
@@ -146,7 +149,13 @@ func (s *ChartQueryService) Query(ctx context.Context, query ChartQuery) (ChartR
 	if len(refs) == 0 {
 		return result, nil
 	}
-	features, err := indicator.Build(dataset, factors, refs)
+	select {
+	case s.compute <- struct{}{}:
+		defer func() { <-s.compute }()
+	case <-ctx.Done():
+		return ChartResult{}, ctx.Err()
+	}
+	features, err := indicator.BuildContext(ctx, dataset, factors, refs)
 	if err != nil {
 		return ChartResult{}, fmt.Errorf("build chart indicators: %w", err)
 	}
@@ -178,6 +187,7 @@ func validateChartQuery(query *ChartQuery) error {
 		return invalidRequest("chart query exceeds bounds")
 	}
 	seen := make(map[string]bool, len(query.Indicators))
+	cost := 0
 	for index := range query.Indicators {
 		request := &query.Indicators[index]
 		request.Kind = IndicatorKind(strings.ToUpper(string(request.Kind)))
@@ -189,8 +199,23 @@ func validateChartQuery(query *ChartQuery) error {
 			return invalidRequest("duplicate chart indicator")
 		}
 		seen[key] = true
+		cost += chartIndicatorCost(*request)
+		if cost > MaxChartIndicatorCost {
+			return invalidRequest("chart indicator cost exceeds bounds")
+		}
 	}
 	return nil
+}
+
+func chartIndicatorCost(request IndicatorRequest) int {
+	switch request.Kind {
+	case IndicatorKDJ:
+		return request.Period * 3
+	case IndicatorMACD:
+		return 3
+	default:
+		return 1
+	}
 }
 
 func validateIndicatorRequest(request IndicatorRequest) error {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   queryChart,
   type ChartResult,
@@ -32,6 +32,8 @@ export function ChartWorkspace({
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState('')
+  const generationRef = useRef(0)
+  const pageControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     setTimeframe(initialTimeframe)
@@ -39,21 +41,28 @@ export function ChartWorkspace({
   }, [initialPriceView, initialTimeframe])
 
   useEffect(() => {
+    const generation = ++generationRef.current
+    pageControllerRef.current?.abort()
     const controller = new AbortController()
     setStatus('loading')
+    setLoadingMore(false)
     setError('')
     setResult(null)
     query({ instrument, timeframe, price_view: priceView, limit: 400, indicators }, controller.signal)
       .then((data) => {
+        if (controller.signal.aborted || generation !== generationRef.current) return
         setResult(data)
         setStatus('ready')
       })
       .catch((reason: unknown) => {
-        if (controller.signal.aborted) return
+        if (controller.signal.aborted || generation !== generationRef.current) return
         setError(reason instanceof Error ? reason.message : '加载行情失败')
         setStatus('error')
       })
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      pageControllerRef.current?.abort()
+    }
   }, [indicators, instrument, priceView, query, timeframe])
 
   const changeTimeframe = (value: Timeframe) => {
@@ -67,6 +76,10 @@ export function ChartWorkspace({
 
   const loadMore = useCallback(() => {
     if (!result?.has_more || !result.next_before || loadingMore) return
+    const generation = generationRef.current
+    const controller = new AbortController()
+    pageControllerRef.current?.abort()
+    pageControllerRef.current = controller
     setLoadingMore(true)
     query({
       instrument,
@@ -76,16 +89,28 @@ export function ChartWorkspace({
       limit: 400,
       data_version: result.data_version,
       indicators,
-    })
-      .then((older) => setResult((current) => current ? {
-        ...current,
-        bars: mergeBars(current.bars, older.bars),
-        series: mergeSeries(current.series, older.series),
-        has_more: older.has_more,
-        next_before: older.next_before,
-      } : older))
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : '加载更早行情失败'))
-      .finally(() => setLoadingMore(false))
+    }, controller.signal)
+      .then((older) => {
+        if (controller.signal.aborted || generation !== generationRef.current) return
+        setResult((current) => {
+          if (!current || older.instrument.instrument !== instrument || older.timeframe !== timeframe || older.price_view !== priceView || older.data_version !== current.data_version) return current
+          return {
+            ...current,
+            bars: mergeBars(current.bars, older.bars),
+            series: mergeSeries(current.series, older.series),
+            has_more: older.has_more,
+            next_before: older.next_before,
+          }
+        })
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted && generation === generationRef.current) {
+          setError(reason instanceof Error ? reason.message : '加载更早行情失败')
+        }
+      })
+      .finally(() => {
+        if (generation === generationRef.current) setLoadingMore(false)
+      })
   }, [indicators, instrument, loadingMore, priceView, query, result, timeframe])
 
   const quote = useMemo(() => {

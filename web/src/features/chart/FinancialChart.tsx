@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import {
   CandlestickSeries,
   ColorType,
@@ -6,6 +6,8 @@ import {
   HistogramSeries,
   LineSeries,
   type HistogramData,
+  type IChartApi,
+  type ISeriesApi,
   type LineData,
   type Time,
 } from 'lightweight-charts'
@@ -24,7 +26,16 @@ const chartTime = (value: string): Time => value.slice(0, 10) as Time
 export function FinancialChart({ bars, series, onLoadMore }: FinancialChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const loadMoreRef = useRef(onLoadMore)
+  const chartRef = useRef<IChartApi | null>(null)
+  const candlesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null)
+  const indicatorUpdatersRef = useRef(new Map<string, (item: ChartSeries) => void>())
+  const previousBarsCountRef = useRef(0)
   loadMoreRef.current = onLoadMore
+  const definitionKey = useMemo(
+    () => series.map((item) => `${item.key}:${item.kind}:${item.component}`).join('|'),
+    [series],
+  )
 
   useEffect(() => {
     const container = containerRef.current
@@ -42,22 +53,18 @@ export function FinancialChart({ bars, series, onLoadMore }: FinancialChartProps
       timeScale: { borderColor: '#273142', timeVisible: false, rightOffset: 3, barSpacing: 8, minBarSpacing: 3 },
       localization: { locale: 'zh-CN' },
     })
+    chartRef.current = chart
     const candles = chart.addSeries(CandlestickSeries, {
       upColor: '#ef4444', downColor: '#10b981', borderVisible: false,
       wickUpColor: '#ef4444', wickDownColor: '#10b981', priceLineColor: '#ef4444',
     })
-    candles.setData(bars.map((bar) => ({
-      time: chartTime(bar.close_time), open: bar.open, high: bar.high, low: bar.low, close: bar.close,
-    })))
+    candlesRef.current = candles
 
     const volume = chart.addSeries(HistogramSeries, {
       priceFormat: { type: 'volume' }, priceScaleId: 'volume', lastValueVisible: false, priceLineVisible: false,
     })
+    volumeRef.current = volume
     volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } })
-    volume.setData(bars.map((bar) => ({
-      time: chartTime(bar.close_time), value: bar.volume,
-      color: bar.close >= bar.open ? 'rgba(239, 68, 68, .55)' : 'rgba(16, 185, 129, .55)',
-    })))
 
     let colorIndex = 0
     const paneByKind = new Map<string, number>()
@@ -73,22 +80,20 @@ export function FinancialChart({ bars, series, onLoadMore }: FinancialChartProps
         const indicator = chart.addSeries(HistogramSeries, {
           color, priceLineVisible: false, lastValueVisible: true,
         }, paneIndex)
-        indicator.setData(item.points.map((point): HistogramData => ({
-          time: chartTime(point.time), value: point.value,
-          color: point.value >= 0 ? 'rgba(239, 68, 68, .72)' : 'rgba(16, 185, 129, .72)',
-        })))
+        indicatorUpdatersRef.current.set(item.key, (updated) => indicator.setData(updated.points.map((point): HistogramData => ({
+          time: chartTime(point.time), value: point.value, color: point.value >= 0 ? 'rgba(239, 68, 68, .72)' : 'rgba(16, 185, 129, .72)',
+        }))))
       } else {
         const indicator = chart.addSeries(LineSeries, {
           color, lineWidth: isOverlay ? 2 : 1, priceLineVisible: false,
-          lastValueVisible: true, title: isOverlay ? `${item.kind} ${item.key.match(/period=(\d+)/)?.[1] ?? ''}` : item.component.toUpperCase(),
+          lastValueVisible: true, title: isOverlay ? `${item.kind} ${item.key.match(/\/p=(\d+)/)?.[1] ?? ''}` : item.component.toUpperCase(),
         }, paneIndex)
-        indicator.setData(item.points.map((point): LineData => ({ time: chartTime(point.time), value: point.value })))
+        indicatorUpdatersRef.current.set(item.key, (updated) => indicator.setData(updated.points.map((point): LineData => ({ time: chartTime(point.time), value: point.value }))))
       }
     }
     const panes = chart.panes()
     if (panes[0]) panes[0].setStretchFactor(4)
     for (let index = 1; index < panes.length; index++) panes[index].setStretchFactor(1.35)
-    chart.timeScale().fitContent()
     const rangeHandler = (range: { from: number; to: number } | null) => {
       if (range && range.from < 12) loadMoreRef.current()
     }
@@ -96,8 +101,37 @@ export function FinancialChart({ bars, series, onLoadMore }: FinancialChartProps
     return () => {
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(rangeHandler)
       chart.remove()
+      chartRef.current = null
+      candlesRef.current = null
+      volumeRef.current = null
+      indicatorUpdatersRef.current.clear()
+      previousBarsCountRef.current = 0
     }
-  }, [bars, series])
+  }, [definitionKey])
+
+  useEffect(() => {
+    const chart = chartRef.current
+    const candles = candlesRef.current
+    const volume = volumeRef.current
+    if (!chart || !candles || !volume) return
+    const previousCount = previousBarsCountRef.current
+    const visibleRange = previousCount > 0 ? chart.timeScale().getVisibleLogicalRange() : null
+    candles.setData(bars.map((bar) => ({
+      time: chartTime(bar.close_time), open: bar.open, high: bar.high, low: bar.low, close: bar.close,
+    })))
+    volume.setData(bars.map((bar) => ({
+      time: chartTime(bar.close_time), value: bar.volume,
+      color: bar.close >= bar.open ? 'rgba(239, 68, 68, .55)' : 'rgba(16, 185, 129, .55)',
+    })))
+    for (const item of series) indicatorUpdatersRef.current.get(item.key)?.(item)
+    const prepended = bars.length - previousCount
+    if (previousCount === 0) {
+      chart.timeScale().fitContent()
+    } else if (visibleRange && prepended > 0) {
+      chart.timeScale().setVisibleLogicalRange({ from: visibleRange.from + prepended, to: visibleRange.to + prepended })
+    }
+    previousBarsCountRef.current = bars.length
+  }, [bars, definitionKey, series])
 
   return <div className="financial-chart" ref={containerRef} role="img" aria-label="K 线、成交量与技术指标图表" />
 }

@@ -55,6 +55,13 @@ func TestChartQueryRejectsInvalidRequests(t *testing.T) {
 	}
 	_, err = service.Query(context.Background(), query)
 	assert.ErrorIs(t, err, ErrInvalidRequest)
+
+	query = valid
+	for period := 485; period <= 500; period++ {
+		query.Indicators = append(query.Indicators, IndicatorRequest{Kind: IndicatorKDJ, Period: period})
+	}
+	_, err = service.Query(context.Background(), query)
+	assert.ErrorIs(t, err, ErrInvalidRequest)
 }
 
 func TestChartQueryComputesBeforeTrimmingAndPinsVersion(t *testing.T) {

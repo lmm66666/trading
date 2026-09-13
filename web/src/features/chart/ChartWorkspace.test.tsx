@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { ChartResult } from '../../api/client'
 import { ChartWorkspace } from './ChartWorkspace'
@@ -60,7 +60,7 @@ describe('ChartWorkspace', () => {
     fireEvent.click(await screen.findByRole('button', { name: '加载更早行情' }))
     await waitFor(() => expect(query).toHaveBeenLastCalledWith(expect.objectContaining({
       before: first.next_before, data_version: 17,
-    })))
+    }), expect.any(AbortSignal)))
     expect(screen.getByTestId('financial-chart')).toHaveTextContent('2 bars')
   })
 
@@ -72,5 +72,24 @@ describe('ChartWorkspace', () => {
     expect(await screen.findByText('行情版本不存在')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: '不复权' }))
     expect(onStateChange).toHaveBeenCalledWith('DAY', 'RAW')
+  })
+
+  it('切换周期后忽略尚未完成的旧分页响应', async () => {
+    let resolveOlder!: (value: ChartResult) => void
+    const olderPromise = new Promise<ChartResult>((resolve) => { resolveOlder = resolve })
+    const first = { ...response, has_more: true, next_before: response.bars[0].close_time }
+    const weekly = { ...response, timeframe: 'WEEK' as const, bars: [{ ...response.bars[0], close: 40 }] }
+    const query = vi.fn((input: { before?: string; timeframe: string }) => {
+      if (input.before) return olderPromise
+      return Promise.resolve(input.timeframe === 'WEEK' ? weekly : first)
+    })
+    render(<ChartWorkspace instrument="SZSE:002415" initialPriceView="QFQ" initialTimeframe="DAY" onStateChange={vi.fn()} query={query} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '加载更早行情' }))
+    fireEvent.click(screen.getByRole('button', { name: '周线' }))
+    await waitFor(() => expect(query).toHaveBeenCalledWith(expect.objectContaining({ timeframe: 'WEEK' }), expect.any(AbortSignal)))
+    await act(async () => resolveOlder({ ...response, bars: [{ ...response.bars[0], close_time: '2026-09-10T07:00:00Z' }] }))
+
+    expect(screen.getByTestId('financial-chart')).toHaveTextContent('1 bars')
   })
 })
