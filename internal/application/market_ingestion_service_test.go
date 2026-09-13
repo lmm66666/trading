@@ -63,12 +63,41 @@ func (f *marketReadFake) Instruments(context.Context, port.InstrumentScope) ([]m
 }
 
 type marketSourceFake struct {
-	bars      map[market.Timeframe][]market.Bar
-	factors   map[market.Timeframe][]market.AdjustmentFactor
-	actions   []market.CorporateAction
-	fail      market.Timeframe
-	actionErr error
-	fetch     func(context.Context, market.Timeframe, time.Time, time.Time) error
+	bars        map[market.Timeframe][]market.Bar
+	factors     map[market.Timeframe][]market.AdjustmentFactor
+	actions     []market.CorporateAction
+	fail        market.Timeframe
+	actionErr   error
+	fetch       func(context.Context, market.Timeframe, time.Time, time.Time) error
+	dailyCalls  int
+	factorCalls int
+}
+
+func (f *marketSourceFake) FetchDailyBars(ctx context.Context, _ market.InstrumentID, from, to time.Time) ([]market.Bar, error) {
+	f.dailyCalls++
+	if f.fetch != nil {
+		if err := f.fetch(ctx, market.Day, from, to); err != nil {
+			return nil, err
+		}
+	}
+	if f.fail == market.Day {
+		return nil, port.ErrTemporary
+	}
+	var bars []market.Bar
+	for _, b := range f.bars[market.Day] {
+		if !b.CloseTime.Before(from) && !b.CloseTime.After(to) {
+			bars = append(bars, b)
+		}
+	}
+	return bars, nil
+}
+
+func (f *marketSourceFake) FetchAdjustmentFactors(context.Context, market.InstrumentID) ([]market.AdjustmentFactor, error) {
+	f.factorCalls++
+	if f.actionErr != nil {
+		return nil, f.actionErr
+	}
+	return append([]market.AdjustmentFactor(nil), f.factors[market.Day]...), nil
 }
 
 func (f *marketSourceFake) FetchBars(ctx context.Context, id market.InstrumentID, tf market.Timeframe, from, to time.Time) ([]market.Bar, []market.AdjustmentFactor, error) {
@@ -120,7 +149,7 @@ func ingestionFixture(t *testing.T) (*MarketIngestionService, *marketSourceFake,
 	require.NoError(t, err)
 	return svc, src, data, writer
 }
-func TestRefreshPublishesRawAdjustedAndActionsTogether(t *testing.T) {
+func TestRefreshPublishesRawAdjustedAndDerivedWeeklyTogether(t *testing.T) {
 	svc, _, _, writer := ingestionFixture(t)
 	got, err := svc.Refresh(context.Background(), marketID)
 	require.NoError(t, err)
@@ -130,10 +159,26 @@ func TestRefreshPublishesRawAdjustedAndActionsTogether(t *testing.T) {
 	require.Len(t, writer.batches[0].Bars[market.Day], 1)
 	require.Len(t, writer.batches[0].Bars[market.Week], 1)
 	require.Len(t, writer.batches[0].Factors, 1)
+	require.Empty(t, writer.batches[0].Actions)
 	require.Len(t, writer.batches[0].Digest, 64)
 }
+
+func TestRefreshUsesOnlyDailyBarsAndFactorsAndDerivesWeekly(t *testing.T) {
+	svc, src, _, writer := ingestionFixture(t)
+	src.bars[market.Week] = nil
+	src.factors[market.Week] = nil
+	src.actions = nil
+
+	got, err := svc.Refresh(context.Background(), marketID)
+	require.NoError(t, err)
+	require.Equal(t, 1, src.dailyCalls)
+	require.Equal(t, 1, src.factorCalls)
+	require.Len(t, writer.batches, 1)
+	require.Len(t, writer.batches[0].Bars[market.Week], 1)
+	require.Equal(t, got.DailyBars, got.WeeklyBars)
+}
 func TestRefreshDoesNotPublishPartialSourceResponse(t *testing.T) {
-	for _, scenario := range []string{"daily", "weekly", "actions", "empty", "factor", "conflict", "duplicate", "invalid", "stored", "latest", "publish", "canceled"} {
+	for _, scenario := range []string{"daily", "factors", "factor", "duplicate", "invalid", "stored", "latest", "publish", "canceled"} {
 		t.Run(scenario, func(t *testing.T) {
 			svc, src, data, writer := ingestionFixture(t)
 			ctx := context.Background()
@@ -142,18 +187,11 @@ func TestRefreshDoesNotPublishPartialSourceResponse(t *testing.T) {
 			case "daily":
 				src.fail = market.Day
 				want = port.ErrTemporary
-			case "weekly":
-				src.fail = market.Week
-				want = port.ErrTemporary
-			case "actions":
+			case "factors":
 				src.actionErr = port.ErrTemporary
 				want = port.ErrTemporary
-			case "empty":
-				src.bars[market.Week] = nil
 			case "factor":
 				src.factors[market.Day] = nil
-			case "conflict":
-				src.factors[market.Week][0].Numerator = 3
 			case "duplicate":
 				src.bars[market.Day] = append(src.bars[market.Day], src.bars[market.Day][0])
 				want = port.ErrInvalidPortValue
@@ -200,7 +238,7 @@ func TestRefreshRefetchesTwentyStoredTradingBarsAndRejectsLostDates(t *testing.T
 	}
 	_, err := svc.Refresh(context.Background(), marketID)
 	require.NoError(t, err)
-	require.Len(t, writer.batches[0].Bars[market.Day], 20)
+	require.Len(t, writer.batches[0].Bars[market.Day], 30)
 	src.bars = map[market.Timeframe][]market.Bar{market.Day: days[11:], market.Week: weeks}
 	_, err = svc.Refresh(context.Background(), marketID)
 	require.ErrorIs(t, err, ErrIncompleteMarketData)
@@ -211,15 +249,7 @@ func TestRefreshRejectsInvalidID(t *testing.T) {
 	_, err := svc.Refresh(context.Background(), market.InstrumentID{})
 	require.ErrorIs(t, err, ErrInvalidRequest)
 }
-func TestRefreshRejectsContradictoryDailyAndWeeklyClose(t *testing.T) {
-	svc, src, _, writer := ingestionFixture(t)
-	src.bars[market.Week][0].Close = 105000
-	_, err := svc.Refresh(context.Background(), marketID)
-	require.ErrorIs(t, err, ErrIncompleteMarketData)
-	require.Empty(t, writer.batches)
-}
-
-func TestRefreshRebasesHistoryAndReplacesObsoleteFactorBreakpoints(t *testing.T) {
+func TestRefreshReplacesObsoleteFactorBreakpointsWithoutRefetchingDaily(t *testing.T) {
 	svc, src, data, writer := ingestionFixture(t)
 	var days, weeks []market.Bar
 	for day := 1; day <= 30; day++ {
@@ -240,30 +270,10 @@ func TestRefreshRebasesHistoryAndReplacesObsoleteFactorBreakpoints(t *testing.T)
 	}
 	got, err := svc.Refresh(context.Background(), marketID)
 	require.NoError(t, err)
-	require.Equal(t, 4, calls)
+	require.Equal(t, 1, calls)
 	require.Equal(t, 30, got.DailyBars)
 	factors := writer.batches[0].Factors
 	require.Contains(t, factors, market.AdjustmentFactor{EffectiveTime: marketDate(20), Numerator: 4, Denominator: 5})
-}
-func TestRefreshDetectsKnownCrossTimeframeGapsWithoutWeekdayCalendar(t *testing.T) {
-	svc, src, data, writer := ingestionFixture(t)
-	days := []market.Bar{marketBar(market.Day, 9), marketBar(market.Day, 16), marketBar(market.Day, 23), marketBar(market.Day, 30)}
-	weeks := []market.Bar{marketBar(market.Week, 2), marketBar(market.Week, 9), marketBar(market.Week, 30)}
-	data.latest = 1
-	data.stored = map[market.Timeframe][]market.Bar{market.Day: days, market.Week: weeks}
-	data.factors = src.factors[market.Day]
-	src.bars = map[market.Timeframe][]market.Bar{market.Day: append([]market.Bar{marketBar(market.Day, 2)}, days...), market.Week: append(weeks, marketBar(market.Week, 16), marketBar(market.Week, 23))}
-	src.fetch = func(_ context.Context, tf market.Timeframe, from, to time.Time) error {
-		if tf == market.Day {
-			require.Equal(t, marketDate(2), from)
-		} else {
-			require.Equal(t, marketDate(9), from)
-		}
-		return nil
-	}
-	_, err := svc.Refresh(context.Background(), marketID)
-	require.NoError(t, err)
-	require.Len(t, writer.batches[0].Bars[market.Day], 5)
 }
 func TestRefreshGuardAndLimiterCancellation(t *testing.T) {
 	svc, src, _, writer := ingestionFixture(t)
