@@ -21,8 +21,9 @@ func TestLatestSnapshotReadsPublishedPartialResultsAndIndependentValues(t *testi
 	s := NewSignalSnapshotStore(repo.db)
 	key := testSnapshot().Key
 	key.AsOf = time.Time{}
+	key.SnapshotID = "snapshot"
 	for i := 0; i < 2; i++ {
-		m.ExpectQuery("SELECT .*t_signal_snapshots.*status IN .*ORDER BY as_of DESC, data_version DESC, id DESC").WithArgs("strategy", "v1", "hash", "SUCCEEDED", "PARTIAL_SUCCEEDED", 1).WillReturnRows(snapshotMetadata(`[{"instrument":{"Exchange":"SSE","Code":"600001"},"failure":{"code":"DATA","message":"missing"}}]`))
+		m.ExpectQuery("SELECT .*t_signal_snapshots.*status IN .*snapshot_id = .*ORDER BY as_of DESC, data_version DESC, id DESC").WithArgs("strategy", "v1", "hash", "SUCCEEDED", "PARTIAL_SUCCEEDED", "snapshot", 1).WillReturnRows(snapshotMetadata(`[{"instrument":{"Exchange":"SSE","Code":"600001"},"failure":{"code":"DATA","message":"missing"}}]`))
 		m.ExpectQuery("SELECT r.*, i.exchange, i.code.*JOIN t_instruments.*r.sequence >").WithArgs("snapshot", int64(2), 10).WillReturnRows(sqlmock.NewRows([]string{"sequence", "exchange", "code", "signal_time", "reason", "values_json"}).AddRow(3, "SSE", "600000", testSnapshot().Key.AsOf, "hit", []byte(`{"score":2}`)))
 		result, err := s.Latest(context.Background(), key, port.PageRequest{AfterSequence: 2, Limit: 10})
 		require.NoError(t, err)

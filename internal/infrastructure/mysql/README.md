@@ -40,6 +40,8 @@ go test -tags=integration ./internal/infrastructure/mysql/... -count=1
 
 扫描快照、回测汇总、订单、成交、权益点、完成 outbox 及 Run 终态在同一事务提交。明细单批最多1000行，最终更新再次检查租约期限；任一批次、outbox 或最终 CAS 失败全部回滚。扫描带失败项时保存 PARTIAL_SUCCEEDED。Latest 只读取已发布成功/部分成功快照，快照行按证券稳定排序，结果分页使用持久化 sequence。回测 Trades 接口返回 Fill 成交明细；领域 round-trip Trade 和 FinalPosition 没有独立读取端口，已由 Summary 与持仓布尔状态提供汇总。
 
+快照分页必须绑定精确 SnapshotID：只有 `AfterSequence=0` 且 `SnapshotKey.SnapshotID` 为空时可选最新快照；返回的 `SignalSnapshot.ID` 及 `Key.SnapshotID` 是后续页绑定值。`AfterSequence>0` 缺失 ID 直接返回 ErrInvalidPortValue，不会重新选择最新快照。提供 ID 后仍同时匹配策略 ID、策略版本、参数 hash，以及非零 AsOf；未知、键不匹配或未发布的快照返回 ErrSnapshotNotReady。ID 的大小写和尾空格均精确区分。同 AsOf 后续发布更高 DataVersion 也不会改变已经开始的分页。未来 API 应接受 `snapshot_id`（SnapshotKey JSON 字段）并与 `after_sequence` 一起传入；不能仅以 AsOf/DataVersion 代替快照身份。
+
 回测证券优先核对请求和每条非空 Order/Fill Instrument；请求只解析稳定的 instrument、parameters、config 字段，不导入应用 DTO。无请求证券时可由领域结果补全；没有任何合法证券或证券不一致时拒绝写入。订单/成交标识保持 LONGBLOB 字节完整。
 
 Outbox 的 Payload 是端口定义的不透明字节，用 JSON base64 字符串无损保存；消费者需先 JSON 解码为字节，再按事件协议解码。独立 Publish 按 EventID 幂等，重复 ID 的内容不同会拒绝。成功/部分成功/Fail 发布生成稳定的 compute.completed 事件 ID。当前没有外部投递器，PublishedAt 保持空值供后续消费。

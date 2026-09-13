@@ -92,10 +92,16 @@ func (s *SignalSnapshotStore) Latest(ctx context.Context, key port.SnapshotKey, 
 	if err := page.Validate(); err != nil {
 		return port.SignalSnapshot{}, err
 	}
+	if page.AfterSequence > 0 && key.SnapshotID == "" {
+		return port.SignalSnapshot{}, invalid("snapshot ID is required for continuation pages")
+	}
 	var model SignalSnapshotModel
 	query := s.db.WithContext(ctx).Where("strategy_id = ? AND strategy_version = ? AND parameters_hash = ? AND status IN ?", key.StrategyID, key.StrategyVersion, key.ParametersHash, []string{string(port.RunSucceeded), string(port.RunPartialSucceeded)})
 	if !key.AsOf.IsZero() {
 		query = query.Where("as_of = ?", key.AsOf)
+	}
+	if key.SnapshotID != "" {
+		query = query.Where("snapshot_id = ?", key.SnapshotID)
 	}
 	if err := query.Order("as_of DESC, data_version DESC, id DESC").Take(&model).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -103,7 +109,7 @@ func (s *SignalSnapshotStore) Latest(ctx context.Context, key port.SnapshotKey, 
 		}
 		return port.SignalSnapshot{}, err
 	}
-	result := port.SignalSnapshot{ID: model.SnapshotID, RunID: model.RunID, Key: port.SnapshotKey{StrategyID: model.StrategyID, StrategyVersion: model.StrategyVersion, ParametersHash: model.ParametersHash, AsOf: model.AsOf.UTC()}, DataVersion: market.DataVersion(model.DataVersion), Rows: []port.SnapshotRow{}, Failures: map[market.InstrumentID]port.Failure{}}
+	result := port.SignalSnapshot{ID: model.SnapshotID, RunID: model.RunID, Key: port.SnapshotKey{SnapshotID: model.SnapshotID, StrategyID: model.StrategyID, StrategyVersion: model.StrategyVersion, ParametersHash: model.ParametersHash, AsOf: model.AsOf.UTC()}, DataVersion: market.DataVersion(model.DataVersion), Rows: []port.SnapshotRow{}, Failures: map[market.InstrumentID]port.Failure{}}
 	var failures []snapshotFailure
 	if err := json.Unmarshal(model.FailuresJSON, &failures); err != nil {
 		return port.SignalSnapshot{}, err

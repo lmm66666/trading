@@ -10,12 +10,17 @@ import (
 )
 
 type SignalSnapshotStore interface {
+	// Latest resolves a snapshot only on the first page. Later pages require
+	// key.SnapshotID to pin the returned immutable snapshot across publications.
 	Latest(ctx context.Context, key SnapshotKey, page PageRequest) (SignalSnapshot, error)
 }
 
-// SnapshotKey selects an immutable published snapshot. A zero AsOf means the
-// newest published snapshot matching StrategyID, StrategyVersion and ParametersHash.
+// SnapshotKey selects an immutable published snapshot. Without SnapshotID, only
+// the first page may select the newest match (optionally restricted by AsOf).
+// Continuation pages must pass the returned snapshot ID. SnapshotID never
+// bypasses StrategyID, StrategyVersion, ParametersHash or nonzero AsOf filters.
 type SnapshotKey struct {
+	SnapshotID      string    `json:"snapshot_id,omitempty"`
 	StrategyID      string    `json:"strategy_id"`
 	StrategyVersion string    `json:"strategy_version"`
 	ParametersHash  string    `json:"parameters_hash"`
@@ -23,6 +28,9 @@ type SnapshotKey struct {
 }
 
 func (key SnapshotKey) Validate() error {
+	if err := ValidateIdentity(key.SnapshotID, "snapshot ID", MaxSnapshotIDBytes, true); err != nil {
+		return err
+	}
 	for _, field := range []struct {
 		name, value string
 		limit       int

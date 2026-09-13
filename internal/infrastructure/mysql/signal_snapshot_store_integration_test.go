@@ -48,3 +48,69 @@ func TestDurableSnapshotMySQLAtomicVisibility(t *testing.T) {
 		})
 	}
 }
+
+func TestDurableSnapshotMySQLPaginationStaysOnSelectedSnapshot(t *testing.T) {
+	for _, image := range []string{"mysql:5.7", "mysql:8.0"} {
+		t.Run(image, func(t *testing.T) {
+			db := dbtest.StartMySQL(t, image)
+			require.NoError(t, Migrate(db))
+			seedDurableInstrument(t, db)
+			require.NoError(t, db.Create(&InstrumentModel{BaseModel: BaseModel{ID: 42}, Exchange: "SSE", Code: "600001", Source: "test"}).Error)
+			ctx := context.Background()
+			reader := NewSignalSnapshotStore(db)
+			old := testSnapshot()
+			old.ID = "Old "
+			old.Rows = append(old.Rows, port.SnapshotRow{Instrument: market.InstrumentID{Exchange: market.SSE, Code: "600001"}, SignalTime: old.Key.AsOf, Reason: "old second row"})
+			tx := db.Begin()
+			require.NoError(t, insertSnapshot(tx, old, port.RunSucceeded, time.Now().UTC()))
+			pinned := old.Key
+			pinned.SnapshotID = old.ID
+			_, err := reader.Latest(ctx, pinned, port.PageRequest{Limit: 1})
+			require.ErrorIs(t, err, port.ErrSnapshotNotReady)
+			require.NoError(t, tx.Commit().Error)
+			first, err := reader.Latest(ctx, old.Key, port.PageRequest{Limit: 1})
+			require.NoError(t, err)
+			require.Equal(t, old.ID, first.ID)
+			require.Equal(t, "600000", first.Rows[0].Instrument.Code)
+
+			newer := testSnapshot()
+			newer.ID, newer.RunID, newer.DataVersion = "new", "new run", 2
+			newer.Rows[0].Reason = "new first row"
+			tx = db.Begin()
+			require.NoError(t, insertSnapshot(tx, newer, port.RunSucceeded, time.Now().UTC()))
+			require.NoError(t, tx.Commit().Error)
+			latest, err := reader.Latest(ctx, old.Key, port.PageRequest{Limit: 1})
+			require.NoError(t, err)
+			require.Equal(t, newer.ID, latest.ID)
+			require.Equal(t, first.Key.AsOf, latest.Key.AsOf)
+			second, err := reader.Latest(ctx, first.Key, port.PageRequest{AfterSequence: 1, Limit: 1})
+			require.NoError(t, err)
+			require.Equal(t, old.ID, second.ID)
+			require.Equal(t, "600001", second.Rows[0].Instrument.Code)
+			require.Equal(t, "old second row", second.Rows[0].Reason)
+			_, err = reader.Latest(ctx, old.Key, port.PageRequest{AfterSequence: 1, Limit: 1})
+			require.ErrorIs(t, err, port.ErrInvalidPortValue)
+
+			unpublished := testSnapshot()
+			unpublished.ID, unpublished.RunID, unpublished.DataVersion = "pending", "pending run", 3
+			tx = db.Begin()
+			require.NoError(t, insertSnapshot(tx, unpublished, port.RunPending, time.Now().UTC()))
+			require.NoError(t, tx.Commit().Error)
+			for _, change := range []func(*port.SnapshotKey){
+				func(key *port.SnapshotKey) { key.SnapshotID = "unknown" },
+				func(key *port.SnapshotKey) { key.SnapshotID = "old " },
+				func(key *port.SnapshotKey) { key.SnapshotID = "Old" },
+				func(key *port.SnapshotKey) { key.SnapshotID = "pending" },
+				func(key *port.SnapshotKey) { key.StrategyID = "other" },
+				func(key *port.SnapshotKey) { key.StrategyVersion = "v2" },
+				func(key *port.SnapshotKey) { key.ParametersHash = "other" },
+				func(key *port.SnapshotKey) { key.AsOf = key.AsOf.Add(time.Second) },
+			} {
+				key := pinned
+				change(&key)
+				_, err := reader.Latest(ctx, key, port.PageRequest{AfterSequence: 1, Limit: 1})
+				require.ErrorIs(t, err, port.ErrSnapshotNotReady)
+			}
+		})
+	}
+}
