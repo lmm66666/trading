@@ -57,6 +57,7 @@ func (status RunStatus) Validate() error {
 
 // Run holds all inputs required to reproduce an asynchronous execution. Its
 // RequestJSON is a caller-owned serialized DTO; queues and stores copy it.
+// Attempts is assigned by durable queues; callers enqueue with zero.
 type Run struct {
 	ID                string             `json:"id"`
 	IdempotencyKey    string             `json:"idempotency_key"`
@@ -68,12 +69,16 @@ type Run struct {
 	EngineVersion     string             `json:"engine_version"`
 	DataVersion       market.DataVersion `json:"data_version"`
 	RequestJSON       []byte             `json:"request_json"`
+	Attempts          int                `json:"attempts"`
 	LeaseOwner        string             `json:"lease_owner,omitempty"`
 	LeaseToken        string             `json:"lease_token,omitempty"`
 	CancelRequestedAt *time.Time         `json:"cancel_requested_at,omitempty"`
 }
 
 func (run Run) Validate() error {
+	if run.Attempts < 0 || run.Attempts > 4 {
+		return invalidPortValue("run attempts must be between zero and four")
+	}
 	for _, field := range []struct {
 		name, value string
 		limit       int

@@ -421,6 +421,7 @@ func (*fakeJobQueue) Retry(context.Context, string, string, time.Time, port.Fail
 	return nil
 }
 func (*fakeJobQueue) RequestCancel(context.Context, string) error { return nil }
+func (*fakeJobQueue) ReapExpired(context.Context) (int64, error)  { return 0, nil }
 
 type fakeSnapshotStore struct{}
 

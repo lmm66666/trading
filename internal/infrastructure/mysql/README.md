@@ -30,6 +30,26 @@ go test -tags=integration ./internal/infrastructure/mysql/... -count=1
 
 集成测试使用 testcontainers MySQL 模块 v0.44.0。无 Docker 会明确失败，不跳过或伪报通过；SQL mock 测试仅验证 SQL 边界、映射和错误传播，不能替代真实 DDL、事务隔离、并发锁及索引验收。
 
+## 持久化任务、租约和结果
+
+`NewJobQueue`、`NewRunStore`、`NewSignalSnapshotStore` 和 `NewOutbox` 实现对应 port。入队只接受零 Attempts、未取消的 PENDING Run；同 kind 与幂等键返回原 Run，输入 hash 不同则拒绝。所有身份按字节精确匹配。
+
+领取使用 MySQL 5.7 兼容的单条有序 `UPDATE ... ORDER BY created_at, id LIMIT 1`，不依赖 SKIP LOCKED。每次领取生成独立的 256 位随机 token，数据库 `UTC_TIMESTAMP(6)` 计算租约期限和重试就绪状态。Run.Attempts 返回持久化领取次数，最多4次（初次加3次重试）；取消任务不能领取。续租、重试和发布先锁定 run/token 记录，再用 run/owner/token、未过期和未取消条件更新，旧 worker 无法覆盖重领结果。
+
+`Retry` 清理租约并写入下次执行时间；第四次执行或不可重试错误直接进入 FAILED。应用 worker 必须通过 `port.JobQueue.ReapExpired(ctx)` 周期清理已耗尽次数的过期租约，每轮最多1000个。取消请求在行锁下直接进入 CANCELLED，同时保留数据库 UTC 请求时间；计算中的 worker 应通过 Get 检查并退出。
+
+扫描快照、回测汇总、订单、成交、权益点、完成 outbox 及 Run 终态在同一事务提交。明细单批最多1000行，最终更新再次检查租约期限；任一批次、outbox 或最终 CAS 失败全部回滚。扫描带失败项时保存 PARTIAL_SUCCEEDED。Latest 只读取已发布成功/部分成功快照，快照行按证券稳定排序，结果分页使用持久化 sequence。回测 Trades 接口返回 Fill 成交明细；领域 round-trip Trade 和 FinalPosition 没有独立读取端口，已由 Summary 与持仓布尔状态提供汇总。
+
+回测证券优先核对请求和每条非空 Order/Fill Instrument；请求只解析稳定的 instrument、parameters、config 字段，不导入应用 DTO。无请求证券时可由领域结果补全；没有任何合法证券或证券不一致时拒绝写入。订单/成交标识保持 LONGBLOB 字节完整。
+
+Outbox 的 Payload 是端口定义的不透明字节，用 JSON base64 字符串无损保存；消费者需先 JSON 解码为字节，再按事件协议解码。独立 Publish 按 EventID 幂等，重复 ID 的内容不同会拒绝。成功/部分成功/Fail 发布生成稳定的 compute.completed 事件 ID。当前没有外部投递器，PublishedAt 保持空值供后续消费。
+
+事务只重试已经回滚的 MySQL 1213/1205 锁冲突，最多3次、退避遵守 context；commit 返回错误时不重放、不报告成功或有效租约。真实并发、过期重领、取消、结果分批回滚和提交可见性必须通过 MySQL5.7/8.0 集成门禁：
+
+```bash
+go test -race -tags=integration ./internal/infrastructure/mysql -run '^TestDurable' -count=1
+```
+
 ## 旧行情迁移命令
 
 先在备份副本演练，正式运行时暂停旧行情采集和扫描：

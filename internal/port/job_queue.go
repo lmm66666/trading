@@ -11,4 +11,6 @@ type JobQueue interface {
 	Renew(ctx context.Context, runID, leaseToken string, lease time.Duration) error
 	Retry(ctx context.Context, runID, leaseToken string, nextAttempt time.Time, failure Failure) error
 	RequestCancel(ctx context.Context, runID string) error
+	// ReapExpired terminalizes a bounded batch of exhausted expired leases.
+	ReapExpired(ctx context.Context) (int64, error)
 }
