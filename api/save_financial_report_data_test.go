@@ -10,8 +10,7 @@ import (
 )
 
 func TestSaveFinancialReportDataSuccess(t *testing.T) {
-	svc := &mockStockDataService{}
-	r := setupTestRouter(svc, &mockFinancialReportService{}, &mockScheduler{}, nil, nil)
+	r := setupTestRouter(&mockFinancialReportService{}, nil, nil)
 
 	body, _ := json.Marshal(map[string]string{"code": "000001"})
 	w := httptest.NewRecorder()
@@ -33,8 +32,7 @@ func TestSaveFinancialReportDataSuccess(t *testing.T) {
 }
 
 func TestSaveFinancialReportDataMissingCode(t *testing.T) {
-	svc := &mockStockDataService{}
-	r := setupTestRouter(svc, &mockFinancialReportService{}, &mockScheduler{}, nil, nil)
+	r := setupTestRouter(&mockFinancialReportService{}, nil, nil)
 
 	body, _ := json.Marshal(map[string]string{})
 	w := httptest.NewRecorder()
@@ -48,9 +46,8 @@ func TestSaveFinancialReportDataMissingCode(t *testing.T) {
 }
 
 func TestSaveFinancialReportDataServiceError(t *testing.T) {
-	svc := &mockStockDataService{}
 	financialSvc := &mockFinancialReportService{saveErr: errors.New("service error")}
-	r := setupTestRouter(svc, financialSvc, &mockScheduler{}, nil, nil)
+	r := setupTestRouter(financialSvc, nil, nil)
 
 	body, _ := json.Marshal(map[string]string{"code": "000001"})
 	w := httptest.NewRecorder()

@@ -11,9 +11,7 @@ import (
 
 // StockHandler 股票数据 HTTP 处理器
 type StockHandler struct {
-	svc                business.StockDataService
 	financialSvc       business.FinancialReportService
-	scheduler          business.Scheduler
 	financialScheduler business.FinancialScheduler
 	signalSvc          business.SignalService
 	querySvc           business.QueryService
@@ -22,8 +20,8 @@ type StockHandler struct {
 }
 
 // NewStockHandler 创建 StockHandler
-func NewStockHandler(svc business.StockDataService, financialSvc business.FinancialReportService, scheduler business.Scheduler, financialScheduler business.FinancialScheduler, signalSvc business.SignalService, querySvc business.QueryService, macroSvc business.MacroService) *StockHandler {
-	return &StockHandler{svc: svc, financialSvc: financialSvc, scheduler: scheduler, financialScheduler: financialScheduler, signalSvc: signalSvc, querySvc: querySvc, macroSvc: macroSvc}
+func NewStockHandler(financialSvc business.FinancialReportService, financialScheduler business.FinancialScheduler, signalSvc business.SignalService, querySvc business.QueryService, macroSvc business.MacroService) *StockHandler {
+	return &StockHandler{financialSvc: financialSvc, financialScheduler: financialScheduler, signalSvc: signalSvc, querySvc: querySvc, macroSvc: macroSvc}
 }
 
 // response 统一 JSON 响应结构

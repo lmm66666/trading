@@ -140,7 +140,7 @@ func newKernelFixture(t *testing.T) *kernelFixture {
 	registry := &strategy.Registry{}
 	require.NoError(t, builtin.RegisterAll(registry))
 	f.services = KernelServices{Backtests: f.b, Scans: f.s, Runs: f.store, Registry: registry, Instruments: f.lookup, SnapshotKeys: f.lookup, SyncWaitTimeout: 20 * time.Millisecond, PollInterval: time.Millisecond, Clock: func() time.Time { return time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC) }}
-	f.router = NewRouter(nil, nil, nil, nil, nil, nil, nil, f.services)
+	f.router = NewRouter(nil, nil, nil, nil, nil, f.services)
 	return f
 }
 func kernelRequest(t *testing.T, f *kernelFixture, method, path, body string) *httptest.ResponseRecorder {

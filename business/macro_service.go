@@ -27,9 +27,9 @@ type MacroService interface {
 }
 
 type macroService struct {
-	shiborBroker    broker.ShiborBroker
-	exchangeBroker  ExchangeRateBroker
-	exchangeCodes   []string
+	shiborBroker   broker.ShiborBroker
+	exchangeBroker ExchangeRateBroker
+	exchangeCodes  []string
 }
 
 // NewMacroService 创建 MacroService 实例

@@ -69,14 +69,20 @@ func initializeData(cfg config.DB, db *gorm.DB, migrate func(*gorm.DB) error) (*
 }
 
 func migrateSchema(db *gorm.DB) error {
-	if err := db.AutoMigrate(&model.StockKlineDaily{}, &model.StockKlineWeekly{}, &model.FinancialReport{}, &model.StockInfo{}); err != nil {
+	if err := db.AutoMigrate(runtimeModels()...); err != nil {
 		return fmt.Errorf("auto migrate failed: %w", err)
 	}
-	// Legacy tables remain registered until every runtime reader/writer switches.
 	if err := mysqlinfra.Migrate(db); err != nil {
 		return fmt.Errorf("migrate strategy kernel schema: %w", err)
 	}
 	return nil
+}
+
+// runtimeModels excludes legacy technical K-line tables. They remain readable
+// through legacy repositories for rollback/migration tooling, but normal startup
+// no longer creates or mutates their schema.
+func runtimeModels() []any {
+	return []any{&model.FinancialReport{}, &model.StockInfo{}}
 }
 
 // mysqlDSN 统一无时区 DATETIME 的编码与解析口径；旧业务交易日期是

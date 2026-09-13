@@ -26,6 +26,15 @@ type ScanRuns interface {
 	Cancel(context.Context, string) error
 	Latest(context.Context, port.SnapshotKey, port.PageRequest) (port.SignalSnapshot, error)
 }
+type MarketIngestion interface {
+	Refresh(context.Context, market.InstrumentID) (application.RefreshResult, error)
+}
+type MarketTrigger interface {
+	TriggerNow(workers int) error
+}
+type MarketQueries interface {
+	Prices(context.Context, application.PriceQuery) (application.PriceResult, error)
+}
 
 // KernelServices 显式注入持久化用例；旧接口不再回退到旧技术策略引擎。
 type KernelServices struct {
@@ -35,6 +44,10 @@ type KernelServices struct {
 	Registry        *strategy.Registry
 	Instruments     port.InstrumentCodeReader
 	SnapshotKeys    port.PublishedSnapshotKeyReader
+	MarketIngestion MarketIngestion
+	MarketTrigger   MarketTrigger
+	MarketQueries   MarketQueries
+	MarketWorkers   int
 	SyncWaitTimeout time.Duration
 	PollInterval    time.Duration
 	Clock           func() time.Time
@@ -50,6 +63,8 @@ func writeApplicationError(c *gin.Context, op string, err error) {
 		respondError(c, 409, "RUN_RESULT_NOT_READY")
 	case errors.Is(err, errAmbiguousInstrument):
 		respondError(c, 409, "AMBIGUOUS_INSTRUMENT")
+	case errors.Is(err, application.ErrRefreshAlreadyRunning):
+		respondError(c, 429, "MARKET_REFRESH_ALREADY_RUNNING")
 	case errors.Is(err, application.ErrInvalidRequest), errors.Is(err, application.ErrDateRangeTooLarge), errors.Is(err, port.ErrInvalidPortValue), errors.Is(err, strategy.ErrInvalidParameter), errors.Is(err, strategy.ErrUnknownParameter), errors.Is(err, market.ErrInvalidInstrument), errors.Is(err, market.ErrExchangeRequired), errors.Is(err, backtest.ErrInvalidConfig):
 		respondError(c, 400, "INVALID_REQUEST")
 	case errors.Is(err, strategy.ErrUnknownStrategy), errors.Is(err, port.ErrRunNotFound), errors.Is(err, port.ErrMarketDataNotFound):
@@ -61,6 +76,7 @@ func writeApplicationError(c *gin.Context, op string, err error) {
 
 var errRunNotReady = errors.New("run result not ready")
 var errAmbiguousInstrument = errors.New("ambiguous instrument")
+var errKernelNotConfigured = errors.New("kernel not configured")
 
 // strictJSON 限制整个请求体（含空白），拒绝未知字段和第二个 JSON 值。
 func strictJSON(c *gin.Context, dst any) error {

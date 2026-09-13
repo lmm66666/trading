@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 	"trading/api"
+	"trading/config"
 )
 
 func TestKernelCompositionKeepsDurableIdempotencyReader(t *testing.T) {
@@ -23,10 +24,11 @@ func TestKernelCompositionKeepsDurableIdempotencyReader(t *testing.T) {
 	defer sqlDB.Close()
 	db, err := gorm.Open(mysql.New(mysql.Config{Conn: sqlDB, SkipInitializeWithVersion: true}), &gorm.Config{})
 	require.NoError(t, err)
-	kernel, pool, err := newKernel(db)
+	kernel, err := newKernel(context.Background(), db, config.WorkerConfig{})
 	require.NoError(t, err)
-	require.NotNil(t, pool)
-	router := api.NewRouter(nil, nil, nil, nil, nil, nil, nil, kernel)
+	require.NotNil(t, kernel.workers)
+	require.NotNil(t, kernel.marketScheduler)
+	router := api.NewRouter(nil, nil, nil, nil, nil, kernel.services)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, httptest.NewRequest("GET", "/api/v1/strategies", nil))
 	require.Equal(t, 200, w.Code)
@@ -41,13 +43,67 @@ func TestKernelCompositionKeepsDurableIdempotencyReader(t *testing.T) {
 func TestLoadConfigAndStartupValidation(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	require.NoError(t, os.WriteFile(path, []byte("Config:\n  DB:\n    Host: localhost\n"), 0600))
-	_, err := loadConfig(path)
+	require.NoError(t, os.WriteFile(path, []byte("Config:\n  DB:\n    Host: localhost\n  Worker:\n    Count: 6\n    LeaseSeconds: 45\n    PollIntervalMillis: 500\n    SyncWaitTimeoutSecs: 3\n    ScanBatchSize: 12\n"), 0600))
+	cfg, err := loadConfig(path)
 	require.NoError(t, err)
+	require.Equal(t, 6, cfg.Worker.Count)
+	require.Equal(t, 45, cfg.Worker.LeaseSeconds)
+	require.Equal(t, 500, cfg.Worker.PollIntervalMillis)
+	require.Equal(t, 3, cfg.Worker.SyncWaitTimeoutSecs)
+	require.Equal(t, 12, cfg.Worker.ScanBatchSize)
 	require.NoError(t, os.WriteFile(path, []byte("["), 0600))
 	_, err = loadConfig(path)
 	require.Error(t, err)
 	require.Error(t, run(context.Background(), filepath.Join(dir, "missing")))
+}
+
+func TestResolveWorkerConfigDefaultsAndRejectsOutOfBounds(t *testing.T) {
+	got, err := resolveWorkerConfig(config.WorkerConfig{})
+	require.NoError(t, err)
+	require.Equal(t, 4, got.Count)
+	require.Equal(t, 30*time.Second, got.Lease)
+	require.Equal(t, 250*time.Millisecond, got.PollInterval)
+	require.Equal(t, 2*time.Second, got.SyncWaitTimeout)
+	require.Equal(t, 8, got.ScanBatchSize)
+
+	_, err = resolveWorkerConfig(config.WorkerConfig{Count: 65})
+	require.Error(t, err)
+	_, err = resolveWorkerConfig(config.WorkerConfig{Count: 1, LeaseSeconds: 1, PollIntervalMillis: 1, SyncWaitTimeoutSecs: 1, ScanBatchSize: 65})
+	require.Error(t, err)
+}
+
+func TestRunBackgroundValidatesAllRunnersBeforeStarting(t *testing.T) {
+	started := make(chan struct{})
+	err := runBackground(context.Background(), func(ctx context.Context) error {
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	}, nil)
+	require.Error(t, err)
+	select {
+	case <-started:
+		t.Fatal("background service started before configuration validation completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
+func TestRunBackgroundCancelsAndJoinsPeersOnFailure(t *testing.T) {
+	failure := errors.New("scheduler failed")
+	joined := make(chan struct{})
+	err := runBackground(context.Background(),
+		func(context.Context) error { return failure },
+		func(ctx context.Context) error {
+			defer close(joined)
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	)
+	require.ErrorIs(t, err, failure)
+	select {
+	case <-joined:
+	default:
+		t.Fatal("peer background service was not joined")
+	}
 }
 
 func TestServerWorkerFailureStopsHTTPAndJoinsWorker(t *testing.T) {

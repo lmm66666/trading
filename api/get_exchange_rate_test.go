@@ -18,7 +18,7 @@ func TestGetExchangeRateByCode(t *testing.T) {
 			{Code: "USDCNY", Name: "美元/人民币", Open: 7.2000, Now: 7.2150, ChangePercent: 0.21},
 		},
 	}
-	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialScheduler{}, nil, &mockQueryService{}, macroSvc)
+	h := NewStockHandler(&mockFinancialReportService{}, &mockFinancialScheduler{}, nil, &mockQueryService{}, macroSvc)
 	r.GET("/api/macro/exchange-rate", h.GetExchangeRate)
 
 	w := httptest.NewRecorder()
@@ -39,7 +39,7 @@ func TestGetExchangeRateAll(t *testing.T) {
 			{Code: "DINIW", Name: "美元指数", Now: 104.30},
 		},
 	}
-	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialScheduler{}, nil, &mockQueryService{}, macroSvc)
+	h := NewStockHandler(&mockFinancialReportService{}, &mockFinancialScheduler{}, nil, &mockQueryService{}, macroSvc)
 	r.GET("/api/macro/exchange-rate", h.GetExchangeRate)
 
 	w := httptest.NewRecorder()
@@ -54,7 +54,7 @@ func TestGetExchangeRateAll(t *testing.T) {
 func TestGetExchangeRateServiceError(t *testing.T) {
 	r := gin.New()
 	macroSvc := &mockMacroService{err: errors.New("api error")}
-	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialScheduler{}, nil, &mockQueryService{}, macroSvc)
+	h := NewStockHandler(&mockFinancialReportService{}, &mockFinancialScheduler{}, nil, &mockQueryService{}, macroSvc)
 	r.GET("/api/macro/exchange-rate", h.GetExchangeRate)
 
 	w := httptest.NewRecorder()

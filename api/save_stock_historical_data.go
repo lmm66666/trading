@@ -1,30 +1,40 @@
 package api
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
+	"trading/internal/port"
 )
 
 // SaveStockHistoricalData 从 broker 获取历史数据并保存
 func (h *StockHandler) SaveStockHistoricalData(c *gin.Context) {
 	var req saveHistoricalRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, "invalid request body")
+	if err := strictJSON(c, &req); err != nil {
+		writeApplicationError(c, "decode historical refresh", err)
 		return
 	}
-
-	if req.Code == "" {
-		respondError(c, http.StatusBadRequest, "code is required")
+	if h.kernel.MarketIngestion == nil || h.kernel.Instruments == nil {
+		writeApplicationError(c, "historical refresh", errKernelNotConfigured)
 		return
 	}
-
-	if err := h.svc.SaveHistoricalData(c.Request.Context(), req.Code); err != nil {
-		respondInternalError(c, "save historical data", err)
+	ids, err := h.kernel.Instruments.ResolveCode(c.Request.Context(), req.Code)
+	if err != nil {
+		writeApplicationError(c, "resolve historical instrument", err)
 		return
 	}
-
-	respondSuccess(c, nil)
+	if len(ids) == 0 {
+		writeApplicationError(c, "resolve historical instrument", port.ErrMarketDataNotFound)
+		return
+	}
+	if len(ids) > 1 {
+		writeApplicationError(c, "resolve historical instrument", errAmbiguousInstrument)
+		return
+	}
+	result, err := h.kernel.MarketIngestion.Refresh(c.Request.Context(), ids[0])
+	if err != nil {
+		writeApplicationError(c, "refresh historical data", err)
+		return
+	}
+	respondSuccess(c, result)
 }
 
 // saveHistoricalRequest 保存历史数据请求体

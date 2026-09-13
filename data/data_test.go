@@ -11,7 +11,20 @@ import (
 	"testing"
 	"time"
 	"trading/config"
+	"trading/model"
 )
+
+func TestRuntimeModelsExcludeLegacyTechnicalKlines(t *testing.T) {
+	models := runtimeModels()
+	require.Contains(t, models, any(&model.FinancialReport{}))
+	require.Contains(t, models, any(&model.StockInfo{}))
+	for _, schema := range models {
+		switch schema.(type) {
+		case *model.StockKlineDaily, *model.StockKlineWeekly:
+			t.Fatalf("legacy technical table remains in runtime migration: %T", schema)
+		}
+	}
+}
 
 func TestMySQLDSNUsesUTCForKernelDatetimeRoundTrips(t *testing.T) {
 	dsn := mysqlDSN(config.DB{User: "user", Password: "password", Host: "127.0.0.1", Port: 3306, DBName: "trading"})
@@ -28,7 +41,7 @@ func TestMySQLDSNUsesUTCForKernelDatetimeRoundTrips(t *testing.T) {
 	require.True(t, input.Equal(decoded))
 }
 
-func TestInitializationClosesConnectionOnLegacyMigrationFailure(t *testing.T) {
+func TestInitializationClosesConnectionOnRuntimeMigrationFailure(t *testing.T) {
 	conn, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
 	require.NoError(t, err)
 	db, err := gorm.Open(mysqlgorm.New(mysqlgorm.Config{Conn: conn, SkipInitializeWithVersion: true}), &gorm.Config{DisableAutomaticPing: true, Logger: logger.Default.LogMode(logger.Silent)})
@@ -36,8 +49,8 @@ func TestInitializationClosesConnectionOnLegacyMigrationFailure(t *testing.T) {
 	mock.ExpectQuery("SELECT DATABASE").WillReturnRows(sqlmock.NewRows([]string{"database"}).AddRow("test"))
 	mock.ExpectQuery("SELECT SCHEMA_NAME").WillReturnRows(sqlmock.NewRows([]string{"schema_name"}).AddRow("test"))
 	mock.ExpectQuery("SELECT count.*information_schema.tables").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-	failure := errors.New("legacy migration unavailable")
-	mock.ExpectExec("CREATE TABLE `t_stock_kline_daily`").WillReturnError(failure)
+	failure := errors.New("runtime migration unavailable")
+	mock.ExpectExec("CREATE TABLE `financial_reports`").WillReturnError(failure)
 	mock.ExpectClose()
 	got, err := initializeData(config.DB{}, db, migrateSchema)
 	require.Nil(t, got)

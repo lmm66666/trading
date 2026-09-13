@@ -2,12 +2,16 @@ package business
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
 
 	"trading/pkg/indicator"
 )
+
+var ErrSchedulerNotStarted = errors.New("scheduler not started")
+var ErrSchedulerBusy = errors.New("another task is already running")
 
 // triggerGuard provides run-once protection for manual triggers.
 type triggerGuard struct {

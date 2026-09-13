@@ -18,7 +18,7 @@ func TestGetFinancialReportSignalSuccess(t *testing.T) {
 		},
 	}
 
-	router := setupTestRouter(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, signalSvc, &mockQueryService{})
+	router := setupTestRouter(&mockFinancialReportService{}, signalSvc, &mockQueryService{})
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/stocks/financial-report/signal", nil)
 	router.ServeHTTP(w, req)
@@ -41,7 +41,7 @@ func TestGetFinancialReportSignalWithParams(t *testing.T) {
 		},
 	}
 
-	router := setupTestRouter(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, signalSvc, &mockQueryService{})
+	router := setupTestRouter(&mockFinancialReportService{}, signalSvc, &mockQueryService{})
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/stocks/financial-report/signal?profit_threshold=0.15&quarter_count=3", nil)
 	router.ServeHTTP(w, req)
@@ -53,7 +53,7 @@ func TestGetFinancialReportSignalWithParams(t *testing.T) {
 
 // TestGetFinancialReportSignalInvalidThreshold 无效阈值返回 400
 func TestGetFinancialReportSignalInvalidThreshold(t *testing.T) {
-	router := setupTestRouter(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockSignalService{}, &mockQueryService{})
+	router := setupTestRouter(&mockFinancialReportService{}, &mockSignalService{}, &mockQueryService{})
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/stocks/financial-report/signal?profit_threshold=abc", nil)
 	router.ServeHTTP(w, req)
@@ -66,7 +66,7 @@ func TestGetFinancialReportSignalInvalidThreshold(t *testing.T) {
 // TestGetFinancialReportSignalServiceError 服务层错误返回 500
 func TestGetFinancialReportSignalServiceError(t *testing.T) {
 	signalSvc := &mockSignalService{signalErr: errors.New("db error")}
-	router := setupTestRouter(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, signalSvc, &mockQueryService{})
+	router := setupTestRouter(&mockFinancialReportService{}, signalSvc, &mockQueryService{})
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/stocks/financial-report/signal", nil)
 	router.ServeHTTP(w, req)
@@ -79,7 +79,7 @@ func TestGetFinancialReportSignalServiceError(t *testing.T) {
 // TestGetFinancialReportSignalEmptyResult 无匹配结果返回空列表
 func TestGetFinancialReportSignalEmptyResult(t *testing.T) {
 	signalSvc := &mockSignalService{signal: nil}
-	router := setupTestRouter(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, signalSvc, &mockQueryService{})
+	router := setupTestRouter(&mockFinancialReportService{}, signalSvc, &mockQueryService{})
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/stocks/financial-report/signal", nil)
 	router.ServeHTTP(w, req)

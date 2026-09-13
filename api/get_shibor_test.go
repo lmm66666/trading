@@ -40,7 +40,7 @@ func TestGetShiborSuccess(t *testing.T) {
 			{ReportDate: "2026-05-12", ReportPeriod: "隔夜(O/N)", IRRate: 1.2380, ChangeRate: -3.30, IndicatorID: "001"},
 		},
 	}
-	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialScheduler{}, nil, &mockQueryService{}, macroSvc)
+	h := NewStockHandler(&mockFinancialReportService{}, &mockFinancialScheduler{}, nil, &mockQueryService{}, macroSvc)
 	r.GET("/api/macro/shibor", h.GetShibor)
 
 	w := httptest.NewRecorder()
@@ -59,7 +59,7 @@ func TestGetShiborAllPeriods(t *testing.T) {
 			{ReportDate: "2026-05-12", ReportPeriod: "隔夜(O/N)", IRRate: 1.2380, IndicatorID: "001"},
 		},
 	}
-	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialScheduler{}, nil, &mockQueryService{}, macroSvc)
+	h := NewStockHandler(&mockFinancialReportService{}, &mockFinancialScheduler{}, nil, &mockQueryService{}, macroSvc)
 	r.GET("/api/macro/shibor", h.GetShibor)
 
 	w := httptest.NewRecorder()
@@ -74,7 +74,7 @@ func TestGetShiborAllPeriods(t *testing.T) {
 func TestGetShiborServiceError(t *testing.T) {
 	r := gin.New()
 	macroSvc := &mockMacroService{err: errors.New("api error")}
-	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialScheduler{}, nil, &mockQueryService{}, macroSvc)
+	h := NewStockHandler(&mockFinancialReportService{}, &mockFinancialScheduler{}, nil, &mockQueryService{}, macroSvc)
 	r.GET("/api/macro/shibor", h.GetShibor)
 
 	w := httptest.NewRecorder()

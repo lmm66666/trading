@@ -18,7 +18,7 @@ func TestGetFinancialReportSuccess(t *testing.T) {
 			{Code: "000001", ReportDate: "20251231", TotalRevenue: 1000, NetProfit: 100},
 		},
 	}
-	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialScheduler{}, nil, querySvc, nil)
+	h := NewStockHandler(&mockFinancialReportService{}, &mockFinancialScheduler{}, nil, querySvc, nil)
 	r.GET("/api/stocks/financial-report", h.GetFinancialReport)
 
 	w := httptest.NewRecorder()
@@ -32,7 +32,7 @@ func TestGetFinancialReportSuccess(t *testing.T) {
 
 func TestGetFinancialReportMissingCode(t *testing.T) {
 	r := gin.New()
-	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialScheduler{}, nil, &mockQueryService{}, nil)
+	h := NewStockHandler(&mockFinancialReportService{}, &mockFinancialScheduler{}, nil, &mockQueryService{}, nil)
 	r.GET("/api/stocks/financial-report", h.GetFinancialReport)
 
 	w := httptest.NewRecorder()
@@ -47,7 +47,7 @@ func TestGetFinancialReportMissingCode(t *testing.T) {
 func TestGetFinancialReportServiceError(t *testing.T) {
 	r := gin.New()
 	querySvc := &mockQueryService{reportsErr: errors.New("db error")}
-	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialScheduler{}, nil, querySvc, nil)
+	h := NewStockHandler(&mockFinancialReportService{}, &mockFinancialScheduler{}, nil, querySvc, nil)
 	r.GET("/api/stocks/financial-report", h.GetFinancialReport)
 
 	w := httptest.NewRecorder()
@@ -66,7 +66,7 @@ func TestGetFinancialReportPagination(t *testing.T) {
 			{Code: "000001", ReportDate: "20251231", TotalRevenue: 1000, NetProfit: 100},
 		},
 	}
-	h := NewStockHandler(&mockStockDataService{}, &mockFinancialReportService{}, &mockScheduler{}, &mockFinancialScheduler{}, nil, querySvc, nil)
+	h := NewStockHandler(&mockFinancialReportService{}, &mockFinancialScheduler{}, nil, querySvc, nil)
 	r.GET("/api/stocks/financial-report", h.GetFinancialReport)
 
 	w := httptest.NewRecorder()

@@ -121,3 +121,33 @@ func TestMarketSchedulerLifecycleErrorAndEmptyUniverse(t *testing.T) {
 	_, err = NewMarketScheduler(data, s.refresher, port.InstrumentScope{})
 	require.ErrorIs(t, err, ErrInvalidRequest)
 }
+
+func TestMarketSchedulerTriggerNowIsAsyncAndWaitsForShutdown(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	s, _ := schedulerFixture(t, 1, func(ctx context.Context, id market.InstrumentID) (RefreshResult, error) {
+		close(entered)
+		select {
+		case <-release:
+			return RefreshResult{Instrument: id, Version: 1, Quality: port.DataComplete}, nil
+		case <-ctx.Done():
+			return RefreshResult{}, ctx.Err()
+		}
+	})
+	require.NoError(t, s.TriggerNow(context.Background(), 1))
+	<-entered
+	require.ErrorIs(t, s.TriggerNow(context.Background(), 1), ErrRefreshAlreadyRunning)
+	waited := make(chan struct{})
+	go func() { s.Wait(); close(waited) }()
+	select {
+	case <-waited:
+		t.Fatal("Wait returned while refresh was still running")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-waited:
+	case <-time.After(time.Second):
+		t.Fatal("Wait did not observe async refresh completion")
+	}
+}

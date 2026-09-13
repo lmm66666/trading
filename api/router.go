@@ -7,9 +7,9 @@ import (
 )
 
 // NewRouter 创建 gin 路由
-func NewRouter(svc business.StockDataService, financialSvc business.FinancialReportService, scheduler business.Scheduler, financialScheduler business.FinancialScheduler, signalSvc business.SignalService, querySvc business.QueryService, macroSvc business.MacroService, kernel ...KernelServices) *gin.Engine {
+func NewRouter(financialSvc business.FinancialReportService, financialScheduler business.FinancialScheduler, signalSvc business.SignalService, querySvc business.QueryService, macroSvc business.MacroService, kernel ...KernelServices) *gin.Engine {
 	r := gin.Default()
-	h := NewStockHandler(svc, financialSvc, scheduler, financialScheduler, signalSvc, querySvc, macroSvc)
+	h := NewStockHandler(financialSvc, financialScheduler, signalSvc, querySvc, macroSvc)
 	if len(kernel) > 0 {
 		h.kernel = kernel[0]
 		r.POST("/api/v1/backtest-runs", h.CreateBacktestRun)

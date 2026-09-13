@@ -28,6 +28,7 @@ type MarketScheduler struct {
 	started   atomic.Bool
 	mu        sync.RWMutex
 	last      RefreshSummary
+	async     sync.WaitGroup
 }
 
 // 所有定时及手工全市场触发共用进程内 guard。跨进程协调由部署单实例保证。
@@ -54,6 +55,35 @@ func (s *MarketScheduler) RunOnce(ctx context.Context, workers int) RefreshSumma
 		return summary
 	}
 	defer marketRefreshRunning.Store(false)
+	return s.runOnce(ctx, workers)
+}
+
+// TriggerNow starts one managed refresh without tying its lifetime to an HTTP
+// request. The caller supplies the application root context; Wait joins all
+// accepted manual triggers before the database is closed.
+func (s *MarketScheduler) TriggerNow(ctx context.Context, workers int) error {
+	if workers < 1 || workers > MaxMarketWorkers {
+		return invalidRequest("invalid worker count")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !marketRefreshRunning.CompareAndSwap(false, true) {
+		return ErrRefreshAlreadyRunning
+	}
+	s.async.Add(1)
+	go func() {
+		defer s.async.Done()
+		defer marketRefreshRunning.Store(false)
+		s.runOnce(ctx, workers)
+	}()
+	return nil
+}
+
+func (s *MarketScheduler) Wait() { s.async.Wait() }
+
+func (s *MarketScheduler) runOnce(ctx context.Context, workers int) RefreshSummary {
+	summary := RefreshSummary{Results: map[market.InstrumentID]RefreshResult{}, Failures: map[market.InstrumentID]error{}}
 	defer func() { s.mu.Lock(); s.last = cloneRefreshSummary(summary); s.mu.Unlock() }()
 	if err := ctx.Err(); err != nil {
 		summary.Err = err
