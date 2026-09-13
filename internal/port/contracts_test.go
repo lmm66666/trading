@@ -18,6 +18,8 @@ var (
 	_ port.MarketData          = (*fakeMarketData)(nil)
 	_ port.MarketDataWriter    = (*fakeMarketDataWriter)(nil)
 	_ port.MarketSource        = (*fakeMarketSource)(nil)
+	_ port.FuturesSource       = (*fakeFuturesSource)(nil)
+	_ port.FuturesDataWriter   = (*fakeFuturesDataWriter)(nil)
 	_ port.RunStore            = (*fakeRunStore)(nil)
 	_ port.JobQueue            = (*fakeJobQueue)(nil)
 	_ port.SignalSnapshotStore = (*fakeSnapshotStore)(nil)
@@ -382,6 +384,21 @@ type fakeMarketSource struct{}
 
 func (*fakeMarketSource) FetchBars(context.Context, market.InstrumentID, market.Timeframe, time.Time, time.Time) ([]market.Bar, []market.AdjustmentFactor, error) {
 	return nil, nil, nil
+}
+
+type fakeFuturesSource struct{}
+
+func (*fakeFuturesSource) FetchDaily(context.Context, market.Exchange, time.Time, []string) (port.FuturesPartition, error) {
+	return port.FuturesPartition{}, nil
+}
+
+type fakeFuturesDataWriter struct{}
+
+func (*fakeFuturesDataWriter) PublishContract(context.Context, port.FuturesContractBatch) (market.DataVersion, error) {
+	return 0, nil
+}
+func (*fakeFuturesDataWriter) PublishContinuous(context.Context, port.FuturesContinuousBatch) (market.DataVersion, error) {
+	return 0, nil
 }
 func (*fakeMarketSource) FetchCorporateActions(context.Context, market.InstrumentID) ([]market.CorporateAction, error) {
 	return nil, nil
