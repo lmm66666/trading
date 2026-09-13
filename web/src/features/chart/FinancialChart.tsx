@@ -31,6 +31,8 @@ export function FinancialChart({ bars, series, onLoadMore }: FinancialChartProps
   const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const indicatorUpdatersRef = useRef(new Map<string, (item: ChartSeries) => void>())
   const previousBarsCountRef = useRef(0)
+  const rangeHandlerRef = useRef<(range: { from: number; to: number } | null) => void>(() => undefined)
+  const rangeSubscribedRef = useRef(false)
   loadMoreRef.current = onLoadMore
   const definitionKey = useMemo(
     () => series.map((item) => `${item.key}:${item.kind}:${item.component}`).join('|'),
@@ -97,15 +99,16 @@ export function FinancialChart({ bars, series, onLoadMore }: FinancialChartProps
     const rangeHandler = (range: { from: number; to: number } | null) => {
       if (range && range.from < 12) loadMoreRef.current()
     }
-    chart.timeScale().subscribeVisibleLogicalRangeChange(rangeHandler)
+    rangeHandlerRef.current = rangeHandler
     return () => {
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(rangeHandler)
+      if (rangeSubscribedRef.current) chart.timeScale().unsubscribeVisibleLogicalRangeChange(rangeHandler)
       chart.remove()
       chartRef.current = null
       candlesRef.current = null
       volumeRef.current = null
       indicatorUpdatersRef.current.clear()
       previousBarsCountRef.current = 0
+      rangeSubscribedRef.current = false
     }
   }, [definitionKey])
 
@@ -127,6 +130,8 @@ export function FinancialChart({ bars, series, onLoadMore }: FinancialChartProps
     const prepended = bars.length - previousCount
     if (previousCount === 0) {
       chart.timeScale().fitContent()
+      chart.timeScale().subscribeVisibleLogicalRangeChange(rangeHandlerRef.current)
+      rangeSubscribedRef.current = true
     } else if (visibleRange && prepended > 0) {
       chart.timeScale().setVisibleLogicalRange({ from: visibleRange.from + prepended, to: visibleRange.to + prepended })
     }

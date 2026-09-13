@@ -3,15 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { FinancialChart } from './FinancialChart'
 
 const mocks = vi.hoisted(() => {
+  let visibleRangeHandler: ((range: { from: number; to: number } | null) => void) | null = null
   const setData = vi.fn()
   const applyOptions = vi.fn()
   const series = { setData, priceScale: () => ({ applyOptions }) }
   const setStretchFactor = vi.fn()
   const timeScale = {
-    fitContent: vi.fn(),
+    fitContent: vi.fn(() => visibleRangeHandler?.({ from: 0, to: 100 })),
     getVisibleLogicalRange: vi.fn(() => ({ from: 10, to: 30 })),
     setVisibleLogicalRange: vi.fn(),
-    subscribeVisibleLogicalRangeChange: vi.fn(),
+    subscribeVisibleLogicalRangeChange: vi.fn((handler: (range: { from: number; to: number } | null) => void) => { visibleRangeHandler = handler }),
     unsubscribeVisibleLogicalRangeChange: vi.fn(),
   }
   const chart = {
@@ -52,6 +53,7 @@ describe('FinancialChart', () => {
     expect(mocks.chart.addSeries).toHaveBeenCalledTimes(6)
     expect(mocks.chart.addSeries).toHaveBeenCalledWith('line', expect.objectContaining({ title: 'SMA 5' }), 0)
     expect(mocks.timeScale.fitContent).toHaveBeenCalled()
+    expect(onLoadMore).not.toHaveBeenCalled()
     const rangeHandler = mocks.timeScale.subscribeVisibleLogicalRangeChange.mock.calls[0][0]
     rangeHandler({ from: 3, to: 20 })
     rangeHandler(null)
