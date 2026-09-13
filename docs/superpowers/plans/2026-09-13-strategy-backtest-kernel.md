@@ -56,7 +56,6 @@
 - Create: `internal/market/corporate_action.go`
 - Test: `internal/market/dataset_test.go`
 - Test: `internal/market/adjustment_test.go`
-- Modify: `model/README.md`
 - Modify: `go.mod`
 - Modify: `go.sum`
 
@@ -192,18 +191,14 @@ func AlignAsOf(primary, auxiliary Dataset) []Alignment
 
 Use binary search for the last auxiliary CloseTime not after the primary CloseTime. Return `ok=false` when no factor applies; never silently substitute raw prices.
 
-- [ ] **Step 6: Update the persistence-model rules**
-
-Change `model/README.md` to require UTC `time.Time` for timestamps, a separate date-only trading value, explicit table names, and audit fields. Keep the one-table-per-file rule.
-
-- [ ] **Step 7: Run tests and commit**
+- [ ] **Step 6: Run tests and commit**
 
 Run: `go test ./internal/market -cover`
 
 Expected: PASS with package coverage at least 90%.
 
 ```bash
-git add internal/market model/README.md go.mod go.sum
+git add internal/market go.mod go.sum
 git commit -m "feat: add versioned market domain primitives"
 ```
 
@@ -1092,7 +1087,7 @@ Use the following field matrix for the remaining one-table-per-file models:
 
 All monetary and price columns are signed `BIGINT`; version and sequence columns are unsigned integers. JSON payloads use MySQL `JSON` where 5.7 supports it. Add unique indexes exactly as described in the design and add `(valid_from_version, instrument_id)` indexes so `DirtyInstruments` can find Bars, factors, or actions revised between two versions without scanning historical rows.
 
-`Migrate` calls `AutoMigrate` in dependency order and verifies required index names after creation. New runtime code must not add old daily/weekly tables back to migration registration.
+`Migrate` calls `AutoMigrate` in dependency order and verifies required index names after creation. Keep the existing legacy daily/weekly AutoMigrate registration until Task 15 switches every runtime reader and writer; Task 15 then removes that registration so the final application has one canonical market schema.
 
 - [ ] **Step 4: Add failing version-visibility and batch-query tests**
 
@@ -1787,6 +1782,7 @@ git commit -m "feat: expose durable strategy run APIs"
 - Modify: `api/get_stock_price_test.go`
 - Modify: `main.go`
 - Modify: `config/config.go`
+- Modify: `data/data.go`
 - Delete: `pkg/filter/*.go`
 - Delete: `pkg/filter/financial/*.go`
 - Delete: `pkg/strategy/*.go`
@@ -1864,7 +1860,7 @@ Run: `go test ./business ./api ./internal/...`
 Expected: PASS.
 
 ```bash
-git add internal/financialscreen business api/save_stock_historical_data.go api/save_stock_historical_data_test.go api/append_stock_data.go api/append_stock_data_test.go api/get_stock_price.go api/get_stock_price_test.go main.go config pkg/filter pkg/strategy
+git add internal/financialscreen business api/save_stock_historical_data.go api/save_stock_historical_data_test.go api/append_stock_data.go api/append_stock_data_test.go api/get_stock_price.go api/get_stock_price_test.go main.go config data/data.go pkg/filter pkg/strategy
 git commit -m "refactor: cut over to the new strategy kernel"
 ```
 
@@ -1879,6 +1875,7 @@ git commit -m "refactor: cut over to the new strategy kernel"
 - Create: `README.md` if absent
 - Modify: `api/api.md`
 - Modify: `AGENTS.md`
+- Modify: `model/README.md`
 - Create: `internal/application/scan_fixture_test.go`
 - Create: `internal/application/scan_benchmark_test.go`
 - Create: `scripts/verify.sh`
@@ -1922,6 +1919,8 @@ Document:
 - scan snapshot freshness and errors;
 - MySQL-only first deployment and Redis/Kafka adoption triggers;
 - known behavior change from future-data removal.
+
+Update `model/README.md` at this final cutover point to require UTC `time.Time` for timestamps, a separate date-only trading value, explicit table names, and audit fields while preserving the one-table-per-file rule.
 
 Remove stale scored-signal examples from `api/api.md`. Update `AGENTS.md` project structure and test commands.
 
@@ -1979,7 +1978,7 @@ Expected: user-owned dirty files remain unstaged, no whitespace errors, no crede
 - [ ] **Step 8: Commit documentation and hardening**
 
 ```bash
-git add Dockerfile .dockerignore config.example.yaml README.md api/api.md AGENTS.md internal/application/scan_fixture_test.go internal/application/scan_benchmark_test.go scripts/verify.sh
+git add Dockerfile .dockerignore config.example.yaml README.md api/api.md AGENTS.md model/README.md internal/application/scan_fixture_test.go internal/application/scan_benchmark_test.go scripts/verify.sh
 git commit -m "docs: finalize strategy kernel migration"
 ```
 
