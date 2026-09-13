@@ -6,11 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 	"trading/internal/market"
 	"trading/internal/port"
-	"unicode/utf8"
 )
 
 func invalid(format string, args ...any) error {
@@ -30,9 +28,6 @@ func canonicalBatch(input port.MarketWriteBatch) (port.MarketWriteBatch, string,
 	b.Digest = "canonicalizing"
 	if err := b.Validate(); err != nil {
 		return b, "", err
-	}
-	if len(b.Source) > 128 || !utf8.ValidString(b.Source) {
-		return b, "", invalid("source must be valid UTF-8 within 128 bytes")
 	}
 	b.Bars = make(map[market.Timeframe][]market.Bar, len(input.Bars))
 	for tf, bars := range input.Bars {
@@ -121,8 +116,8 @@ func validateStoredBar(b market.Bar) error {
 }
 
 func validateAction(a market.CorporateAction) error {
-	if strings.TrimSpace(a.ID) == "" || len(a.ID) > 128 || !utf8.ValidString(a.ID) {
-		return invalid("invalid source event ID")
+	if err := port.ValidateIdentity(a.ID, "source event ID", port.MaxSourceEventIDBytes, false); err != nil {
+		return err
 	}
 	if err := a.Instrument.Validate(); err != nil {
 		return err

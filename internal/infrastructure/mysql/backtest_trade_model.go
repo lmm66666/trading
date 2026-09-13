@@ -4,11 +4,11 @@ import "time"
 
 type BacktestTradeModel struct {
 	BaseModel
-	RunID         string    `gorm:"size:64;not null;uniqueIndex:uq_trade_sequence,priority:1"`
+	RunID         string    `gorm:"type:varbinary(64);not null;uniqueIndex:uq_trade_sequence,priority:1"`
 	Sequence      uint64    `gorm:"type:bigint unsigned;not null;uniqueIndex:uq_trade_sequence,priority:2"`
 	OrderSequence uint64    `gorm:"type:bigint unsigned;not null"`
-	FillID        string    `gorm:"type:text;not null"`
-	OrderID       string    `gorm:"type:text;not null"`
+	FillID        string    `gorm:"type:longblob;not null"`
+	OrderID       string    `gorm:"type:longblob;not null"`
 	Time          time.Time `gorm:"type:datetime(6);not null"`
 	Side          string    `gorm:"size:8;not null"`
 	Quantity      int64     `gorm:"type:bigint;not null"`

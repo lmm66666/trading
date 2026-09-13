@@ -177,3 +177,4 @@ docker save -o trading.tar trading:latest
 - `data.New` 同时执行旧表迁移和内核 `Migrate`，Task15 运行时切换前不得撤掉旧表注册。
 - 行情发布是增量 upsert，缺省键不代表删除；保留版本 0 只作发布锁，所有业务读取必须使用大于 0 的 COMPLETE 版本。
 - Docker 集成测试带 `integration` 标签；无 Docker 必须报告环境失败，不能把编译检查或 SQL mock 结果当作真实 MySQL 验证通过。
+- 不透明身份字段必须精确区分大小写和尾空格：有界字段使用 VARBINARY 并与 port UTF-8 字节长度验证一致；无界且不索引的订单/成交标识使用 LONGBLOB，普通展示字段不做二进制化。

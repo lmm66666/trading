@@ -186,9 +186,9 @@ func TestOrderAndFillSchemaCanRestoreDomainProvenance(t *testing.T) {
 	require.Equal(t, "datetime(6)", order.FieldsByName["AttemptedAt"].TagSettings["TYPE"])
 	require.True(t, order.FieldsByName["CreatedTime"].NotNull)
 	require.False(t, order.FieldsByName["AttemptedAt"].NotNull)
-	require.Equal(t, "text", order.FieldsByName["OrderID"].TagSettings["TYPE"])
+	require.Equal(t, "longblob", order.FieldsByName["OrderID"].TagSettings["TYPE"])
 	trade, err := schema.Parse(&BacktestTradeModel{}, &sync.Map{}, schema.NamingStrategy{})
 	require.NoError(t, err)
 	require.NotNil(t, trade.FieldsByName["OrderID"])
-	require.Equal(t, "text", trade.FieldsByName["FillID"].TagSettings["TYPE"])
+	require.Equal(t, "longblob", trade.FieldsByName["FillID"].TagSettings["TYPE"])
 }

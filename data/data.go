@@ -28,11 +28,22 @@ func New(cfg config.DB) (*Data, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open mysql failed: %w", err)
 	}
+	return initializeData(cfg, db, migrateSchema)
+}
 
+// initializeData 在初始化成功前拥有连接；任何迁移错误都统一清理，
+// 成功返回后才把连接所有权交给 Data。
+func initializeData(cfg config.DB, db *gorm.DB, migrate func(*gorm.DB) error) (*Data, error) {
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, fmt.Errorf("get sql.DB failed: %w", err)
 	}
+	transferred := false
+	defer func() {
+		if !transferred {
+			_ = sqlDB.Close()
+		}
+	}()
 
 	maxOpen := cfg.MaxOpenConns
 	if maxOpen <= 0 {
@@ -50,17 +61,22 @@ func New(cfg config.DB) (*Data, error) {
 	sqlDB.SetMaxOpenConns(maxOpen)
 	sqlDB.SetMaxIdleConns(maxIdle)
 	sqlDB.SetConnMaxLifetime(time.Duration(lifetimeMin) * time.Minute)
+	if err := migrate(db); err != nil {
+		return nil, err
+	}
+	transferred = true
+	return &Data{db: db}, nil
+}
 
+func migrateSchema(db *gorm.DB) error {
 	if err := db.AutoMigrate(&model.StockKlineDaily{}, &model.StockKlineWeekly{}, &model.FinancialReport{}, &model.StockInfo{}); err != nil {
-		return nil, fmt.Errorf("auto migrate failed: %w", err)
+		return fmt.Errorf("auto migrate failed: %w", err)
 	}
 	// Legacy tables remain registered until every runtime reader/writer switches.
 	if err := mysqlinfra.Migrate(db); err != nil {
-		_ = sqlDB.Close()
-		return nil, fmt.Errorf("migrate strategy kernel schema: %w", err)
+		return fmt.Errorf("migrate strategy kernel schema: %w", err)
 	}
-
-	return &Data{db: db}, nil
+	return nil
 }
 
 // mysqlDSN 统一无时区 DATETIME 的编码与解析口径；旧业务交易日期是

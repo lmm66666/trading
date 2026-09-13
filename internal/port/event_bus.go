@@ -21,8 +21,14 @@ type Event struct {
 }
 
 func (event Event) Validate() error {
-	if strings.TrimSpace(event.ID) == "" || strings.TrimSpace(event.Kind) == "" || strings.TrimSpace(event.AggregateID) == "" {
-		return invalidPortValue("event ID, kind and aggregate ID are required")
+	if err := ValidateIdentity(event.ID, "event ID", MaxEventIDBytes, false); err != nil {
+		return err
+	}
+	if err := ValidateIdentity(event.AggregateID, "aggregate ID", MaxAggregateIDBytes, false); err != nil {
+		return err
+	}
+	if strings.TrimSpace(event.Kind) == "" {
+		return invalidPortValue("event kind is required")
 	}
 	return validateUTCTime(event.OccurredAt, "event occurred at", false)
 }

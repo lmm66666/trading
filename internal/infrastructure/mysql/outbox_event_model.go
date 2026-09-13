@@ -4,9 +4,9 @@ import "time"
 
 type OutboxEventModel struct {
 	BaseModel
-	EventID     string     `gorm:"size:64;not null;uniqueIndex:uq_outbox_event"`
+	EventID     string     `gorm:"type:varbinary(64);not null;uniqueIndex:uq_outbox_event"`
 	Kind        string     `gorm:"size:64;not null"`
-	AggregateID string     `gorm:"size:128;not null"`
+	AggregateID string     `gorm:"type:varbinary(128);not null"`
 	Payload     []byte     `gorm:"type:json;not null"`
 	OccurredAt  time.Time  `gorm:"type:datetime(6);not null"`
 	PublishedAt *time.Time `gorm:"type:datetime(6);index:idx_outbox_pending"`

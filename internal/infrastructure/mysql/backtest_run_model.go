@@ -2,11 +2,11 @@ package mysql
 
 type BacktestRunModel struct {
 	BaseModel
-	RunID              string `gorm:"size:64;not null;uniqueIndex:uq_backtest_run"`
+	RunID              string `gorm:"type:varbinary(64);not null;uniqueIndex:uq_backtest_run"`
 	InstrumentID       uint64 `gorm:"type:bigint unsigned;not null;index:idx_backtest_instrument"`
-	StrategyID         string `gorm:"size:64;not null"`
-	StrategyVersion    string `gorm:"size:32;not null"`
-	EngineVersion      string `gorm:"size:32;not null"`
+	StrategyID         string `gorm:"type:varbinary(64);not null"`
+	StrategyVersion    string `gorm:"type:varbinary(32);not null"`
+	EngineVersion      string `gorm:"type:varbinary(32);not null"`
 	DataVersion        uint64 `gorm:"type:bigint unsigned;not null"`
 	ParametersJSON     []byte `gorm:"type:json;not null"`
 	ConfigJSON         []byte `gorm:"type:json;not null"`

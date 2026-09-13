@@ -74,12 +74,17 @@ type Run struct {
 }
 
 func (run Run) Validate() error {
-	for field, value := range map[string]string{
-		"run ID": run.ID, "idempotency key": run.IdempotencyKey, "input hash": run.InputHash,
-		"strategy ID": run.StrategyID, "strategy version": run.StrategyVersion, "engine version": run.EngineVersion,
+	for _, field := range []struct {
+		name, value string
+		limit       int
+		optional    bool
+	}{
+		{"run ID", run.ID, MaxRunIDBytes, false}, {"idempotency key", run.IdempotencyKey, MaxIdempotencyKeyBytes, false}, {"input hash", run.InputHash, MaxHashBytes, false},
+		{"strategy ID", run.StrategyID, MaxStrategyIDBytes, false}, {"strategy version", run.StrategyVersion, MaxStrategyVersionBytes, false}, {"engine version", run.EngineVersion, MaxEngineVersionBytes, false},
+		{"lease owner", run.LeaseOwner, MaxLeaseIdentityBytes, true}, {"lease token", run.LeaseToken, MaxLeaseIdentityBytes, true},
 	} {
-		if strings.TrimSpace(value) == "" {
-			return invalidPortValue("%s is required", field)
+		if err := ValidateIdentity(field.value, field.name, field.limit, field.optional); err != nil {
+			return err
 		}
 	}
 	if err := run.Kind.Validate(); err != nil {

@@ -4,7 +4,7 @@ import "time"
 
 type BacktestEquityModel struct {
 	BaseModel
-	RunID         string    `gorm:"size:64;not null;uniqueIndex:uq_equity_sequence,priority:1"`
+	RunID         string    `gorm:"type:varbinary(64);not null;uniqueIndex:uq_equity_sequence,priority:1"`
 	Sequence      uint64    `gorm:"type:bigint unsigned;not null;uniqueIndex:uq_equity_sequence,priority:2"`
 	Time          time.Time `gorm:"type:datetime(6);not null"`
 	Cash          int64     `gorm:"type:bigint;not null"`

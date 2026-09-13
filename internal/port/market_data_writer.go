@@ -2,7 +2,6 @@ package port
 
 import (
 	"context"
-	"strings"
 
 	"trading/internal/market"
 )
@@ -23,11 +22,11 @@ type MarketWriteBatch struct {
 }
 
 func (batch MarketWriteBatch) Validate() error {
-	if strings.TrimSpace(batch.Source) == "" {
-		return invalidPortValue("source is required")
+	if err := ValidateIdentity(batch.Source, "source", MaxMarketSourceBytes, false); err != nil {
+		return err
 	}
-	if strings.TrimSpace(batch.Digest) == "" {
-		return invalidPortValue("digest is required")
+	if err := ValidateIdentity(batch.Digest, "digest", MaxHashBytes, false); err != nil {
+		return err
 	}
 	if err := validateInstrument(batch.Instrument, "instrument"); err != nil {
 		return err
@@ -54,7 +53,10 @@ func (batch MarketWriteBatch) Validate() error {
 		}
 	}
 	for _, action := range batch.Actions {
-		if action.Instrument != batch.Instrument || strings.TrimSpace(action.ID) == "" {
+		if err := ValidateIdentity(action.ID, "source event ID", MaxSourceEventIDBytes, false); err != nil {
+			return err
+		}
+		if action.Instrument != batch.Instrument {
 			return invalidPortValue("corporate action is invalid")
 		}
 		if err := validateUTCTime(action.ExDate, "corporate action ex date", false); err != nil {

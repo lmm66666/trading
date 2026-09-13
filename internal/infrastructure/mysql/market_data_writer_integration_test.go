@@ -49,48 +49,58 @@ func TestPublishClosesChangedRevisionAndKeepsUnchangedBar(t *testing.T) {
 }
 
 func TestPublishRollsBackRevisionClosuresOnInsertFailure(t *testing.T) {
-	db := dbtest.StartMySQL(t, "mysql:8.0")
-	require.NoError(t, Migrate(db))
-	repo := NewMarketDataRepository(db)
-	ctx := context.Background()
-	v, err := repo.Publish(ctx, testBatch(100000))
-	require.NoError(t, err)
-	require.NoError(t, db.Callback().Create().Before("gorm:create").Register("fail_replacement", func(tx *gorm.DB) {
-		if tx.Statement.Table == "t_market_bars" {
-			tx.AddError(fmt.Errorf("injected insert failure"))
-		}
-	}))
-	_, err = repo.Publish(ctx, testBatch(110000))
-	require.Error(t, err)
-	latest, err := repo.LatestCompleteVersion(ctx)
-	require.NoError(t, err)
-	require.Equal(t, v, latest)
-	var bars []MarketBarModel
-	require.NoError(t, db.Find(&bars).Error)
-	require.Len(t, bars, 1)
-	require.Nil(t, bars[0].ValidToVersion)
-	var count int64
-	require.NoError(t, db.Model(&DataVersionModel{}).Where("version > 0").Count(&count).Error)
-	require.Equal(t, int64(1), count)
+	for _, image := range []string{"mysql:5.7", "mysql:8.0"} {
+		t.Run(image, func(t *testing.T) {
+			db := dbtest.StartMySQL(t, image)
+			require.NoError(t, Migrate(db))
+			repo := NewMarketDataRepository(db)
+			ctx := context.Background()
+			v, err := repo.Publish(ctx, testBatch(100000))
+			require.NoError(t, err)
+			require.NoError(t, db.Callback().Create().Before("gorm:create").Register("fail_replacement", func(tx *gorm.DB) {
+				if tx.Statement.Table == "t_market_bars" {
+					tx.AddError(fmt.Errorf("injected insert failure"))
+				}
+			}))
+			_, err = repo.Publish(ctx, testBatch(110000))
+			require.Error(t, err)
+			latest, err := repo.LatestCompleteVersion(ctx)
+			require.NoError(t, err)
+			require.Equal(t, v, latest)
+			var bars []MarketBarModel
+			require.NoError(t, db.Find(&bars).Error)
+			require.Len(t, bars, 1)
+			require.Nil(t, bars[0].ValidToVersion)
+			var count int64
+			require.NoError(t, db.Model(&DataVersionModel{}).Where("version > 0").Count(&count).Error)
+			require.Equal(t, int64(1), count)
+
+		})
+	}
 }
 
 func TestPublishConcurrentSameBatchHasOneVersion(t *testing.T) {
-	db := dbtest.StartMySQL(t, "mysql:8.0")
-	require.NoError(t, Migrate(db))
-	repo := NewMarketDataRepository(db)
-	versions := make([]market.DataVersion, 8)
-	errs := make([]error, 8)
-	var wg sync.WaitGroup
-	for i := range versions {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			versions[i], errs[i] = repo.Publish(context.Background(), testBatch(100000))
-		}(i)
-	}
-	wg.Wait()
-	for i := range versions {
-		require.NoError(t, errs[i])
-		require.Equal(t, market.DataVersion(1), versions[i])
+	for _, image := range []string{"mysql:5.7", "mysql:8.0"} {
+		t.Run(image, func(t *testing.T) {
+			db := dbtest.StartMySQL(t, image)
+			require.NoError(t, Migrate(db))
+			repo := NewMarketDataRepository(db)
+			versions := make([]market.DataVersion, 8)
+			errs := make([]error, 8)
+			var wg sync.WaitGroup
+			for i := range versions {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					versions[i], errs[i] = repo.Publish(context.Background(), testBatch(100000))
+				}(i)
+			}
+			wg.Wait()
+			for i := range versions {
+				require.NoError(t, errs[i])
+				require.Equal(t, market.DataVersion(1), versions[i])
+			}
+
+		})
 	}
 }

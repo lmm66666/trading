@@ -2,6 +2,10 @@
 
 本目录提供 MySQL 5.7/8.0 的版本化行情仓储和内核表结构。一张表一个模型，领域及 port 不依赖 GORM。连接必须使用 `parseTime=true&loc=UTC`；时间以 UTC `DATETIME(6)` 存储，Price/Money 使用有符号 BIGINT，版本和序号使用无符号整数。
 
+不透明身份字段采用 VARBINARY，保证 `Key`、`key`、`key ` 精确区分，避免 `_ci` 排序规则及 PAD SPACE 的隐式合并。RunID、SnapshotID、EventID、StrategyID、摘要/参数 hash 为 64 字节；策略/引擎版本为 32 字节；幂等键、租约 owner/token、AggregateID、Source、SourceEventID 为 128 字节。`port.ValidateIdentity` 及各 DTO Validate 校验相同的 UTF-8 字节上限，不 trim 或修改身份；接受标量身份参数的后续适配器也应调用该验证。普通状态、类型、名称、原因保持文本。当前 OrderID 把无长度限制的 Reason 拼入标识，OrderID/FillID 因而使用不参与索引的 LONGBLOB，保持字节完整；以后可单独将领域 ID 改成固定长度标识，本迁移不改领域语义。
+
+连接初始化在所有迁移完成前持有所有权，旧表或内核迁移任一步失败都释放连接，成功后才交给 Data。若已有早期测试数据，切换身份列前需确认其字节长度符合端口边界，不能依赖数据库截断修复超长旧值。
+
 `Migrate` 按依赖顺序创建 13 张内核表，检查关键索引，并幂等建立版本 0 锁行。版本 0 的状态为 `INTERNAL_LOCK`、来源为 `__kernel_version_lock__`，只用于序列化发布，永远不能作为已完成数据版本读取。旧表继续由 `data.New` 注册迁移，直到 Task15 切换运行时。
 
 `Publish` 是增量 upsert：未提供的 Bar、因子或事件表示本次未观测，不表示删除；当前端口没有权威快照或删除语义。批次先复制、排序、校验并计算 SHA-256；提供的 Digest 必须匹配 `MarketBatchDigest`。输入版本号不参与摘要，发布版本由仓储分配。仅该证券最近一条 COMPLETE 发布可命中摘要幂等，重新提交较老内容会形成新版本。

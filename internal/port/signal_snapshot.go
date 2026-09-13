@@ -23,8 +23,13 @@ type SnapshotKey struct {
 }
 
 func (key SnapshotKey) Validate() error {
-	if strings.TrimSpace(key.StrategyID) == "" || strings.TrimSpace(key.StrategyVersion) == "" || strings.TrimSpace(key.ParametersHash) == "" {
-		return invalidPortValue("snapshot strategy identity and parameters hash are required")
+	for _, field := range []struct {
+		name, value string
+		limit       int
+	}{{"strategy ID", key.StrategyID, MaxStrategyIDBytes}, {"strategy version", key.StrategyVersion, MaxStrategyVersionBytes}, {"parameters hash", key.ParametersHash, MaxHashBytes}} {
+		if err := ValidateIdentity(field.value, field.name, field.limit, false); err != nil {
+			return err
+		}
 	}
 	return validateUTCTime(key.AsOf, "snapshot as-of", true)
 }
@@ -67,8 +72,11 @@ type SignalSnapshot struct {
 }
 
 func (snapshot SignalSnapshot) Validate() error {
-	if strings.TrimSpace(snapshot.ID) == "" || strings.TrimSpace(snapshot.RunID) == "" {
-		return invalidPortValue("snapshot ID and run ID are required")
+	if err := ValidateIdentity(snapshot.ID, "snapshot ID", MaxSnapshotIDBytes, false); err != nil {
+		return err
+	}
+	if err := ValidateIdentity(snapshot.RunID, "run ID", MaxRunIDBytes, false); err != nil {
+		return err
 	}
 	if err := snapshot.Key.Validate(); err != nil {
 		return err
