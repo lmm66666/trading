@@ -9,7 +9,9 @@ type Config struct {
 // MarketConfig controls external market-data pacing. Zero values use safe
 // production defaults resolved by the composition root.
 type MarketConfig struct {
-	StockRequestIntervalSeconds int `yaml:"StockRequestIntervalSeconds"`
+	StockRequestIntervalSeconds int  `yaml:"StockRequestIntervalSeconds"`
+	FuturesEnabled              bool `yaml:"FuturesEnabled"`
+	FuturesRefreshIntervalHours int  `yaml:"FuturesRefreshIntervalHours"`
 }
 
 // WorkerConfig controls durable compute workers and bounded market/scan fan-out.

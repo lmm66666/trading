@@ -3,10 +3,7 @@ package market
 import (
 	"errors"
 	"fmt"
-	"regexp"
-	"strconv"
 	"strings"
-	"time"
 )
 
 var (
@@ -39,20 +36,15 @@ type InstrumentKind string
 
 const (
 	SpotEquity        InstrumentKind = "SPOT_EQUITY"
-	FuturesContract   InstrumentKind = "FUTURES_CONTRACT"
 	FuturesContinuous InstrumentKind = "FUTURES_CONTINUOUS"
 )
 
-var (
-	futuresContractCode   = regexp.MustCompile(`^([A-Z]{1,2})(20[0-9]{2})(0[1-9]|1[0-2])$`)
-	futuresContinuousCode = regexp.MustCompile(`^([A-Z]{1,2})\.MAIN$`)
-	futuresProducts       = map[Exchange]map[string]struct{}{
-		SHFE: {"AU": {}, "AG": {}, "FU": {}},
-		INE:  {"SC": {}, "LU": {}},
-		DCE:  {"J": {}, "JM": {}},
-		CZCE: {"ZC": {}},
-	}
-)
+var futuresProducts = map[Exchange]map[string]struct{}{
+	SHFE: {"AU": {}, "AG": {}, "FU": {}},
+	INE:  {"SC": {}, "LU": {}},
+	DCE:  {"J": {}, "JM": {}},
+	CZCE: {"ZC": {}},
+}
 
 type InstrumentID struct {
 	Exchange Exchange
@@ -127,31 +119,24 @@ func (id InstrumentID) Kind() InstrumentKind {
 	if id.AssetClass() == Equity {
 		return SpotEquity
 	}
-	if futuresContractCode.MatchString(id.Code) {
-		return FuturesContract
-	}
-	if futuresContinuousCode.MatchString(id.Code) {
+	if id.Product() != "" {
 		return FuturesContinuous
 	}
 	return ""
 }
 
 func (id InstrumentID) Product() string {
-	if matches := futuresContractCode.FindStringSubmatch(id.Code); len(matches) == 4 {
-		return matches[1]
+	if !strings.HasSuffix(id.Code, ".MAIN") {
+		return ""
 	}
-	if matches := futuresContinuousCode.FindStringSubmatch(id.Code); len(matches) == 2 {
-		return matches[1]
+	product := strings.TrimSuffix(id.Code, ".MAIN")
+	if len(product) < 1 || len(product) > 2 {
+		return ""
 	}
-	return ""
-}
-
-func (id InstrumentID) DeliveryMonth() (time.Time, bool) {
-	matches := futuresContractCode.FindStringSubmatch(id.Code)
-	if len(matches) != 4 {
-		return time.Time{}, false
+	for _, char := range product {
+		if char < 'A' || char > 'Z' {
+			return ""
+		}
 	}
-	year, _ := strconv.Atoi(matches[2])
-	month, _ := strconv.Atoi(matches[3])
-	return time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC), true
+	return product
 }

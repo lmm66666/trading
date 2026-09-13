@@ -22,3 +22,6 @@ Config:
   Market:
     # 新浪股票日线与复权因子共用全局限频；实测安全下限为每 5 秒 1 次请求
     StockRequestIntervalSeconds: 5
+    # 新浪期货主力连续日线；8 个品种与股票请求共用同一限频器
+    FuturesEnabled: true
+    FuturesRefreshIntervalHours: 24

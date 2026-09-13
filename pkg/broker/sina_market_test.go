@@ -3,8 +3,10 @@ package broker
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -60,6 +62,9 @@ func TestParseSinaDailyRejectsEmptyAndInvalidOHLC(t *testing.T) {
 		"day":"2026-09-10","open":"10","high":"9","low":"8","close":"10","volume":"1"
 	}]`), id, at, at)
 	require.ErrorIs(t, err, ErrMalformedResponse)
+
+	_, err = ParseSinaDaily([]byte(`[{"day":"2026-09-10","open":"10","high":"11","low":"9","close":"10","volume":"1"}] trailing`), id, at, at)
+	require.ErrorIs(t, err, ErrMalformedResponse)
 }
 
 func TestParseSinaDailyDiscardsOlderLookbackRows(t *testing.T) {
@@ -98,6 +103,7 @@ func TestParseSinaQFQRejectsMalformedPayloads(t *testing.T) {
 		[]byte(`var xqfq={"total":1,"data":[]}`),
 		[]byte(`var xqfq={"total":1,"data":[{"d":"2026-01-01","f":"0"}]}`),
 		[]byte(`var xqfq={"total":1,"data":[{"d":"2026-01-01","f":"not-a-number"}]}`),
+		[]byte(`var xqfq={"total":1,"data":[{"d":"2026-01-01","f":"1"}]} trailing`),
 	}
 	for _, input := range inputs {
 		_, err := ParseSinaQFQ(input)
@@ -174,3 +180,59 @@ func TestSinaMarketSourceRetriesServerFailureThroughSharedPacing(t *testing.T) {
 	require.Len(t, arrivals, 2)
 	require.GreaterOrEqual(t, arrivals[1].Sub(arrivals[0]), 15*time.Millisecond)
 }
+
+func TestSinaMarketSourceHonorsRetryAfter(t *testing.T) {
+	var mu sync.Mutex
+	var arrivals []time.Time
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		arrivals = append(arrivals, time.Now())
+		attempt := len(arrivals)
+		mu.Unlock()
+		if attempt == 1 {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "slow down", http.StatusTooManyRequests)
+			return
+		}
+		_, _ = w.Write([]byte(`[{"day":"2026-09-11","open":"10","high":"11","low":"9","close":"10","volume":"1"}]`))
+	}))
+	t.Cleanup(server.Close)
+
+	source := NewSinaMarketSourceWithClient(server.Client(), rate.NewLimiter(rate.Inf, 1), server.URL, server.URL)
+	id := market.InstrumentID{Exchange: market.SSE, Code: "600000"}
+	at := time.Date(2026, 9, 11, 0, 0, 0, 0, time.UTC)
+	_, err := source.FetchDailyBars(context.Background(), id, at, at)
+	require.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, arrivals, 2)
+	require.GreaterOrEqual(t, arrivals[1].Sub(arrivals[0]), 950*time.Millisecond)
+}
+
+func TestSinaMarketSourceRetriesResponseBodyReadFailure(t *testing.T) {
+	var calls int
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(failingReader{})}, nil
+		}
+		body := `[{"day":"2026-09-11","open":"10","high":"11","low":"9","close":"10","volume":"1"}]`
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+	source := NewSinaMarketSourceWithClient(client, rate.NewLimiter(rate.Inf, 1), "https://example.com/daily", "https://example.com/factor")
+	id := market.InstrumentID{Exchange: market.SSE, Code: "600000"}
+	at := time.Date(2026, 9, 11, 0, 0, 0, 0, time.UTC)
+
+	_, err := source.FetchDailyBars(context.Background(), id, at, at)
+	require.NoError(t, err)
+	require.Equal(t, 2, calls)
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return fn(request) }
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("read failed") }

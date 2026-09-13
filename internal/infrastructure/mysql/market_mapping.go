@@ -26,19 +26,10 @@ func instrumentModel(id market.InstrumentID, source string) (InstrumentModel, er
 	if err := id.Validate(); err != nil {
 		return InstrumentModel{}, invalid("invalid instrument: %v", err)
 	}
-	delivery, hasDelivery := id.DeliveryMonth()
-	var deliveryMonth *time.Time
-	if hasDelivery {
-		deliveryMonth = &delivery
-	}
 	return InstrumentModel{
-		Exchange:       string(id.Exchange),
-		Code:           id.Code,
-		AssetClass:     string(id.AssetClass()),
-		InstrumentKind: string(id.Kind()),
-		ProductCode:    id.Product(),
-		DeliveryMonth:  deliveryMonth,
-		Source:         source,
+		Exchange: string(id.Exchange),
+		Code:     id.Code,
+		Source:   source,
 	}, nil
 }
 

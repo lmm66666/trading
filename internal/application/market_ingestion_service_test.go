@@ -177,6 +177,24 @@ func TestRefreshUsesOnlyDailyBarsAndFactorsAndDerivesWeekly(t *testing.T) {
 	require.Len(t, writer.batches[0].Bars[market.Week], 1)
 	require.Equal(t, got.DailyBars, got.WeeklyBars)
 }
+
+func TestRefreshNormalizesHistoryStartAndDefersOpenWeek(t *testing.T) {
+	svc, src, _, writer := ingestionFixture(t)
+	start := time.Date(2026, 1, 6, 18, 30, 0, 0, time.UTC)
+	svc.config.HistoryStart = start
+	svc.config.Clock = func() time.Time { return time.Date(2026, 1, 7, 20, 0, 0, 0, time.UTC) }
+	src.bars[market.Day] = []market.Bar{marketBar(market.Day, 6), marketBar(market.Day, 7)}
+	src.factors[market.Day] = []market.AdjustmentFactor{{EffectiveTime: marketDate(6), Numerator: 1, Denominator: 1}}
+	src.fetch = func(_ context.Context, _ market.Timeframe, from, _ time.Time) error {
+		require.Equal(t, marketDate(6), from)
+		return nil
+	}
+
+	result, err := svc.Refresh(context.Background(), marketID)
+	require.NoError(t, err)
+	require.Equal(t, 0, result.WeeklyBars)
+	require.Empty(t, writer.batches[0].Bars[market.Week])
+}
 func TestRefreshDoesNotPublishPartialSourceResponse(t *testing.T) {
 	for _, scenario := range []string{"daily", "factors", "factor", "duplicate", "invalid", "stored", "latest", "publish", "canceled"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -243,6 +261,28 @@ func TestRefreshRefetchesTwentyStoredTradingBarsAndRejectsLostDates(t *testing.T
 	_, err = svc.Refresh(context.Background(), marketID)
 	require.ErrorIs(t, err, ErrIncompleteMarketData)
 	require.Len(t, writer.batches, 1)
+}
+
+func TestRefreshCanRefetchFullHistoryForSnapshotSource(t *testing.T) {
+	svc, src, data, writer := ingestionFixture(t)
+	var days []market.Bar
+	for day := 1; day <= 30; day++ {
+		days = append(days, marketBar(market.Day, day))
+	}
+	data.latest = 7
+	data.stored = map[market.Timeframe][]market.Bar{market.Day: days}
+	data.factors = src.factors[market.Day]
+	src.bars[market.Day] = append([]market.Bar(nil), days...)
+	src.bars[market.Day][0].Close = 101_000
+	svc.config.FullHistoryRefresh = true
+	src.fetch = func(_ context.Context, _ market.Timeframe, from, _ time.Time) error {
+		require.Equal(t, marketDate(1), from)
+		return nil
+	}
+
+	_, err := svc.Refresh(context.Background(), marketID)
+	require.NoError(t, err)
+	require.Equal(t, market.Price(101_000), writer.batches[0].Bars[market.Day][0].Close)
 }
 func TestRefreshRejectsInvalidID(t *testing.T) {
 	svc, _, _, _ := ingestionFixture(t)

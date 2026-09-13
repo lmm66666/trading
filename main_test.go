@@ -28,6 +28,7 @@ func TestKernelCompositionKeepsDurableIdempotencyReader(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, kernel.workers)
 	require.NotNil(t, kernel.marketScheduler)
+	require.Nil(t, kernel.futuresScheduler)
 	router := api.NewRouter(nil, nil, nil, nil, nil, kernel.services)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, httptest.NewRequest("GET", "/api/v1/strategies", nil))
@@ -43,7 +44,7 @@ func TestKernelCompositionKeepsDurableIdempotencyReader(t *testing.T) {
 func TestLoadConfigAndStartupValidation(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	require.NoError(t, os.WriteFile(path, []byte("Config:\n  DB:\n    Host: localhost\n  Worker:\n    Count: 6\n    LeaseSeconds: 45\n    PollIntervalMillis: 500\n    SyncWaitTimeoutSecs: 3\n    ScanBatchSize: 12\n  Market:\n    StockRequestIntervalSeconds: 7\n"), 0600))
+	require.NoError(t, os.WriteFile(path, []byte("Config:\n  DB:\n    Host: localhost\n  Worker:\n    Count: 6\n    LeaseSeconds: 45\n    PollIntervalMillis: 500\n    SyncWaitTimeoutSecs: 3\n    ScanBatchSize: 12\n  Market:\n    StockRequestIntervalSeconds: 7\n    FuturesEnabled: true\n    FuturesRefreshIntervalHours: 12\n"), 0600))
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
 	require.Equal(t, 6, cfg.Worker.Count)
@@ -52,6 +53,8 @@ func TestLoadConfigAndStartupValidation(t *testing.T) {
 	require.Equal(t, 3, cfg.Worker.SyncWaitTimeoutSecs)
 	require.Equal(t, 12, cfg.Worker.ScanBatchSize)
 	require.Equal(t, 7, cfg.Market.StockRequestIntervalSeconds)
+	require.True(t, cfg.Market.FuturesEnabled)
+	require.Equal(t, 12, cfg.Market.FuturesRefreshIntervalHours)
 	require.NoError(t, os.WriteFile(path, []byte("["), 0600))
 	_, err = loadConfig(path)
 	require.Error(t, err)
@@ -66,9 +69,32 @@ func TestResolveMarketConfigDefaultsAndRejectsUnsafeRate(t *testing.T) {
 	got, err = resolveMarketConfig(config.MarketConfig{StockRequestIntervalSeconds: 10})
 	require.NoError(t, err)
 	require.Equal(t, 10*time.Second, got.StockRequestInterval)
+	require.False(t, got.FuturesEnabled)
+
+	got, err = resolveMarketConfig(config.MarketConfig{FuturesEnabled: true})
+	require.NoError(t, err)
+	require.True(t, got.FuturesEnabled)
+	require.Equal(t, 24*time.Hour, got.FuturesRefreshInterval)
+
+	got, err = resolveMarketConfig(config.MarketConfig{FuturesEnabled: true, FuturesRefreshIntervalHours: 12})
+	require.NoError(t, err)
+	require.Equal(t, 12*time.Hour, got.FuturesRefreshInterval)
 
 	_, err = resolveMarketConfig(config.MarketConfig{StockRequestIntervalSeconds: 4})
 	require.Error(t, err)
+	_, err = resolveMarketConfig(config.MarketConfig{FuturesEnabled: true, FuturesRefreshIntervalHours: 169})
+	require.Error(t, err)
+}
+
+func TestKernelCompositionWiresOptionalFuturesScheduler(t *testing.T) {
+	sqlDB, _, err := sqlmock.New()
+	require.NoError(t, err)
+	defer sqlDB.Close()
+	db, err := gorm.Open(mysql.New(mysql.Config{Conn: sqlDB, SkipInitializeWithVersion: true}), &gorm.Config{})
+	require.NoError(t, err)
+	kernel, err := newKernel(context.Background(), db, config.WorkerConfig{}, config.MarketConfig{FuturesEnabled: true})
+	require.NoError(t, err)
+	require.NotNil(t, kernel.futuresScheduler)
 }
 
 func TestResolveWorkerConfigDefaultsAndRejectsOutOfBounds(t *testing.T) {

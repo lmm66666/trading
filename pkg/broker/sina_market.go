@@ -34,7 +34,7 @@ type SinaMarketSource struct {
 	factorBaseURL string
 }
 
-var _ port.EquityDailySource = (*SinaMarketSource)(nil)
+var _ port.DailyMarketSource = (*SinaMarketSource)(nil)
 
 func NewSinaMarketSource(limiter *rate.Limiter) *SinaMarketSource {
 	return NewSinaMarketSourceWithClient(nil, limiter, "", "")
@@ -124,8 +124,10 @@ func (s *SinaMarketSource) get(ctx context.Context, endpoint string) ([]byte, er
 		}
 		body, readErr := io.ReadAll(io.LimitReader(resp.Body, sinaResponseLimit+1))
 		_ = resp.Body.Close()
+		retryable := retryableSinaStatus(resp.StatusCode)
 		if readErr != nil {
 			last = classifyEastmoneyRequestError(readErr)
+			retryable = retryableSinaError(last)
 		} else if len(body) > sinaResponseLimit {
 			return nil, fmt.Errorf("%w: body exceeds limit", ErrMalformedResponse)
 		} else if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
@@ -133,11 +135,29 @@ func (s *SinaMarketSource) get(ctx context.Context, endpoint string) ([]byte, er
 		} else {
 			last = upstreamError(ErrUpstream, nil, resp.StatusCode, resp.Header.Get("Retry-After"))
 		}
-		if attempt == 2 || !retryableSinaStatus(resp.StatusCode) {
+		if attempt == 2 || !retryable {
 			return nil, last
+		}
+		if err := waitForSinaRetry(ctx, last); err != nil {
+			return nil, classifyEastmoneyRequestError(err)
 		}
 	}
 	return nil, last
+}
+
+func waitForSinaRetry(ctx context.Context, err error) error {
+	var upstream *UpstreamError
+	if !errors.As(err, &upstream) || !upstream.HasRetryAfter || upstream.RetryAfter <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(upstream.RetryAfter)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func retryableSinaStatus(status int) bool {
@@ -196,7 +216,7 @@ func ParseSinaDaily(body []byte, id market.InstrumentID, from, to time.Time) ([]
 		return nil, fmt.Errorf("%w: invalid daily response", ErrMalformedResponse)
 	}
 	var extra any
-	if err := decoder.Decode(&extra); err == nil {
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("%w: multiple daily values", ErrMalformedResponse)
 	}
 	if len(rows) == 0 {
@@ -293,7 +313,7 @@ func ParseSinaQFQ(body []byte) ([]market.AdjustmentFactor, error) {
 		return nil, fmt.Errorf("%w: invalid qfq response", ErrMalformedResponse)
 	}
 	var extra any
-	if err := decoder.Decode(&extra); err == nil {
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("%w: multiple qfq values", ErrMalformedResponse)
 	}
 	if envelope.Total != len(envelope.Data) {

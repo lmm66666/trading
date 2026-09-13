@@ -59,7 +59,7 @@ func TestRefreshFinalStateCoversHistoryBeforeFirstSinaFactor(t *testing.T) {
 	}, writer.batches[0].Factors)
 }
 
-func TestRefreshFinalStatePublishesUnfinishedObservedWeek(t *testing.T) {
+func TestRefreshFinalStateDefersUnfinishedObservedWeek(t *testing.T) {
 	svc, src, _, writer := ingestionFixture(t)
 	monday := time.Date(2026, 2, 16, 0, 0, 0, 0, time.UTC)
 	tuesday := monday.AddDate(0, 0, 1)
@@ -75,8 +75,7 @@ func TestRefreshFinalStatePublishesUnfinishedObservedWeek(t *testing.T) {
 
 	_, err := svc.Refresh(context.Background(), marketID)
 	require.NoError(t, err)
-	require.Len(t, writer.batches[0].Bars[market.Week], 1)
-	require.Equal(t, tuesday, writer.batches[0].Bars[market.Week][0].CloseTime)
+	require.Empty(t, writer.batches[0].Bars[market.Week])
 }
 
 func withoutMarketDates(bars []market.Bar, from, to time.Time) []market.Bar {

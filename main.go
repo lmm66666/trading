@@ -25,6 +25,7 @@ import (
 	"trading/internal/application"
 	"trading/internal/backtest"
 	mysqlinfra "trading/internal/infrastructure/mysql"
+	"trading/internal/market"
 	"trading/internal/port"
 	"trading/internal/strategy"
 	"trading/internal/strategy/builtin"
@@ -42,13 +43,17 @@ type workerRuntimeConfig struct {
 }
 
 type marketRuntimeConfig struct {
-	StockRequestInterval time.Duration
+	StockRequestInterval   time.Duration
+	FuturesEnabled         bool
+	FuturesRefreshInterval time.Duration
 }
 
 type kernelRuntime struct {
-	services        api.KernelServices
-	workers         *application.WorkerPool
-	marketScheduler *application.MarketScheduler
+	services               api.KernelServices
+	workers                *application.WorkerPool
+	marketScheduler        *application.MarketScheduler
+	futuresScheduler       *application.FuturesScheduler
+	futuresRefreshInterval time.Duration
 }
 
 type rootMarketTrigger struct {
@@ -109,12 +114,18 @@ func run(ctx context.Context, configPath string) error {
 	log.Println("Server starting on :8080")
 	server := &http.Server{Addr: ":8080", Handler: r, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	err = serve(ctx, server, func(ctx context.Context) error {
-		return runBackground(ctx,
+		runners := []func(context.Context) error{
 			kernel.workers.Run,
 			func(ctx context.Context) error {
 				return kernel.marketScheduler.Start(ctx, marketRefreshInterval, kernel.services.MarketWorkers)
 			},
-		)
+		}
+		if kernel.futuresScheduler != nil {
+			runners = append(runners, func(ctx context.Context) error {
+				return kernel.futuresScheduler.Start(ctx, kernel.futuresRefreshInterval)
+			})
+		}
+		return runBackground(ctx, runners...)
 	})
 	cancel()
 	kernel.marketScheduler.Wait()
@@ -163,9 +174,25 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 	if err != nil {
 		return kernelRuntime{}, err
 	}
-	marketScheduler, err := application.NewMarketScheduler(marketData, ingestion, port.InstrumentScope{ActiveOnly: true, Limit: port.MaxScanInstruments})
+	marketScheduler, err := application.NewMarketScheduler(marketData, ingestion, port.InstrumentScope{Exchanges: []market.Exchange{market.SSE, market.SZSE, market.BSE}, ActiveOnly: true, Limit: port.MaxScanInstruments})
 	if err != nil {
 		return kernelRuntime{}, err
+	}
+	var futuresScheduler *application.FuturesScheduler
+	if marketSettings.FuturesEnabled {
+		futuresIngestion, err := application.NewMarketIngestionService(
+			broker.NewSinaFuturesSource(sinaLimiter),
+			marketData,
+			marketData,
+			application.MarketIngestionConfig{Source: "sina-futures", HistoryStart: historyStart, FullHistoryRefresh: true},
+		)
+		if err != nil {
+			return kernelRuntime{}, err
+		}
+		futuresScheduler, err = application.NewFuturesScheduler(futuresIngestion, application.DefaultSinaFuturesInstruments(), slog.Default())
+		if err != nil {
+			return kernelRuntime{}, err
+		}
 	}
 	services := api.KernelServices{
 		Backtests:       backtests,
@@ -182,7 +209,7 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 		PollInterval:    settings.PollInterval,
 		Clock:           time.Now,
 	}
-	return kernelRuntime{services: services, workers: workers, marketScheduler: marketScheduler}, nil
+	return kernelRuntime{services: services, workers: workers, marketScheduler: marketScheduler, futuresScheduler: futuresScheduler, futuresRefreshInterval: marketSettings.FuturesRefreshInterval}, nil
 }
 
 func resolveMarketConfig(input config.MarketConfig) (marketRuntimeConfig, error) {
@@ -192,8 +219,16 @@ func resolveMarketConfig(input config.MarketConfig) (marketRuntimeConfig, error)
 	if input.StockRequestIntervalSeconds < 5 || input.StockRequestIntervalSeconds > 86_400 {
 		return marketRuntimeConfig{}, errors.New("market configuration is out of bounds")
 	}
+	if input.FuturesRefreshIntervalHours == 0 {
+		input.FuturesRefreshIntervalHours = 24
+	}
+	if input.FuturesRefreshIntervalHours < 1 || input.FuturesRefreshIntervalHours > 168 {
+		return marketRuntimeConfig{}, errors.New("market configuration is out of bounds")
+	}
 	return marketRuntimeConfig{
-		StockRequestInterval: time.Duration(input.StockRequestIntervalSeconds) * time.Second,
+		StockRequestInterval:   time.Duration(input.StockRequestIntervalSeconds) * time.Second,
+		FuturesEnabled:         input.FuturesEnabled,
+		FuturesRefreshInterval: time.Duration(input.FuturesRefreshIntervalHours) * time.Hour,
 	}, nil
 }
 
