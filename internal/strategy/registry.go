@@ -39,7 +39,7 @@ func (r *Registry) Register(id, version string, factory Factory) error {
 		return ErrInvalidDefinition
 	}
 	definition := prototype.Definition()
-	if definition.ID != id || definition.Version != version || !validDefinition(definition) {
+	if definition.ID != id || definition.Version != version || ValidateDefinition(definition) != nil {
 		return ErrInvalidDefinition
 	}
 	key := strategyKey{id: id, version: version}
@@ -82,7 +82,7 @@ func (r *Registry) Resolve(id, version string, params map[string]float64) (Strat
 		return nil, ErrInvalidDefinition
 	}
 	definition := strategy.Definition()
-	if !validDefinition(definition) || !reflect.DeepEqual(definition, registered.definition) {
+	if ValidateDefinition(definition) != nil || !reflect.DeepEqual(definition, registered.definition) {
 		return nil, ErrInvalidDefinition
 	}
 	return strategy, nil

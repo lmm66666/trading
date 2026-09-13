@@ -46,38 +46,45 @@ func cloneDefinition(definition Definition) Definition {
 	return cloned
 }
 
-func validDefinition(definition Definition) bool {
+// ValidateDefinition validates the complete static strategy contract. Registry
+// and runtime callers share this boundary so invalid definitions cannot be
+// accepted at registration but silently reach another execution path.
+func ValidateDefinition(definition Definition) error {
 	if definition.ID == "" || definition.Version == "" || !definition.PrimaryTimeframe.Valid() ||
 		definition.WarmupBars < 0 || definition.DefaultHoldBars < 0 {
-		return false
+		return ErrInvalidDefinition
 	}
 	auxiliary := make(map[market.Timeframe]struct{}, len(definition.Auxiliary))
 	for _, timeframe := range definition.Auxiliary {
 		if !timeframe.Valid() || timeframe == definition.PrimaryTimeframe {
-			return false
+			return ErrInvalidDefinition
 		}
 		if _, duplicate := auxiliary[timeframe]; duplicate {
-			return false
+			return ErrInvalidDefinition
 		}
 		auxiliary[timeframe] = struct{}{}
 	}
 	features := make(map[string]struct{}, len(definition.Features))
 	for _, ref := range definition.Features {
 		if ref.Validate() != nil || (ref.Timeframe != definition.PrimaryTimeframe && !containsTimeframe(auxiliary, ref.Timeframe)) {
-			return false
+			return ErrInvalidDefinition
 		}
 		key := ref.Key()
 		if _, duplicate := features[key]; duplicate {
-			return false
+			return ErrInvalidDefinition
 		}
 		features[key] = struct{}{}
 	}
 	for name, spec := range definition.Parameters {
 		if name == "" || !validParameter(spec, spec.Default) {
-			return false
+			return ErrInvalidDefinition
 		}
 	}
-	return true
+	return nil
+}
+
+func validDefinition(definition Definition) bool {
+	return ValidateDefinition(definition) == nil
 }
 
 func containsTimeframe(timeframes map[market.Timeframe]struct{}, timeframe market.Timeframe) bool {

@@ -44,10 +44,11 @@ type EquityPoint struct {
 
 // Trade is one completed, long-only round trip.
 type Trade struct {
-	Entry       Fill
-	Exit        Fill
-	HoldingBars int
-	NetProfit   market.Money
+	Entry         Fill
+	Exit          Fill
+	CashDividends market.Money
+	HoldingBars   int
+	NetProfit     market.Money
 }
 
 // Summary contains only finite ratios. A nil ratio means its denominator is

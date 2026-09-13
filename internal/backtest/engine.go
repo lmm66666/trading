@@ -43,8 +43,9 @@ type engineState struct {
 }
 
 type entryState struct {
-	fill     Fill
-	barIndex int
+	fill          Fill
+	barIndex      int
+	cashDividends market.Money
 }
 
 // Run advances exactly one confirmed Bar at a time: apply actions before the
@@ -77,6 +78,9 @@ func (Engine) Run(ctx context.Context, input Input) (Result, error) {
 		position := state.positionView(index)
 		barContext := newBarContext(state.timeline, index, position)
 		decision, err := state.input.Strategy.OnBar(barContext)
+		if err := ctx.Err(); err != nil {
+			return Result{}, err
+		}
 		if contextErr := barContext.Err(); contextErr != nil {
 			return Result{}, contextErr
 		}
@@ -92,7 +96,8 @@ func (Engine) Run(ctx context.Context, input Input) (Result, error) {
 	}
 	position := state.positionView(state.timeline.Len() - 1)
 	result := Result{Orders: state.orders, Fills: state.fills, Trades: state.trades, Equity: state.equity, FinalPosition: position}
-	result.Summary = calculateMetricsWithInitial(result.Equity, result.Trades, position, input.Config.InitialCash)
+	initial := EquityPoint{Time: state.timeline.Primary.Bar(0).OpenTime, Equity: input.Config.InitialCash, Cash: input.Config.InitialCash}
+	result.Summary = CalculateMetricsFromInitial(initial, result.Equity, result.Trades, position)
 	return result, nil
 }
 
@@ -111,7 +116,13 @@ func newEngineState(input Input) (*engineState, error) {
 		return nil, fmt.Errorf("%w: empty timeline", ErrInvalidInput)
 	}
 	definition := input.Strategy.Definition()
-	if err := validateDefinition(definition, timeline); err != nil {
+	if err := strategy.ValidateDefinition(definition); err != nil {
+		return nil, fmt.Errorf("%w: strategy definition: %w", ErrInvalidInput, err)
+	}
+	if definition.PrimaryTimeframe != timeline.Primary.Timeframe() {
+		return nil, fmt.Errorf("%w: strategy primary timeframe", ErrInvalidInput)
+	}
+	if err := validateTimelineFeatures(definition, timeline); err != nil {
 		return nil, err
 	}
 	actionsAt, err := indexActions(input.Actions, timeline)
@@ -136,14 +147,8 @@ func newEngineState(input Input) (*engineState, error) {
 	return &engineState{input: input, timeline: timeline, definition: definition, account: account, execution: execution, actionsAt: actionsAt, pendingOrder: -1, holdBars: holdBars}, nil
 }
 
-func validateDefinition(definition strategy.Definition, timeline strategy.Timeline) error {
-	if definition.ID == "" || definition.Version == "" || !definition.PrimaryTimeframe.Valid() || definition.PrimaryTimeframe != timeline.Primary.Timeframe() || definition.WarmupBars < 0 || definition.DefaultHoldBars < 0 {
-		return fmt.Errorf("%w: strategy definition", ErrInvalidInput)
-	}
+func validateTimelineFeatures(definition strategy.Definition, timeline strategy.Timeline) error {
 	for _, ref := range definition.Features {
-		if err := ref.Validate(); err != nil {
-			return fmt.Errorf("%w: strategy feature", ErrInvalidInput)
-		}
 		if ref.Timeframe == timeline.Primary.Timeframe() {
 			if _, ok := timeline.Features[ref.Key()]; !ok {
 				return fmt.Errorf("%w: missing strategy feature", ErrInvalidInput)
@@ -195,8 +200,20 @@ func (s *engineState) applyActionsBeforeOpen(ctx context.Context, index int) err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	cashBefore := s.account.Cash()
 	if err := s.account.ApplyCorporateActions(actions); err != nil {
 		return fmt.Errorf("apply corporate actions bar %d: %w", index, err)
+	}
+	if s.entry != nil {
+		cashAfter := s.account.Cash()
+		if cashAfter < cashBefore {
+			return ErrAccountOverflow
+		}
+		dividends, ok := addMoney(s.entry.cashDividends, cashAfter-cashBefore)
+		if !ok {
+			return ErrAccountOverflow
+		}
+		s.entry.cashDividends = dividends
 	}
 	return nil
 }
@@ -242,7 +259,7 @@ func (s *engineState) tryPendingOrderAtOpen(ctx context.Context, index int) erro
 	if s.entry == nil {
 		return fmt.Errorf("%w: sell without entry", ErrInvalidInput)
 	}
-	trade, err := newTrade(s.entry.fill, fill, index-s.entry.barIndex)
+	trade, err := newTradeWithDividends(s.entry.fill, fill, s.entry.cashDividends, index-s.entry.barIndex)
 	if err != nil {
 		return err
 	}
@@ -324,6 +341,10 @@ func (s *engineState) positionValue(close market.Price) (market.Money, error) {
 }
 
 func newTrade(entry, exit Fill, holdingBars int) (Trade, error) {
+	return newTradeWithDividends(entry, exit, 0, holdingBars)
+}
+
+func newTradeWithDividends(entry, exit Fill, cashDividends market.Money, holdingBars int) (Trade, error) {
 	if holdingBars <= 0 || entry.Side != Buy || exit.Side != Sell {
 		return Trade{}, fmt.Errorf("%w: invalid round trip", ErrInvalidInput)
 	}
@@ -335,11 +356,15 @@ func newTrade(entry, exit Fill, holdingBars int) (Trade, error) {
 	if !ok {
 		return Trade{}, ErrAccountOverflow
 	}
-	profit, ok := subtractMoney(credit, debit)
+	proceeds, ok := addMoney(credit, cashDividends)
 	if !ok {
 		return Trade{}, ErrAccountOverflow
 	}
-	return Trade{Entry: entry, Exit: exit, HoldingBars: holdingBars, NetProfit: profit}, nil
+	profit, ok := subtractMoney(proceeds, debit)
+	if !ok {
+		return Trade{}, ErrAccountOverflow
+	}
+	return Trade{Entry: entry, Exit: exit, CashDividends: cashDividends, HoldingBars: holdingBars, NetProfit: profit}, nil
 }
 
 func subtractMoney(left, right market.Money) (market.Money, bool) {

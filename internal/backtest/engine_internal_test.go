@@ -117,17 +117,46 @@ func TestEngineRejectsNilContextAndInvalidDecision(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidInput)
 }
 
-func TestDefinitionValidationRejectsInvalidAndMissingAuxiliaryFeatures(t *testing.T) {
+func TestEngineRejectsEveryInvalidStrategyDefinition(t *testing.T) {
 	id := market.InstrumentID{Exchange: market.SSE, Code: "600000"}
 	timeline := internalTimeline(t, []market.Bar{internalBar(id, "2026-01-05")})
 	for _, definition := range []strategy.Definition{
 		{},
-		{ID: "x", Version: "1", PrimaryTimeframe: market.Week},
-		{ID: "x", Version: "1", PrimaryTimeframe: market.Day, Features: []indicator.Ref{{}}},
+		{ID: "x", Version: "1", PrimaryTimeframe: market.Day, Auxiliary: []market.Timeframe{market.Day}},
+		{ID: "x", Version: "1", PrimaryTimeframe: market.Day, Auxiliary: []market.Timeframe{market.Week, market.Week}},
 		{ID: "x", Version: "1", PrimaryTimeframe: market.Day, Features: []indicator.Ref{{Kind: indicator.SMAKind, Timeframe: market.Week, PriceView: market.Raw, Field: indicator.Close, Period: 1}}},
+		{ID: "x", Version: "1", PrimaryTimeframe: market.Day, Features: []indicator.Ref{{Kind: indicator.SMAKind, Timeframe: market.Day, PriceView: market.Raw, Field: indicator.Close, Period: 1}, {Kind: indicator.SMAKind, Timeframe: market.Day, PriceView: market.Raw, Field: indicator.Close, Period: 1}}},
+		{ID: "x", Version: "1", PrimaryTimeframe: market.Day, Parameters: map[string]strategy.ParameterSpec{"bad": {Default: 2, Min: 0, Max: 1}}},
 	} {
-		assert.ErrorIs(t, validateDefinition(definition, timeline), ErrInvalidInput)
+		_, err := (Engine{}).Run(context.Background(), Input{Strategy: definitionStrategy{definition: definition}, Timeline: timeline, Config: internalConfig()})
+		assert.ErrorIs(t, err, ErrInvalidInput)
+		assert.ErrorIs(t, err, strategy.ErrInvalidDefinition)
 	}
+	_, err := (Engine{}).Run(context.Background(), Input{Strategy: definitionStrategy{definition: strategy.Definition{ID: "x", Version: "1", PrimaryTimeframe: market.Week}}, Timeline: timeline, Config: internalConfig()})
+	assert.ErrorIs(t, err, ErrInvalidInput)
+}
+
+func TestEngineRejectsMissingTimelineFeaturesForValidDefinition(t *testing.T) {
+	id := market.InstrumentID{Exchange: market.SSE, Code: "600000"}
+	primary := internalBar(id, "2026-01-05")
+	timeline := internalTimeline(t, []market.Bar{primary})
+	ref := indicator.Ref{Kind: indicator.SMAKind, Timeframe: market.Week, PriceView: market.Raw, Field: indicator.Close, Period: 1}
+	definition := strategy.Definition{ID: "x", Version: "1", PrimaryTimeframe: market.Day, Auxiliary: []market.Timeframe{market.Week}, Features: []indicator.Ref{ref}}
+	_, err := (Engine{}).Run(context.Background(), Input{Strategy: definitionStrategy{definition: definition}, Timeline: timeline, Config: internalConfig()})
+	assert.ErrorIs(t, err, ErrInvalidInput)
+
+	auxiliary := internalBar(id, "2026-01-05")
+	auxiliary.Timeframe = market.Week
+	auxiliaryDataset, err := market.NewDataset(id, market.Week, 1, []market.Bar{auxiliary})
+	require.NoError(t, err)
+	primaryDataset, err := market.NewDataset(id, market.Day, 1, []market.Bar{primary})
+	require.NoError(t, err)
+	timeline, err = strategy.NewTimeline(primaryDataset, nil, map[market.Timeframe]strategy.AlignedFeatures{
+		market.Week: {Dataset: auxiliaryDataset, Features: nil, PrimaryToAuxiliary: []int{0}},
+	})
+	require.NoError(t, err)
+	_, err = (Engine{}).Run(context.Background(), Input{Strategy: definitionStrategy{definition: definition}, Timeline: timeline, Config: internalConfig()})
+	assert.ErrorIs(t, err, ErrInvalidInput)
 }
 
 func TestTradeAndMetricBoundariesRemainFinite(t *testing.T) {
@@ -142,6 +171,8 @@ func TestTradeAndMetricBoundariesRemainFinite(t *testing.T) {
 	assert.ErrorIs(t, err, ErrAccountOverflow)
 	_, err = newTrade(entry, Fill{Side: Sell, Gross: 0, Commission: 1}, 1)
 	assert.ErrorIs(t, err, ErrAccountOverflow)
+	_, err = newTradeWithDividends(entry, exit, math.MaxInt64, 1)
+	assert.ErrorIs(t, err, ErrAccountOverflow)
 	_, ok := subtractMoney(-1, 1)
 	assert.False(t, ok)
 
@@ -149,13 +180,22 @@ func TestTradeAndMetricBoundariesRemainFinite(t *testing.T) {
 		{Time: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Equity: 100},
 		{Time: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), Equity: 121},
 	}
-	summary := calculateMetricsWithInitial(points, []Trade{{NetProfit: 1, HoldingBars: 1}}, strategy.PositionView{}, 100)
+	summary := CalculateMetricsFromInitial(EquityPoint{Time: points[0].Time, Equity: 100}, points, []Trade{{NetProfit: 1, HoldingBars: 1}}, strategy.PositionView{})
 	require.NotNil(t, summary.AnnualizedReturn)
 	assert.InDelta(t, 0.21, *summary.AnnualizedReturn, 0.01)
-	firstBarLoss := calculateMetricsWithInitial([]EquityPoint{{Equity: 90}}, nil, strategy.PositionView{}, 100)
+	firstBarLoss := CalculateMetricsFromInitial(EquityPoint{Equity: 100}, []EquityPoint{{Equity: 90}}, nil, strategy.PositionView{})
 	assert.InDelta(t, 0.1, firstBarLoss.MaximumDrawdown, 1e-9)
 	assert.False(t, finite(math.Inf(1)))
 	assert.False(t, finite(math.NaN()))
+}
+
+func TestAnnualizedReturnStartsAtInitialOpenValuation(t *testing.T) {
+	initial := EquityPoint{Time: time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC), Equity: 100}
+	points := []EquityPoint{{Time: time.Date(2026, 1, 2, 15, 0, 0, 0, time.UTC), Equity: 110}}
+	summary := CalculateMetricsFromInitial(initial, points, nil, strategy.PositionView{})
+	require.NotNil(t, summary.AnnualizedReturn)
+	expected := math.Pow(1.1, 365.0/1.25) - 1
+	assert.InDelta(t, expected, *summary.AnnualizedReturn, 1e-9)
 }
 
 func TestMarkToMarketChecksCashAndContextBeforeAppend(t *testing.T) {
@@ -198,6 +238,13 @@ type invalidDecisionStrategy struct{ internalStrategy }
 
 func (invalidDecisionStrategy) OnBar(strategy.Context) (strategy.Decision, error) {
 	return strategy.Decision{Action: strategy.Action(99)}, nil
+}
+
+type definitionStrategy struct{ definition strategy.Definition }
+
+func (s definitionStrategy) Definition() strategy.Definition { return s.definition }
+func (definitionStrategy) OnBar(strategy.Context) (strategy.Decision, error) {
+	return strategy.Decision{}, nil
 }
 
 func internalConfig() Config { return Config{InitialCash: 100, CashFractionBPS: 10_000, LotSize: 1} }

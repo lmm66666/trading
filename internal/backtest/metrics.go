@@ -27,28 +27,34 @@ func MaximumDrawdown(equity []market.Money) float64 {
 	return drawdown
 }
 
-// CalculateMetrics uses the first equity point as the initial equity. Engine
-// callers use calculateMetricsWithInitial so first-bar trading costs are not
-// hidden from total return.
+// CalculateMetrics uses the first equity point as the initial valuation. The
+// engine supplies an explicit opening valuation through
+// CalculateMetricsFromInitial so first-bar costs retain their elapsed time.
 func CalculateMetrics(equity []EquityPoint, trades []Trade, position strategy.PositionView) Summary {
 	if len(equity) == 0 {
-		return calculateMetricsWithInitial(equity, trades, position, 0)
+		return CalculateMetricsFromInitial(EquityPoint{}, equity, trades, position)
 	}
-	return calculateMetricsWithInitial(equity, trades, position, equity[0].Equity)
+	return CalculateMetricsFromInitial(equity[0], equity, trades, position)
 }
 
-func calculateMetricsWithInitial(equity []EquityPoint, trades []Trade, position strategy.PositionView, initial market.Money) Summary {
+// CalculateMetricsFromInitial accepts a valuation start without placing a
+// synthetic point into the returned user-visible equity curve.
+func CalculateMetricsFromInitial(initial EquityPoint, equity []EquityPoint, trades []Trade, position strategy.PositionView) Summary {
+	return calculateMetricsWithInitial(equity, trades, position, initial)
+}
+
+func calculateMetricsWithInitial(equity []EquityPoint, trades []Trade, position strategy.PositionView, initial EquityPoint) Summary {
 	summary := Summary{ClosedTrades: len(trades), HasOpenPosition: position.Open}
 	values := make([]market.Money, 0, len(equity)+1)
-	if initial > 0 {
-		values = append(values, initial)
+	if initial.Equity > 0 {
+		values = append(values, initial.Equity)
 	}
 	for _, point := range equity {
 		values = append(values, point.Equity)
 	}
 	summary.MaximumDrawdown = MaximumDrawdown(values)
-	if initial > 0 && len(equity) > 0 {
-		totalReturn := float64(equity[len(equity)-1].Equity-initial) / float64(initial)
+	if initial.Equity > 0 && len(equity) > 0 {
+		totalReturn := float64(equity[len(equity)-1].Equity-initial.Equity) / float64(initial.Equity)
 		if finite(totalReturn) {
 			summary.TotalReturn = float64Ptr(totalReturn)
 			if annualized, ok := annualizedReturn(initial, equity); ok {
@@ -86,11 +92,11 @@ func calculateMetricsWithInitial(equity []EquityPoint, trades []Trade, position 
 	return summary
 }
 
-func annualizedReturn(initial market.Money, equity []EquityPoint) (float64, bool) {
-	if initial <= 0 || len(equity) < 2 {
+func annualizedReturn(initial EquityPoint, equity []EquityPoint) (float64, bool) {
+	if initial.Equity <= 0 || len(equity) == 0 {
 		return 0, false
 	}
-	start, end := equity[0].Time, equity[len(equity)-1].Time
+	start, end := initial.Time, equity[len(equity)-1].Time
 	if start.IsZero() || !end.After(start) || equity[len(equity)-1].Equity < 0 {
 		return 0, false
 	}
@@ -98,7 +104,7 @@ func annualizedReturn(initial market.Money, equity []EquityPoint) (float64, bool
 	if days <= 0 {
 		return 0, false
 	}
-	value := float64(equity[len(equity)-1].Equity) / float64(initial)
+	value := float64(equity[len(equity)-1].Equity) / float64(initial.Equity)
 	annualized := math.Pow(value, 365.0/days) - 1
 	return annualized, finite(annualized)
 }

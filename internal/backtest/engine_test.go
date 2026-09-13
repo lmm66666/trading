@@ -99,6 +99,50 @@ func TestEngineReturnsNoPartialResultWhenCancelled(t *testing.T) {
 	assert.Equal(t, backtest.Result{}, result)
 }
 
+func TestEngineReturnsCancellationAfterLastBarOnBarHold(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	result, err := (backtest.Engine{}).Run(ctx, backtest.Input{
+		Strategy: cancelOnBarStrategy{cancel: cancel},
+		Timeline: engineTimeline(t, []market.Bar{engineBar("2026-01-05", 100_000, 100_000, 100_000, 100_000)}),
+		Config:   engineConfig(0),
+	})
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, backtest.Result{}, result)
+}
+
+func TestEngineCountsCashDividendInClosedTradeMetrics(t *testing.T) {
+	action := market.CorporateAction{
+		ID: "dividend", Instrument: engineInstrument(), ExDate: engineOpenTime("2026-01-07"), Version: 1,
+		Kind: market.CashDividend, CashPerShare: 20,
+	}
+	result := runScriptedBarsWithConfig(t, []market.Bar{
+		engineBar("2026-01-05", 100, 100, 100, 100),
+		engineBar("2026-01-06", 100, 100, 100, 100),
+		engineBar("2026-01-07", 85, 85, 85, 85),
+	}, []strategy.Action{strategy.EnterLong, strategy.ExitLong, strategy.Hold}, []market.CorporateAction{action}, backtest.Config{InitialCash: 100, CashFractionBPS: 10_000, LotSize: 1})
+	require.Len(t, result.Trades, 1)
+	assert.Equal(t, market.Money(20), result.Trades[0].CashDividends)
+	assert.Equal(t, market.Money(5), result.Trades[0].NetProfit)
+	require.NotNil(t, result.Summary.WinRate)
+	assert.Equal(t, 1.0, *result.Summary.WinRate)
+	assert.Nil(t, result.Summary.ProfitFactor)
+}
+
+func TestEngineDoesNotTreatShareDistributionAsCashDividend(t *testing.T) {
+	action := market.CorporateAction{
+		ID: "bonus", Instrument: engineInstrument(), ExDate: engineOpenTime("2026-01-07"), Version: 1,
+		Kind: market.ShareDistribution, ShareNumerator: 2, ShareDenominator: 1,
+	}
+	result := runScriptedBarsWithConfig(t, []market.Bar{
+		engineBar("2026-01-05", 100, 100, 100, 100),
+		engineBar("2026-01-06", 100, 100, 100, 100),
+		engineBar("2026-01-07", 40, 40, 40, 40),
+	}, []strategy.Action{strategy.EnterLong, strategy.ExitLong, strategy.Hold}, []market.CorporateAction{action}, backtest.Config{InitialCash: 100, CashFractionBPS: 10_000, LotSize: 1})
+	require.Len(t, result.Trades, 1)
+	assert.Zero(t, result.Trades[0].CashDividends)
+	assert.Equal(t, market.Money(-20), result.Trades[0].NetProfit)
+}
+
 func TestEngineRejectsIncompleteInputAndAmbiguousActionTime(t *testing.T) {
 	timeline := engineTimeline(t, []market.Bar{engineBar("2026-01-05", 100_000, 100_000, 100_000, 100_000)})
 	_, err := (backtest.Engine{}).Run(context.Background(), backtest.Input{Timeline: timeline, Config: engineConfig(0)})
@@ -141,6 +185,14 @@ func (s errorStrategy) OnBar(strategy.Context) (strategy.Decision, error) {
 	return strategy.Decision{}, s.err
 }
 
+type cancelOnBarStrategy struct{ cancel context.CancelFunc }
+
+func (s cancelOnBarStrategy) Definition() strategy.Definition { return engineDefinition() }
+func (s cancelOnBarStrategy) OnBar(strategy.Context) (strategy.Decision, error) {
+	s.cancel()
+	return strategy.Decision{Action: strategy.Hold}, nil
+}
+
 func engineDefinition() strategy.Definition {
 	return strategy.Definition{ID: "scripted", Version: "1", PrimaryTimeframe: market.Day, DefaultHoldBars: 10}
 }
@@ -155,8 +207,14 @@ func runScripted(t *testing.T, actions []strategy.Action, corporateActions []mar
 
 func runScriptedBars(t *testing.T, bars []market.Bar, actions []strategy.Action, corporateActions []market.CorporateAction, holdBars int) backtest.Result {
 	t.Helper()
+	result := runScriptedBarsWithConfig(t, bars, actions, corporateActions, engineConfig(holdBars))
+	return result
+}
+
+func runScriptedBarsWithConfig(t *testing.T, bars []market.Bar, actions []strategy.Action, corporateActions []market.CorporateAction, config backtest.Config) backtest.Result {
+	t.Helper()
 	result, err := (backtest.Engine{}).Run(context.Background(), backtest.Input{
-		Strategy: &scriptedStrategy{actions: actions}, Timeline: engineTimeline(t, bars), Actions: corporateActions, Config: engineConfig(holdBars),
+		Strategy: &scriptedStrategy{actions: actions}, Timeline: engineTimeline(t, bars), Actions: corporateActions, Config: config,
 	})
 	require.NoError(t, err)
 	return result
