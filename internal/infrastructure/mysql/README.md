@@ -29,3 +29,22 @@ go test -tags=integration ./internal/infrastructure/mysql/... -count=1
 ```
 
 集成测试使用 testcontainers MySQL 模块 v0.44.0。无 Docker 会明确失败，不跳过或伪报通过；SQL mock 测试仅验证 SQL 边界、映射和错误传播，不能替代真实 DDL、事务隔离、并发锁及索引验收。
+
+## 旧行情迁移命令
+
+先在备份副本演练；正式迁移须暂停旧行情采集和扫描，保持维护窗口内的源数据不变：
+
+```bash
+go run ./cmd/migrate-strategy-kernel -config config.yaml
+go run ./cmd/migrate-strategy-kernel -config config.yaml -dry-run=false -batch-size 1000
+```
+
+默认 dry-run 只读取旧表并请求行情来源，不创建或写入任何数据库表。显式 apply 创建内核表和 `t_legacy_kernel_migration` 暂存表。该表具有 UTC 微秒审计字段，`(stage, legacy_id)` 主键代表已提交检查点；批次按旧表主键顺序复制，重启会校验已有内容并跳过已提交写入，已成功回填的证券复用缓存结果。manifest 的 SHA-256 绑定整个源快照，源行新增、删除或更改都会拒绝续跑，需要恢复维护窗口快照后继续；不提供破坏性自动重置。
+
+仅接受六位股票代码，按 SSE `600/601/603/605/688/689`、SZSE `000/001/002/003/300/301`、BSE `4/8/920` 前缀映射。未知代码进入拒绝清单。报告的证券数、日周 Bar 数及日期范围指通过代码和旧值校验的源数据，`LastLegacyIDs` 包含各旧表最后读取主键。`SourceDigest` 是按表顺序、主键顺序编码源记录的 SHA-256；`Digest` 再绑定已验证回填批次的摘要，不含运行时间或分配的版本号。
+
+旧 OHLC 的复权口径无法可靠追溯，因此它们仅作为日期覆盖与源校验依据，最终原始 OHLCV/Amount 来自 Task9 provider 的 raw 回填。必须逐日期匹配旧日线和周线，并验证 QFQ 因子覆盖、跨周期因子一致性以及公司行动请求成功。合法的空公司行动列表可以接受；未知代码、无历史 Bar 的证券、缺失日期、复权冲突或来源失败均产生 INCOMPLETE。INCOMPLETE 持久化到版本表和报告检查点，不写入可见市场修订，版本查询会拒绝该版本。
+
+全部证券通过后，在同一个版本发布事务内写入市场数据并标记 COMPLETE，避免部分标的提前可见；成功后再运行返回相同版本和报告。未知上市状态和交易单位保留未激活/零值，后续主数据同步负责补齐。命令错误输出脱敏，不打印 DSN、配置内容和数据库错误；非完整结果返回非零退出码。
+
+当前为离线迁移实现：SQL 读写有批次限制（1–10000），但源记录、分组 Bar 和回填批次仍驻留内存，最终发布使用单事务。全市场运行前需在备份副本验证内存、暂存空间和事务容量；该限制不能用小批次参数消除。真实迁移集成测试为 `go test -tags=integration ./internal/infrastructure/mysql -run TestLegacyMigrationMySQLRestartAndIncompleteVisibility`，覆盖 MySQL 5.7/8.0 的失败回填、版本不可见性、恢复和幂等重跑。
