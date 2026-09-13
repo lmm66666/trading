@@ -1,0 +1,130 @@
+import { useEffect, useId, useRef, useState } from 'react'
+import {
+  searchInstruments,
+  type InstrumentSummary,
+} from '../../api/client'
+
+interface InstrumentSearchProps {
+  onSelect: (instrument: InstrumentSummary) => void
+  search?: typeof searchInstruments
+}
+
+export function InstrumentSearch({ onSelect, search = searchInstruments }: InstrumentSearchProps) {
+  const [query, setQuery] = useState('')
+  const [items, setItems] = useState<InstrumentSummary[]>([])
+  const [activeIndex, setActiveIndex] = useState(-1)
+  const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
+  const requestRef = useRef(0)
+  const listID = useId()
+
+  useEffect(() => {
+    const value = query.trim()
+    if (!value) {
+      setItems([])
+      setActiveIndex(-1)
+      setStatus('idle')
+      return
+    }
+    const request = ++requestRef.current
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      setStatus('loading')
+      search(value, controller.signal)
+        .then((results) => {
+          if (request !== requestRef.current) return
+          setItems(results)
+          setActiveIndex(-1)
+          setStatus('idle')
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted || request !== requestRef.current) return
+          setItems([])
+          setStatus('error')
+          console.error('search instruments', error)
+        })
+    }, 220)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [query, search])
+
+  const select = (item: InstrumentSummary) => {
+    setQuery(`${item.code} ${item.name}`)
+    setItems([])
+    setActiveIndex(-1)
+    onSelect(item)
+  }
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown' && items.length > 0) {
+      event.preventDefault()
+      setActiveIndex((current) => (current + 1) % items.length)
+    } else if (event.key === 'ArrowUp' && items.length > 0) {
+      event.preventDefault()
+      setActiveIndex((current) => (current <= 0 ? items.length - 1 : current - 1))
+    } else if (event.key === 'Enter' && activeIndex >= 0) {
+      event.preventDefault()
+      select(items[activeIndex])
+    } else if (event.key === 'Escape') {
+      setItems([])
+      setActiveIndex(-1)
+    }
+  }
+
+  return (
+    <section className="instrument-search" aria-label="股票搜索区">
+      <div className="search-heading">
+        <div>
+          <span className="eyebrow">MARKET</span>
+          <h1>行情工作台</h1>
+        </div>
+        <span className="market-badge">A 股</span>
+      </div>
+      <div className="search-box">
+        <span className="search-icon" aria-hidden="true">⌕</span>
+        <input
+          aria-label="搜索股票"
+          aria-autocomplete="list"
+          aria-controls={listID}
+          aria-expanded={items.length > 0}
+          aria-activedescendant={activeIndex >= 0 ? `${listID}-${activeIndex}` : undefined}
+          autoComplete="off"
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder="代码 / 股票名称"
+          role="combobox"
+          value={query}
+        />
+        {status === 'loading' && <span className="search-spinner" aria-label="正在搜索" />}
+      </div>
+      <div className="search-results" id={listID} role="listbox" aria-label="搜索结果">
+        {!query.trim() && <p className="search-empty">输入代码或名称开始搜索</p>}
+        {query.trim() && status === 'idle' && items.length === 0 && (
+          <p className="search-empty">没有匹配的证券</p>
+        )}
+        {status === 'error' && <p className="search-error">搜索失败，请稍后重试</p>}
+        {items.map((item, index) => (
+          <button
+            aria-selected={activeIndex === index}
+            className={activeIndex === index ? 'search-result active' : 'search-result'}
+            id={`${listID}-${index}`}
+            key={item.instrument}
+            onClick={() => select(item)}
+            onMouseEnter={() => setActiveIndex(index)}
+            role="option"
+            type="button"
+          >
+            <span className="symbol-mark">{item.exchange === 'SSE' ? '沪' : item.exchange === 'SZSE' ? '深' : '北'}</span>
+            <span className="result-name"><strong>{item.name}</strong><small>{item.code}</small></span>
+            <span className="exchange-tag">{item.exchange}</span>
+          </button>
+        ))}
+      </div>
+      <div className="search-footnote">
+        <span className="status-dot" />
+        <span>数据来自版本化行情快照</span>
+      </div>
+    </section>
+  )
+}

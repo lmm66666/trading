@@ -5,3 +5,9 @@ docs/*
 trading
 *.tar
 coverage.out
+web/node_modules/
+web/dist/
+web/coverage/
+web/*.tsbuildinfo
+web/vite.config.js
+web/vite.config.d.ts
