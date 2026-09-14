@@ -2,7 +2,7 @@
 
 | 属性 | 内容 |
 |---|---|
-| 状态 | 已批准 |
+| 状态 | 已完成 |
 | 创建日期 | 2026-09-14 |
 | 适用范围 | `internal/indicator` |
 | 目标版本 | 相对价格指标第一版 |
@@ -87,7 +87,17 @@ z[i] = (spread[i] - populationMean(window)) / populationStdDev(window)
 
 ## 12. 最终验收结果
 
-待实现完成后记录。
+实现、测试和独立代码复核均已完成：
+
+- `go test ./internal/indicator -cover -count=1` 通过，指标模块覆盖率为 91.3%。
+- `go test ./internal/indicator -run '^TestRelativePriceZScore' -count=100` 通过。
+- `go test -race ./internal/indicator -count=1` 通过。
+- `npm --prefix web run check`、`go test ./...` 和 `go vet ./...` 均通过；全仓 Go 覆盖率为 85.6%。
+- `bash scripts/verify.sh` 的前端、Go 测试、覆盖率、竞态检查、静态检查和行情性能门禁通过；MySQL 8.0 容器创建在 180 秒后超时，用户明确决定跳过该集成测试，因此 MySQL 5.7/8.0 完整集成门禁未验证。
+- 单独执行 Docker 镜像构建时，Docker Hub 匿名认证请求网络超时，镜像门禁未验证。
+- 独立代码复核确认非法输入双腿对称覆盖和标准差阈值边界测试完整，未发现代码阻塞问题。
+
+未验证项均属于交付环境门禁，不改变本需求的纯函数实现范围；不得将其表述为已通过。
 
 ## 13. 代码—设计冲突与用户裁决
 
