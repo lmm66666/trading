@@ -2,7 +2,8 @@
 .worktrees/
 config.yaml
 config-nas.yaml
-docs/*
+docs/analysis/
+docs/superpowers/
 trading
 *.tar
 coverage.out
