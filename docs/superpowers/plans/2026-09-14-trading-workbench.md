@@ -1,12 +1,14 @@
 # A 股图表工作台 Implementation Plan
 
+> 历史计划（已废止）：MySQL 版本和验收指令已由 [REQ-2026-002](../../requirements/active/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)取代，本文仅保留需求追溯价值。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 交付一个可搜索 A 股并展示版本固定的日/周 K 线、成交量和技术指标的响应式 Web 工作台。
 
 **Architecture:** React/Vite 前端只负责交互与绘制；Go application service 负责证券搜索、行情版本固定、历史裁剪和权威指标计算。生产环境由 Go 同源托管 Vite 静态产物，开发环境使用 Vite proxy。
 
-**Tech Stack:** Go 1.25.7、Gin、GORM/MySQL 5.7/8.0、React、TypeScript、Vite、Vitest、Testing Library、Playwright、Lightweight Charts 5.2。
+**Tech Stack:** Go 1.25.7、Gin、GORM/MySQL 8.4.x LTS、React、TypeScript、Vite、Vitest、Testing Library、Playwright、Lightweight Charts 5.2。
 
 **Spec:** `docs/superpowers/specs/2026-09-14-trading-workbench-design.md`
 
@@ -290,4 +292,3 @@ Keep fixes scoped to reviewed defects. Repeat Task 4 Step 6.
 - [ ] **Step 4: Merge and clean up**
 
 From the primary checkout, merge `codex/trading-workbench` into `main` with a non-fast-forward merge, verify the main checkout, remove the worktree, and delete the merged branch. Preserve pre-existing uncommitted user changes in the primary checkout.
-

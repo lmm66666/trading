@@ -1,12 +1,14 @@
 # Database Cutover And Branch Integration Implementation Plan
 
+> 历史计划（已废止）：其中的 MySQL 环境、验收和迁移指令已由 [REQ-2026-002](../../requirements/active/REQ-2026-002-mysql8-cross-architecture.md)、[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)与[运行手册](../../operations.md)取代，不得直接执行本文的旧步骤。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 安装本机 MySQL CLI，将 `trading` 的旧行情完整迁移到版本化策略内核，验证后可恢复地清理废弃表，并把已验证代码合入 `main`。
 
 **Architecture:** 使用仓库内的幂等迁移器完成 dry-run、分批写入和摘要校验；用 MySQL CLI 负责迁移前盘点、逻辑备份、上线属性补齐、迁移后独立核对及旧表删除。数据库变更完成后执行项目完整门禁和独立代码审查；当前开发分支由本地 `main` 直接创建，因此不存在额外中间开发分支，最终以 fast-forward 合入本地 `main`。
 
-**Tech Stack:** Go 1.25.7、GORM、MySQL 5.7/8.0、Homebrew `mysql-client`、Git。
+**Tech Stack:** Go 1.25.7、GORM、MySQL（现行基线为 8.4.x LTS）、Homebrew `mysql-client`、Git。
 
 **Spec:** `docs/superpowers/specs/2026-09-13-strategy-backtest-kernel-design.md`
 
@@ -136,7 +138,7 @@
 
 - [ ] **Step 1: 执行完整验证**
 
-运行 `bash scripts/verify.sh`。预期测试、覆盖率、Race Detector、`go vet`、5000 证券性能、MySQL 5.7/8.0 集成测试和 Docker 镜像检查全部通过；环境性跳过或失败必须如实记录，不能当作通过。
+运行 `bash scripts/verify.sh`。预期测试、覆盖率、Race Detector、`go vet`、5000 证券性能、远端 MySQL 8.4.x 隔离集成测试和 AMD64 应用镜像检查全部通过；环境性跳过或失败必须如实记录，不能当作通过。
 
 - [ ] **Step 2: 启动独立代码审查**
 

@@ -1,12 +1,14 @@
 # Go Strategy and Backtest Kernel Migration Implementation Plan
 
+> 历史计划（已废止）：其中的 MySQL 容器、版本矩阵和验收指令已由 [REQ-2026-002](../../requirements/active/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)取代，不得直接执行本文的旧步骤。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the legacy filter-based signal engine with a deterministic Go strategy and backtest kernel, versioned market data, durable runs, and snapshot-based full-market scanning.
 
 **Architecture:** Pure `internal/market`, `internal/indicator`, `internal/strategy`, and `internal/backtest` packages form the domain kernel. Application services depend on ports, while MySQL/GORM and Gin provide adapters; vectorized features are computed once and strategies plus execution advance bar-by-bar without future access.
 
-**Tech Stack:** Go 1.25.7+, Gin, GORM, MySQL 5.7/8.0, `testing` with Testify 1.11.1, Docker-based integration tests.
+**Tech Stack:** Go 1.25.7+, Gin, GORM, MySQL 8.4.x LTS, `testing` with Testify 1.11.1, remote isolated integration tests.
 
 **Spec:** `docs/superpowers/specs/2026-09-13-strategy-backtest-kernel-design.md`
 
@@ -16,7 +18,7 @@
 - Preserve the user's existing `.claude`, `.gitignore`, `.claude/worktrees`, and `.tmp` changes and never stage them implicitly.
 - Before reading or changing a directory, read its local `README.md` when present and follow its constraints.
 - Use TDD for every behavior change; domain kernel coverage must be at least 90% and repository-wide coverage at least 80%.
-- Support both MySQL 5.7 and MySQL 8.0; do not rely on window functions or `SKIP LOCKED`.
+- Use the approved remote MySQL 8.4.x target; do not rely on window functions or `SKIP LOCKED` without a separately approved design change.
 - Strategies are trusted Go code compiled into the service; never accept or compile uploaded source.
 - Indicator decisions use forward-adjusted data; execution and accounting use raw prices plus corporate actions.
 - Signals are evaluated after the current close and orders are filled no earlier than the next bar open.
@@ -1028,13 +1030,13 @@ git commit -m "feat: define strategy application ports"
 - Consumes: `port.MarketData` and market types.
 - Produces: `mysql.MarketDataRepository` implementing `port.MarketData` and `port.MarketDataWriter`; schema creation for all new tables.
 
-- [ ] **Step 1: Add Docker-backed MySQL test bootstrap and failing schema tests**
+- [ ] **Step 1: Add remote isolated MySQL test bootstrap and failing schema tests**
 
 ```go
-func TestMigrateCreatesKernelTablesOnMySQL57And80(t *testing.T) {
-    for _, image := range []string{"mysql:5.7", "mysql:8.0"} {
-        t.Run(image, func(t *testing.T) {
-            db := dbtest.StartMySQL(t, image)
+func TestMigrateCreatesKernelTablesOnMySQL84(t *testing.T) {
+    for _, target := range dbtest.Targets() {
+        t.Run(target, func(t *testing.T) {
+            db := dbtest.OpenIsolatedMySQL(t, target)
             require.NoError(t, mysql.Migrate(db))
             assertTables(t, db, "t_instruments", "t_market_bars", "t_compute_runs", "t_signal_snapshots")
         })
@@ -1042,7 +1044,7 @@ func TestMigrateCreatesKernelTablesOnMySQL57And80(t *testing.T) {
 }
 ```
 
-Add `github.com/testcontainers/testcontainers-go/modules/mysql v0.44.0` and commit its resolved transitive versions in `go.mod`/`go.sum`. Mark Docker integration files with `//go:build integration`; the final verification script runs them explicitly against both images.
+Mark integration files with `//go:build integration`; the fixture reads local `config.yaml`, validates the approved remote target, replaces the configured business database with a random isolated database, and deletes it during cleanup.
 
 - [ ] **Step 2: Run the schema test and confirm failure**
 
@@ -1446,7 +1448,7 @@ func TestExpiredLeaseCanBeReclaimed(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Implement MySQL 5.7-compatible claiming**
+- [ ] **Step 2: Implement deterministic ordered claiming**
 
 Use a unique claim token and an atomic ordered update:
 
@@ -1507,7 +1509,7 @@ Use `PARTIAL_SUCCEEDED` instead of `SUCCEEDED` when `snapshot.Failures` is non-e
 
 Run: `go test -race -tags=integration ./internal/infrastructure/mysql -count=1`
 
-Expected: PASS on MySQL 5.7 and 8.0 containers.
+Expected: PASS on the approved remote MySQL 8.4.x isolated database.
 
 ```bash
 git add internal/infrastructure/mysql

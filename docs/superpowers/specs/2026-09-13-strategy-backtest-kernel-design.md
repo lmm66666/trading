@@ -1,5 +1,7 @@
 # Go 策略与回测内核整体迁移设计
 
+> 历史规格（已废止）：MySQL 版本、测试环境及当前模块行为已由 [REQ-2026-002](../../requirements/active/REQ-2026-002-mysql8-cross-architecture.md)和各模块 `DESIGN.md` 取代；本文仅用于追溯最初方案。
+
 ## 1. 背景
 
 当前系统已经具备日线、周线、财报采集，以及 `daily_b1_buy`、`weekly_b1_buy`、`bottom_surge_pullback` 三个技术策略，但策略能力仍建立在 `filter` 数组和批量布尔结果之上，所谓回测也只返回历史信号日期，没有订单、成交、持仓、资金曲线和交易成本。
@@ -239,7 +241,7 @@ Strategy Registry 使用策略 ID、版本和参数创建策略实例。数据�
 
 - 股票范围从 `t_instruments` 读取，不再对千万级 K 线执行 `DISTINCT code`。
 - Bar 使用 `(timeframe, close_time, instrument_id)` 范围索引和 `(instrument_id, timeframe, close_time)` 单标的索引。
-- 为兼容 MySQL 5.7，不依赖窗口函数。全市场扫描按交易日期范围用每个周期固定数量的 SQL 批量取回，再在 Go 中按 Instrument 分组并截取所需 Bar。
+- 当前实现不依赖窗口函数。全市场扫描按交易日期范围用每个周期固定数量的 SQL 批量取回，再在 Go 中按 Instrument 分组并截取所需 Bar。
 - 批量写入订单、权益点和快照行，不逐条提交事务。
 - FeatureGraph 在同一次扫描中跨策略复用相同特征。
 
@@ -363,7 +365,7 @@ GET  /api/v1/signal-snapshots/latest?strategy=...
 
 ### 18.2 集成与契约测试
 
-- Repository、版本查询、任务租约、接管和快照事务使用真实 MySQL 5.7 与 8.0 集成测试，不使用 SQLite 替代数据库语义。
+- Repository、版本查询、任务租约、接管和快照事务使用远端 MySQL 8.4.x 随机隔离数据库集成测试，不使用 SQLite 替代数据库语义。
 - API contract test 覆盖参数校验、幂等提交、状态转换、取消、分页、部分成功和脱敏错误。
 - 数据迁移测试比较旧表和新表的 Instrument 数、Bar 数、日期范围、抽样 OHLCV 与校验摘要。
 - 执行 `go test -race ./...` 检查 FeatureGraph 缓存和 worker 并行安全。

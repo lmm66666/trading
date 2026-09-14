@@ -1,5 +1,7 @@
 # 新浪商品期货主力日线实施计划
 
+> 历史计划（已废止）：MySQL 验收方式已由 [REQ-2026-002](../../requirements/active/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)取代，本文仅保留需求追溯价值。
+
 **目标：** 使用一个已实测可用的新浪期货日线接口，为 AU、AG、FU、SC、LU、J、JM、ZC 八个主力连续品种保存日线与本地周线。
 
 **架构：** `SinaFuturesSource` 按主力符号请求完整历史，复用股票链路同一个 5 秒全局限频器；`MarketIngestionService` 复用现有合并、周线聚合和版本发布逻辑；独立的固定品种 scheduler 每日刷新；统一行情查询 API 按规范 Instrument ID 读取版本化 Bar。
@@ -59,6 +61,6 @@ go test . -run 'Test(ResolveMarket|KernelComposition|LoadConfig)' -count=1
 
 - [x] 使用八个真实符号做只读在线 smoke test。
 - [x] 运行 `go test ./...`、`go vet ./...` 和覆盖率门禁。
-- [x] 运行 `bash scripts/verify.sh`；前六项通过，Docker provider 不可用导致 MySQL 5.7/8.0 与镜像门禁未执行。
+- [x] 历史执行 `bash scripts/verify.sh` 时，前六项通过；当时 Docker provider 不可用，旧数据库容器与镜像门禁未执行。该结果不代表现行 MySQL 8.4.x 门禁通过。
 - [x] 代码审查并修正发现。
 - [ ] 按项目 Git 规范提交、合并回 main、清理开发分支。

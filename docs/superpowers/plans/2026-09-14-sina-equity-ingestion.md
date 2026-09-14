@@ -1,12 +1,14 @@
 # Sina Equity Daily Ingestion Implementation Plan
 
+> 历史计划（已废止）：MySQL 版本和验收指令已由 [REQ-2026-002](../../requirements/active/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)取代，不得直接执行本文的旧步骤。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the production Eastmoney stock-history path with paced Sina raw daily bars plus qfq factors while preserving versioned Raw/ForwardAdjusted datasets and deriving weekly bars locally.
 
 **Architecture:** `pkg/broker.SinaMarketSource` implements a stock-specific daily source port and owns the two fixed Sina HTTP protocols. `MarketIngestionService` merges daily history, derives weekly bars deterministically, validates factor coverage, and publishes one existing `MarketWriteBatch`; `main.go` injects one process-wide five-second token bucket shared by all Sina market requests.
 
-**Tech Stack:** Go 1.25.7, `net/http`, `math/big`, `golang.org/x/time/rate`, existing market/application/port packages, GORM/MySQL 5.7 and 8.0, `httptest`, Testify.
+**Tech Stack:** Go 1.25.7, `net/http`, `math/big`, `golang.org/x/time/rate`, existing market/application/port packages, GORM/MySQL 8.4.x LTS, `httptest`, Testify.
 
 **Spec:** `docs/superpowers/specs/2026-09-13-market-data-ingestion-design.md`
 
@@ -309,7 +311,7 @@ Expected: PASS.
 
 Run: `bash scripts/verify.sh`
 
-Expected: all unit, race, coverage, performance, MySQL 5.7/8.0, and image gates pass; if Docker is unavailable, record exactly which Docker-only gates could not run.
+Expected: all unit, race, coverage, performance, remote MySQL 8.4.x isolation, and AMD64 image gates pass; if Docker is unavailable, record exactly which image gate could not run.
 
 - [ ] **Step 4: Perform one manual low-frequency smoke test**
 

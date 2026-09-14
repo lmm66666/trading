@@ -1,5 +1,7 @@
 # A 股图表工作台设计
 
+> 历史规格（已废止）：MySQL 版本和验收方式已由 [REQ-2026-002](../../requirements/active/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)取代；当前工作台行为以 [web 设计](../../../web/DESIGN.md)为准。
+
 ## 目标
 
 在现有 Go 行情与指标内核之上提供一个桌面优先、移动端可用的单页图表工作台。第一页只包含证券搜索、日/周 K 线、成交量、MA5/MA20/MA60，以及可添加到主图或独立窗格的技术指标。
@@ -68,9 +70,8 @@
 
 ## 验收与测试
 
-- Go 单元、handler、repository 和 MySQL 5.7/8.0 集成测试覆盖搜索排序、边界、版本固定、排他游标、指标分量与预热语义。
+- Go 单元、handler、repository 和远端 MySQL 8.4.x 随机隔离数据库集成测试覆盖搜索排序、边界、版本固定、排他游标、指标分量与预热语义。
 - 前端组件与状态测试覆盖搜索键盘流、URL 状态、指标开关、加载/错误/空状态和历史合并去重。
 - Playwright 覆盖搜索证券、渲染默认图表、切换周期/复权、添加独立指标和加载更早 Bar。
 - 总覆盖率保持 80% 以上；核心 Go 领域包保持 90% 以上。
 - `go test ./... && go vet ./...`、前端 test/build、`bash scripts/verify.sh` 全部通过；需要 Docker 的步骤若环境不可用必须明确报告。
-

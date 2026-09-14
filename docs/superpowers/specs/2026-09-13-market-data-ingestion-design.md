@@ -1,5 +1,7 @@
 # 新浪股票与商品期货日线接入设计
 
+> 历史规格（已废止）：MySQL 验收方式已由 [REQ-2026-002](../../requirements/active/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)取代；当前行为以模块 `DESIGN.md` 为准。
+
 ## 1. 决策摘要
 
 - A 股继续使用新浪：原始日线 + qfq 因子；所有请求全局最小间隔 5 秒，周线本地聚合。
@@ -164,7 +166,7 @@ GET /api/v1/market/bars?instrument=SHFE:AU.MAIN&timeframe=daily&view=raw&limit=1
 - 新浪期货八个固定符号、JSONP、十进制定点、重复/坏值/超限/取消测试。
 - 期货 scheduler 顺序、部分失败、重复运行和取消测试。
 - 通用行情 API 的规范 ID、严格参数、版本和 daily/weekly 测试。
-- MySQL 5.7/8.0 验证 Instrument schema 与版本发布；总体覆盖率大于 80%。
+- 远端 MySQL 8.4.x 随机隔离数据库验证 Instrument schema 与版本发布；总体覆盖率大于 80%。
 
 验收时用八个符号做只读在线 smoke test，但普通单元测试不访问公网。完整交付执行 `bash scripts/verify.sh`。
 
