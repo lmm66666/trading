@@ -164,10 +164,10 @@
 
 - 新增业务逻辑有单元测试，总覆盖率不低于 80%。
 - `internal/market`、`internal/indicator`、`internal/strategy/...`、`internal/backtest` 各自覆盖率不低于 90%。
-- MySQL 语义必须在 8.4 真实实例验证；本地 ARM64 使用原生容器，部署应用镜像按 `linux/amd64` 构建。SQL mock 或只编译不能替代。
+- MySQL 语义必须在获批的远端 8.4/x86_64 服务上，以随机隔离数据库验证；本地不运行 MySQL 验收，部署应用镜像按 `linux/amd64` 构建。测试不得使用现有业务库，SQL mock 或只编译不能替代。
 - 快速检查：`npm --prefix web run check && go test ./... && go vet ./...`。
 - 完整交付：`bash scripts/verify.sh`。
-- Docker 不可用时准确报告未完成的 MySQL 和镜像门禁，不能伪报通过。
+- 缺少远端测试凭据时准确报告未完成的 MySQL 门禁；Docker 不可用时准确报告未完成的 amd64 镜像门禁，均不能伪报通过。
 
 ## 10. Git 规范
 
