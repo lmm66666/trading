@@ -52,6 +52,26 @@ func TestRelativePriceZScoreMarksFlatRatioWindowsInvalid(t *testing.T) {
 	}
 }
 
+func TestRelativePriceZScoreAppliesNearZeroDeviationThreshold(t *testing.T) {
+	belowThreshold, err := indicator.RelativePriceZScore(
+		[]float64{1, math.Exp(1e-12)},
+		[]float64{1, 1},
+		2,
+	)
+	require.NoError(t, err)
+	assert.False(t, belowThreshold.Valid(1))
+
+	aboveThreshold, err := indicator.RelativePriceZScore(
+		[]float64{1, math.Exp(4e-12)},
+		[]float64{1, 1},
+		2,
+	)
+	require.NoError(t, err)
+	value := mustValue(t, aboveThreshold, 1)
+	assert.False(t, math.IsNaN(value))
+	assert.False(t, math.IsInf(value, 0))
+}
+
 func TestRelativePriceZScorePreservesWarmupWhenPeriodExceedsHistory(t *testing.T) {
 	got, err := indicator.RelativePriceZScore(
 		[]float64{100, 110},
@@ -76,10 +96,15 @@ func TestRelativePriceZScoreRejectsInvalidInputs(t *testing.T) {
 		{name: "zero period", primary: []float64{100, 101}, comparison: []float64{100, 100}, period: 0},
 		{name: "one period", primary: []float64{100, 101}, comparison: []float64{100, 100}, period: 1},
 		{name: "zero primary", primary: []float64{0, 101}, comparison: []float64{100, 100}, period: 2},
+		{name: "zero comparison", primary: []float64{100, 101}, comparison: []float64{100, 0}, period: 2},
+		{name: "negative primary", primary: []float64{100, -1}, comparison: []float64{100, 100}, period: 2},
 		{name: "negative comparison", primary: []float64{100, 101}, comparison: []float64{100, -1}, period: 2},
 		{name: "primary nan", primary: []float64{100, math.NaN()}, comparison: []float64{100, 100}, period: 2},
+		{name: "comparison nan", primary: []float64{100, 101}, comparison: []float64{100, math.NaN()}, period: 2},
+		{name: "primary positive infinity", primary: []float64{100, math.Inf(1)}, comparison: []float64{100, 100}, period: 2},
 		{name: "comparison positive infinity", primary: []float64{100, 101}, comparison: []float64{100, math.Inf(1)}, period: 2},
 		{name: "primary negative infinity", primary: []float64{100, math.Inf(-1)}, comparison: []float64{100, 100}, period: 2},
+		{name: "comparison negative infinity", primary: []float64{100, 101}, comparison: []float64{100, math.Inf(-1)}, period: 2},
 	}
 
 	for _, test := range tests {
