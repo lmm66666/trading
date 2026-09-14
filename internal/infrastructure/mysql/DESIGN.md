@@ -6,17 +6,38 @@
 | 适用范围 | `internal/infrastructure/mysql` |
 | 最后更新 | 2026-09-14 |
 
-## 职责与边界
+## 1. 职责与非职责
 
 本模块实现版本化行情、证券目录、持久化任务与租约、回测结果、扫描快照、Outbox 和旧行情迁移所需的 MySQL 端口。它负责数据库事务、并发仲裁、索引和 GORM/SQL 映射，不定义策略、指标或撮合业务规则。
 
-应用和领域模块不得依赖本模块；生产由组合根把这些适配器注入 `internal/port` 定义的边界。
+本模块不定义策略、指标、撮合、任务重试策略或 HTTP 行为。应用和领域模块不得依赖本模块；生产由组合根把适配器注入 `internal/port` 定义的边界。
+
+## 2. 对外能力与使用者
+
+- 组合根使用迁移与构造函数初始化数据库。
+- 应用层通过 port 使用版本化行情、证券目录、任务队列、运行结果、扫描快照和 Outbox。
+- 旧行情迁移命令使用专用读取、暂存、检查点和最终切换能力。
+- `data` 包通过现有兼容初始化桥接复用本模块连接；该依赖不应扩展到新领域代码。
+
+## 3. 依赖和边界
 
 本目录提供 MySQL 5.7/8.0 的版本化行情仓储和内核表结构。一张表一个模型，领域及 port 不依赖 GORM。连接必须使用 `parseTime=true&loc=UTC`；时间以 UTC `DATETIME(6)` 存储，Price/Money 使用有符号 BIGINT，版本和序号使用无符号整数。
+
+本模块依赖 `port`、`market` 和 `backtest` 完成端口映射；对根 `model` 的依赖只服务财报兼容与旧行情迁移。它不得调用外部 HTTP，也不得在数据库事务中执行领域长计算。
+
+## 4. 核心模型与不变量
 
 不透明身份字段采用 VARBINARY，保证 `Key`、`key`、`key ` 精确区分，避免 `_ci` 排序规则及 PAD SPACE 的隐式合并。RunID、SnapshotID、EventID、StrategyID、摘要/参数 hash 为 64 字节；策略/引擎版本为 32 字节；幂等键、租约 owner/token、AggregateID、Source、SourceEventID 为 128 字节。`port.ValidateIdentity` 及各 DTO Validate 校验相同的 UTF-8 字节上限，不 trim 或修改身份；接受标量身份参数的适配器也必须调用该验证。普通状态、类型、名称、原因保持文本。当前 OrderID 把无长度限制的 Reason 拼入标识，OrderID/FillID 因而使用不参与索引的 LONGBLOB，保持字节完整。
 
 连接初始化在所有迁移完成前持有所有权，旧表或内核迁移任一步失败都释放连接，成功后才交给 Data。若已有早期测试数据，切换身份列前需确认其字节长度符合端口边界，不能依赖数据库截断修复超长旧值。
+
+版本 0 仅是内部发布锁；业务版本必须大于 0 且为 COMPLETE。历史可见区间固定为 `[valid_from_version, valid_to_version)`。市场写入是增量 upsert，未提供的数据表示未观测而不是删除。
+
+租约所有权由 run、owner、随机 token 和数据库时间共同确认；失效 worker 不得发布、重试或覆盖新领取者。扫描分页始终绑定精确 SnapshotID，不能在续页时重新选择最新快照。
+
+## 5. 主要流程
+
+### 5.1 初始化、行情发布与读取
 
 `Migrate` 按依赖顺序创建 13 张内核表，检查关键索引，并幂等建立版本 0 锁行。版本 0 的状态为 `INTERNAL_LOCK`、来源为 `__kernel_version_lock__`，只用于序列化发布，永远不能作为已完成数据版本读取。正常启动仅迁移财报、证券主数据和新内核表；旧技术 K 线表只供迁移或回滚读取，不创建、不变更。
 
@@ -32,17 +53,7 @@ COMPLETE 表示已提供变更全部提交。当前写入端口没有上游质�
 
 `DirtyInstruments(after, through)` 合并 Bar、因子、公司行动在 `(after, through]` 内的新修订，使用三组 `(valid_from_version, instrument_id)` 索引，去重并按交易所/代码排序。
 
-验证命令：
-
-```bash
-go test ./internal/infrastructure/mysql -cover
-go test -tags=integration ./internal/infrastructure/mysql/... -run '^$'
-go test -tags=integration ./internal/infrastructure/mysql/... -count=1
-```
-
-集成测试使用 testcontainers MySQL 模块 v0.44.0。无 Docker 会明确失败，不跳过或伪报通过；SQL mock 测试仅验证 SQL 边界、映射和错误传播，不能替代真实 DDL、事务隔离、并发锁及索引验收。
-
-## 持久化任务、租约和结果
+### 5.2 持久化任务、租约和结果
 
 `NewJobQueue`、`NewRunStore`、`NewSignalSnapshotStore` 和 `NewOutbox` 实现对应 port。入队只接受零 Attempts、未取消的 PENDING Run；同 kind 与幂等键返回原 Run，输入 hash 不同则拒绝。所有身份按字节精确匹配。
 
@@ -64,15 +75,13 @@ Enqueue 的同幂等键异 hash 冲突以 `port.ErrIdempotencyConflict` 明确�
 
 Outbox 的 Payload 是端口定义的不透明字节，用 JSON base64 字符串无损保存；消费者需先 JSON 解码为字节，再按事件协议解码。独立 Publish 按 EventID 幂等，重复 ID 的内容不同会拒绝。成功/部分成功/Fail 发布生成稳定的 compute.completed 事件 ID。当前没有外部投递器，PublishedAt 保持空值供后续消费。
 
-事务只重试已经回滚的 MySQL 1213/1205 锁冲突，最多3次、退避遵守 context；commit 返回错误时不重放、不报告成功或有效租约。真实并发、过期重领、取消、结果分批回滚和提交可见性必须通过 MySQL5.7/8.0 集成门禁：
+事务只重试已经回滚的 MySQL 1213/1205 锁冲突，最多3次、退避遵守 context；commit 返回错误时不重放、不报告成功或有效租约。真实并发、过期重领、取消、结果分批回滚和提交可见性必须通过 MySQL 5.7/8.0 集成门禁。
 
-```bash
-go test -race -tags=integration ./internal/infrastructure/mysql -run '^TestDurable' -count=1
-```
-
-## 旧行情迁移命令
+### 5.3 兼容查询
 
 HTTP 兼容查询使用两个只读扩展：`MarketDataRepository.ResolveCode` 验证六位数字后只读 active 证券，最多返回两个匹配，由 API 区分无匹配/唯一/歧义；不推断交易所。`SignalSnapshotStore.LatestPublishedKey` 只读 SUCCEEDED/PARTIAL_SUCCEEDED，按 AsOf、DataVersion、自增 ID 倒序定位，返回完整 SnapshotID/版本/参数 hash。版本可省略供旧接口跨版本选最新，非空 SnapshotID 精确匹配。后续行读取仍使用严格 SnapshotKey.Validate 与 SnapshotID 绑定，不放宽原 Latest 的分页约束。
+
+### 5.4 旧行情迁移命令
 
 先在备份副本演练，正式运行时暂停旧行情采集和扫描：
 
@@ -101,10 +110,37 @@ apply 在固定专用连接上持有 MySQL GET_LOCK，并在所有退出路径�
 
 驻留内存为当前源批次、当前证券历史/回填/校验数据和证券级元数据，不保留全市场源 JSON、Kline 或 raw 批次；SQL 读写批次为1–10000。单证券历史大小仍影响峰值，正式运行需备份副本演练内存、暂存空间与来源耗时。检查点格式v2针对新初始化迁移；不自动接管旧原型格式或已有业务版本。
 
-真实验证命令：
+## 6. 失败、取消和一致性语义
+
+- 事务只重试已经完整回滚的 MySQL 1213/1205 锁冲突；commit 结果不确定时不自动重放，也不报告成功。
+- context 取消中止等待、重试和数据库调用；租约过期、取消或 token 不匹配统一阻止结果发布。
+- 行情发布、任务终态与对应结果、扫描快照及 Outbox 分别在要求的原子事务内提交，任一步失败整体回滚。
+- 迁移失败保留已提交检查点但不暴露 INCOMPLETE 版本；恢复必须重新验证已复制前缀和冻结源摘要。
+
+## 7. 性能与安全约束
+
+- 批量证券上限 5000，明细写入按最多 1000 行分批；SQL 参数数量从 MySQL 65535 上限扣除安全余量后计算，禁止无界 `IN`、`UNION ALL` 或结果集。
+- 身份字段使用二进制精确比较，所有 SQL 参数化并显式列名；事务不包含外部 HTTP、长计算或无界循环。
+- 错误与迁移报告不得泄露 DSN、SQL、路径、凭据、来源 URL 或原始响应；数据库时间统一 UTC 微秒。
+- MySQL 5.7 与 8.0 的 DDL、索引、事务隔离和并发语义必须在真实实例验证。
+
+## 8. 测试与验收证据
 
 ```bash
+go test ./internal/infrastructure/mysql -cover
+go test -tags=integration ./internal/infrastructure/mysql/... -run '^$'
+go test -race -tags=integration ./internal/infrastructure/mysql -run '^TestDurable' -count=1
 go test -tags=integration ./internal/infrastructure/mysql -run TestLegacyMigrationMySQLRestartAndIncompleteVisibility
+go test -tags=integration ./internal/infrastructure/mysql/... -count=1
 ```
 
-覆盖 MySQL 5.7/8.0 的失败回填、分批目标中断、已提交游标、版本不可见性、恢复和幂等重跑；Docker缺失仍明确失败。
+单元与 SQL mock 测试验证端口校验、SQL 边界、映射和错误传播；真实集成测试覆盖 MySQL 5.7/8.0 的迁移、索引、锁、租约、提交可见性、失败恢复和幂等重跑。无 Docker 时必须明确失败，不能以 mock 或只编译替代。
+
+## 9. 相关文档
+
+- [系统设计](../../../docs/architecture/system-design.md)
+- [领域地图](../../../docs/architecture/domain-map.md)
+- [应用端口设计](../../port/DESIGN.md)
+- [应用层设计](../../application/DESIGN.md)
+- [行情领域设计](../../market/DESIGN.md)
+- [旧行情迁移命令设计](../../../cmd/migrate-strategy-kernel/DESIGN.md)
