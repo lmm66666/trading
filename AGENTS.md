@@ -123,7 +123,7 @@
 
 ## 5. 架构规范
 
-- 依赖方向固定为 `api/infrastructure/pkg -> application -> port/domain`。
+- 新内核和新增代码的依赖方向固定为 `api/infrastructure/pkg -> application -> port/domain`；现行财报、宏观、旧 HTTP 与迁移链路的兼容例外以 [领域地图](docs/architecture/domain-map.md) 为准，不得继续扩大。
 - `internal/market`、`internal/indicator`、`internal/strategy`、`internal/backtest` 不依赖 Gin、GORM、MySQL、HTTP 客户端或具体数据源。
 - `api` 只负责传输边界和响应映射；`main.go` 只负责依赖装配与生命周期。
 - `internal/application` 编排用例；`internal/port` 只定义真正需要隔离的边界；MySQL 与 Broker 是适配器。

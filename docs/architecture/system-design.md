@@ -23,7 +23,7 @@ HTTP / Web ──> API Adapter ───────────┤
 
 ## 2. 分层与依赖方向
 
-依赖方向固定为：
+新内核和新增代码的依赖方向固定为：
 
 ```text
 api / infrastructure / pkg
@@ -36,6 +36,7 @@ api / infrastructure / pkg
 - `internal/market`、`internal/indicator`、`internal/strategy`、`internal/backtest` 是纯领域/计算模块，不依赖 Gin、GORM、MySQL、HTTP 客户端或具体数据源。
 - `internal/application` 编排用例、重试、取消、事务外流程和生命周期，只依赖领域对象与 `internal/port`。
 - `internal/port` 定义应用真正需要隔离或替换的能力边界。
+- 财报、宏观、旧 HTTP 与迁移链路仍有现行兼容依赖；这些例外及其收敛规则以 [领域地图](domain-map.md) 为准，不代表新增代码可以绕过上述方向。
 - `internal/infrastructure/mysql` 实现持久化端口。
 - `pkg/broker` 实现外部数据源适配，外部 DTO 在进入领域前完成解析和校验。
 - `api` 负责传输校验、调用应用服务和响应映射，不直接访问 GORM 或编写业务规则。

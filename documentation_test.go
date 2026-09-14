@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -87,8 +88,7 @@ func TestDocumentationContract(t *testing.T) {
 			t.Errorf("forbidden documentation path %s must not exist", forbidden)
 		}
 	}
-	validateRequirementStatuses(t, "docs/requirements/active", false)
-	validateRequirementStatuses(t, "docs/requirements/archived", true)
+	validateRequirementLayout(t)
 }
 
 func TestDocumentationLinks(t *testing.T) {
@@ -112,12 +112,12 @@ func TestDocumentationLinks(t *testing.T) {
 				continue
 			}
 			pathTarget, fragment := splitDocumentationTarget(target)
-			if pathTarget == "" {
+			sameDocument := pathTarget == ""
+			if sameDocument {
 				pathTarget = name
-			}
-			if strings.HasPrefix(pathTarget, "/") {
+			} else if strings.HasPrefix(pathTarget, "/") {
 				pathTarget = strings.TrimPrefix(pathTarget, "/")
-			} else if pathTarget != name {
+			} else {
 				pathTarget = filepath.Join(filepath.Dir(name), filepath.FromSlash(pathTarget))
 			}
 			decoded, err := url.PathUnescape(pathTarget)
@@ -254,6 +254,47 @@ func validateRequirementStatuses(t *testing.T, directory string, archived bool) 
 		if archived != completed {
 			t.Errorf("requirement %s has status %q inconsistent with directory %s", entry.Name(), status, directory)
 		}
+	}
+}
+
+var requirementFilenamePattern = regexp.MustCompile(`^(REQ-\d{4}-\d{3})-[a-z0-9]+(?:-[a-z0-9]+)*\.md$`)
+
+func validateRequirementLayout(t *testing.T) {
+	t.Helper()
+	seen := make(map[string]string)
+	for _, item := range []struct {
+		directory string
+		archived  bool
+	}{
+		{directory: "docs/requirements/active"},
+		{directory: "docs/requirements/archived", archived: true},
+	} {
+		entries, err := os.ReadDir(item.directory)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			t.Errorf("read requirement directory %s: %v", item.directory, err)
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				t.Errorf("requirement directory %s contains unexpected subdirectory %s", item.directory, entry.Name())
+				continue
+			}
+			match := requirementFilenamePattern.FindStringSubmatch(entry.Name())
+			if match == nil {
+				t.Errorf("requirement directory %s contains invalid filename %s", item.directory, entry.Name())
+				continue
+			}
+			path := filepath.Join(item.directory, entry.Name())
+			if previous, ok := seen[match[1]]; ok {
+				t.Errorf("requirement number %s is duplicated by %s and %s", match[1], previous, path)
+			} else {
+				seen[match[1]] = path
+			}
+		}
+		validateRequirementStatuses(t, item.directory, item.archived)
 	}
 }
 
