@@ -72,6 +72,13 @@ go test -tags=deployment ./internal/infrastructure/mysql -run '^TestDeploymentMy
 go test -tags=integration ./internal/infrastructure/mysql/... -count=1
 
 echo "[10/10] linux/amd64 无本地配置镜像构建"
-docker buildx build --platform linux/amd64 --load --no-cache -t trading:verify .
+build_proxy_args=()
+if [[ -n "${TRADING_DOCKER_BUILD_PROXY:-}" ]]; then
+  build_proxy_args+=(
+    --build-arg "HTTP_PROXY=$TRADING_DOCKER_BUILD_PROXY"
+    --build-arg "HTTPS_PROXY=$TRADING_DOCKER_BUILD_PROXY"
+  )
+fi
+docker buildx build --platform linux/amd64 --load --no-cache "${build_proxy_args[@]}" -t trading:verify .
 
 echo "验证全部通过"

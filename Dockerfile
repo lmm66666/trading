@@ -3,7 +3,7 @@ FROM --platform=$BUILDPLATFORM node:24-alpine AS web-builder
 WORKDIR /src/web
 
 COPY web/package.json web/package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci --prefer-offline --no-audit --no-fund
 
 COPY web/ ./
 RUN npm run build
