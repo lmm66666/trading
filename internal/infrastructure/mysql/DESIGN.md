@@ -1,12 +1,24 @@
-# 策略内核 MySQL 存储
+# 策略内核 MySQL 存储设计
+
+| 属性 | 内容 |
+|---|---|
+| 状态 | 当前有效 |
+| 适用范围 | `internal/infrastructure/mysql` |
+| 最后更新 | 2026-09-14 |
+
+## 职责与边界
+
+本模块实现版本化行情、证券目录、持久化任务与租约、回测结果、扫描快照、Outbox 和旧行情迁移所需的 MySQL 端口。它负责数据库事务、并发仲裁、索引和 GORM/SQL 映射，不定义策略、指标或撮合业务规则。
+
+应用和领域模块不得依赖本模块；生产由组合根把这些适配器注入 `internal/port` 定义的边界。
 
 本目录提供 MySQL 5.7/8.0 的版本化行情仓储和内核表结构。一张表一个模型，领域及 port 不依赖 GORM。连接必须使用 `parseTime=true&loc=UTC`；时间以 UTC `DATETIME(6)` 存储，Price/Money 使用有符号 BIGINT，版本和序号使用无符号整数。
 
-不透明身份字段采用 VARBINARY，保证 `Key`、`key`、`key ` 精确区分，避免 `_ci` 排序规则及 PAD SPACE 的隐式合并。RunID、SnapshotID、EventID、StrategyID、摘要/参数 hash 为 64 字节；策略/引擎版本为 32 字节；幂等键、租约 owner/token、AggregateID、Source、SourceEventID 为 128 字节。`port.ValidateIdentity` 及各 DTO Validate 校验相同的 UTF-8 字节上限，不 trim 或修改身份；接受标量身份参数的后续适配器也应调用该验证。普通状态、类型、名称、原因保持文本。当前 OrderID 把无长度限制的 Reason 拼入标识，OrderID/FillID 因而使用不参与索引的 LONGBLOB，保持字节完整；以后可单独将领域 ID 改成固定长度标识，本迁移不改领域语义。
+不透明身份字段采用 VARBINARY，保证 `Key`、`key`、`key ` 精确区分，避免 `_ci` 排序规则及 PAD SPACE 的隐式合并。RunID、SnapshotID、EventID、StrategyID、摘要/参数 hash 为 64 字节；策略/引擎版本为 32 字节；幂等键、租约 owner/token、AggregateID、Source、SourceEventID 为 128 字节。`port.ValidateIdentity` 及各 DTO Validate 校验相同的 UTF-8 字节上限，不 trim 或修改身份；接受标量身份参数的适配器也必须调用该验证。普通状态、类型、名称、原因保持文本。当前 OrderID 把无长度限制的 Reason 拼入标识，OrderID/FillID 因而使用不参与索引的 LONGBLOB，保持字节完整。
 
 连接初始化在所有迁移完成前持有所有权，旧表或内核迁移任一步失败都释放连接，成功后才交给 Data。若已有早期测试数据，切换身份列前需确认其字节长度符合端口边界，不能依赖数据库截断修复超长旧值。
 
-`Migrate` 按依赖顺序创建 13 张内核表，检查关键索引，并幂等建立版本 0 锁行。版本 0 的状态为 `INTERNAL_LOCK`、来源为 `__kernel_version_lock__`，只用于序列化发布，永远不能作为已完成数据版本读取。旧表继续由 `data.New` 注册迁移，直到 Task15 切换运行时。
+`Migrate` 按依赖顺序创建 13 张内核表，检查关键索引，并幂等建立版本 0 锁行。版本 0 的状态为 `INTERNAL_LOCK`、来源为 `__kernel_version_lock__`，只用于序列化发布，永远不能作为已完成数据版本读取。正常启动仅迁移财报、证券主数据和新内核表；旧技术 K 线表只供迁移或回滚读取，不创建、不变更。
 
 `Publish` 是增量 upsert：未提供的 Bar、因子或事件表示本次未观测，不表示删除；当前端口没有权威快照或删除语义。批次先复制、排序、校验并计算 SHA-256；提供的 Digest 必须匹配 `MarketBatchDigest`。输入版本号不参与摘要，发布版本由仓储分配。仅该证券最近一条 COMPLETE 发布可命中摘要幂等，重新提交较老内容会形成新版本。
 
@@ -40,7 +52,7 @@ go test -tags=integration ./internal/infrastructure/mysql/... -count=1
 
 扫描快照、回测汇总、订单、成交、权益点、完成 outbox 及 Run 终态在同一事务提交。明细单批最多1000行，最终更新再次检查租约期限；任一批次、outbox 或最终 CAS 失败全部回滚。扫描带失败项时保存 PARTIAL_SUCCEEDED。Latest 只读取已发布成功/部分成功快照，快照行按证券稳定排序，结果分页使用持久化 sequence。回测 Trades 接口返回 Fill 成交明细；领域 round-trip Trade 和 FinalPosition 没有独立读取端口，已由 Summary 与持仓布尔状态提供汇总。
 
-快照分页必须绑定精确 SnapshotID：只有 `AfterSequence=0` 且 `SnapshotKey.SnapshotID` 为空时可选最新快照；返回的 `SignalSnapshot.ID` 及 `Key.SnapshotID` 是后续页绑定值。`AfterSequence>0` 缺失 ID 直接返回 ErrInvalidPortValue，不会重新选择最新快照。提供 ID 后仍同时匹配策略 ID、策略版本、参数 hash，以及非零 AsOf；未知、键不匹配或未发布的快照返回 ErrSnapshotNotReady。ID 的大小写和尾空格均精确区分。同 AsOf 后续发布更高 DataVersion 也不会改变已经开始的分页。未来 API 应接受 `snapshot_id`（SnapshotKey JSON 字段）并与 `after_sequence` 一起传入；不能仅以 AsOf/DataVersion 代替快照身份。
+快照分页必须绑定精确 SnapshotID：只有 `AfterSequence=0` 且 `SnapshotKey.SnapshotID` 为空时可选最新快照；返回的 `SignalSnapshot.ID` 及 `Key.SnapshotID` 是后续页绑定值。`AfterSequence>0` 缺失 ID 直接返回 ErrInvalidPortValue，不会重新选择最新快照。提供 ID 后仍同时匹配策略 ID、策略版本、参数 hash，以及非零 AsOf；未知、键不匹配或未发布的快照返回 ErrSnapshotNotReady。ID 的大小写和尾空格均精确区分。同 AsOf 后续发布更高 DataVersion 也不会改变已经开始的分页。API 必须把 `snapshot_id` 与 `after_sequence` 一起传入；不能仅以 AsOf/DataVersion 代替快照身份。
 
 同业务条件、DataVersion 和 AsOf 可以由不同 Run 重扫并发布不同 Snapshot；`uq_snapshot_id` 和 `uq_snapshot_run` 仍保证快照身份与每 Run 一个结果。Migrate 在确认保留索引已建立后，显式查询并删除旧 `uq_snapshot_business` 唯一索引；此升级不依赖 AutoMigrate 删除旧索引，不删除数据，重复迁移安全。查询复用现有 `idx_snapshot_latest` 的策略/参数/状态前缀，并按 AsOf、DataVersion、自增 ID 选择最新发布。旧 SnapshotID 的分页始终不变。
 
@@ -77,7 +89,7 @@ apply 在固定专用连接上持有 MySQL GET_LOCK，并在所有退出路径�
 
 证券只按 SSE `600/601/603/605/688/689`、SZSE `000/001/002/003/300/301`、BSE `4/8/920` 前缀解析六位代码。报告包含合法源证券数、日周 Bar 数和日期范围、最后已提交源主键（dry-run 为已读取主键）、源 SHA-256 和绑定回填结果的摘要。未知代码进入拒绝清单。
 
-回填逐证券从暂存读取历史。旧 OHLC 复权来源不可靠，因此最终 raw OHLCV/Amount 由 Task9 provider 回填；日周线日期必须与旧数据精确匹配。合并后的因子只规范化/排序一次，再用顺序游标验证每根 Bar 的覆盖及跨周期一致性，避免逐 Bar 复制或排序。公司行动请求必须成功，合法空列表允许通过。通过验证的回填按证券缓存，重启无需再次请求已缓存证券。
+回填逐证券从暂存读取历史。旧 OHLC 复权来源不可靠，因此最终 raw OHLCV/Amount 由配置的外部行情源回填；日周线日期必须与旧数据精确匹配。合并后的因子只规范化/排序一次，再用顺序游标验证每根 Bar 的覆盖及跨周期一致性，避免逐 Bar 复制或排序。公司行动请求必须成功，合法空列表允许通过。通过验证的回填按证券缓存，重启无需再次请求已缓存证券。
 
 目标市场行按 batch-size 分批写入真实 INCOMPLETE 版本，每批与目标游标在同一短事务提交。目标证券全部写完后按批读取并校验完整摘要，写入验证凭证。中途失败只重做未提交批次；已验证证券不重复写入。最后一次轻量事务只检查凭证数量并更新版本和报告为 COMPLETE，不搬运市场历史。普通 Publish 遇到本迁移的 INCOMPLETE 版本会拒绝新发布，防止更高版本间接暴露部分数据；版本查询始终拒绝 INCOMPLETE。
 
