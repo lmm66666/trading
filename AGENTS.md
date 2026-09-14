@@ -1,6 +1,6 @@
 # 项目概述
 
-本项目是 Go 编写的 A 股行情、财报、指标、策略扫描与回测平台。技术策略直接用 Go 实现，运行时使用版本化行情、持久化任务和不可变扫描快照；长期方向是逐步提供类似 TradingView 的指标、脚本和回测能力。
+本项目是 Go 编写的 A 股与大宗商品期货行情、财报、指标、策略扫描与回测平台。技术策略直接用 Go 实现，运行时使用版本化行情、持久化任务和不可变扫描快照；长期方向是逐步提供类似 TradingView 的指标、脚本和回测能力。
 
 ## 根目录文档规则
 
@@ -27,7 +27,7 @@ trading/
 │   ├── financialscreen/            # 财报筛选器
 │   ├── port/                       # 应用端口与 DTO
 │   └── infrastructure/mysql/       # 版本化行情、任务、结果和快照适配器
-├── pkg/broker/                     # 新浪财报/宏观与东方财富版本化行情适配器
+├── pkg/broker/                     # 新浪财报/宏观、股票与期货日线适配器
 ├── web/                            # React 行情工作台、K 线与指标交互
 ├── cmd/migrate-strategy-kernel/    # 旧行情 dry-run、迁移、检查点与重跑命令
 ├── scripts/verify.sh               # 覆盖率、Race、集成、性能和镜像门禁
@@ -49,7 +49,7 @@ npm --prefix web run build
 go run . -config config.yaml
 ```
 
-服务默认监听 `:8080`，同源提供行情工作台与 API。前端开发可运行 `npm --prefix web run dev`，由 Vite 把 `/api` 代理到 `:8080`。启动时只迁移财报、证券主数据和新策略内核表，不再创建或写入旧技术 K 线表。`Worker` 配置分别控制持久化任务 Worker 数、租约、轮询、兼容接口同步等待时间，以及扫描/行情刷新的有界并发数。
+服务默认监听 `:8080`，同源提供行情工作台与 API。前端开发可运行 `npm --prefix web run dev`，由 Vite 把 `/api` 代理到 `:8080`。启动时只迁移财报、证券主数据和新策略内核表，不再创建或写入旧技术 K 线表。`Worker` 配置分别控制持久化任务 Worker 数、租约、轮询、兼容接口同步等待时间，以及扫描/行情刷新的有界并发数；`Market.StockRequestIntervalSeconds` 控制所有新浪行情请求的进程级共享限频，默认且不得低于 5 秒。`Market.FuturesEnabled` 开启固定八条期货主力连续日线，`Market.FuturesRefreshIntervalHours` 控制刷新周期。
 
 ## 运行约束
 
@@ -62,6 +62,8 @@ go run . -config config.yaml
 - 全市场扫描必须通过 `BatchDatasets` 有界批量加载，不得恢复逐证券 Repository 查询。
 - 不透明身份字段按 UTF-8 字节限制并精确区分大小写和尾空格。
 - Docker 镜像不得包含本地配置、凭据、数据库转储或导出包；运行时只读挂载配置。
+- 期货只保存新浪定义的 `.MAIN` 主力连续序列，不把它解释为可交割合约；当前不保存具体合约、不自行计算换月，也不对连续序列做复权。
+- 周线只发布已经完结的 ISO 周，当前周进入下一 ISO 周后再发布；禁止保存随周内日期漂移的临时周 Bar。
 
 ## 策略与任务模型
 
@@ -103,6 +105,9 @@ docker run -d --name trading -p 8080:8080 \
 - `internal/application` 编排用例、事务边界外的流程和重试；`internal/port` 只定义领域真正需要替换或隔离的边界；`internal/infrastructure/mysql` 实现持久化；`pkg/broker` 实现外部数据源适配。
 - 新功能优先复用现有领域对象、port、版本化行情仓储和任务模型。禁止为同一业务另建平行的 service/repository/model 栈，也不为只有一个简单实现的内部函数预先抽象接口。
 - 外部数据必须先在 adapter 边界完成结构解析，再进入领域校验；领域层不得接收 GORM Model、外部 JSON DTO 或未校验的字符串枚举。
+- A 股生产行情以新浪原始日线和前复权因子为源，期货以新浪主力连续日线为源，周线都由日线在本地确定性聚合。股票与期货请求必须共用同一进程级限频器，配置间隔不得低于 5 秒，禁止用并发绕开数据源限制。
+- 期货品种固定为 `SHFE:AU.MAIN`、`SHFE:AG.MAIN`、`SHFE:FU.MAIN`、`INE:SC.MAIN`、`INE:LU.MAIN`、`DCE:J.MAIN`、`DCE:JM.MAIN`、`CZCE:ZC.MAIN`。扩展品种前必须先验证新浪接口稳定性、字段语义与历史完整性；`ZC.MAIN` 当前停更是已知上游限制。
+- 新浪期货接口属于完整历史快照源，每次刷新必须从配置的历史起点重读以发现早期修订；新浪股票按最近 20 根日线重叠增量刷新。
 - 文件和类型保持单一职责。仅在当前需求确实需要时增加抽象、缓存、消息系统、跨进程协调或兼容层，避免为假设中的扩展点提前设计。
 
 ### 日志

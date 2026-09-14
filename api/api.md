@@ -37,7 +37,7 @@
 | 429 | MARKET_REFRESH_ALREADY_RUNNING | 已有定时或手工全市场行情刷新运行中 |
 | 500 | internal server error | 未分类内部错误；不含 SQL、凭据、路径或堆栈 |
 
-JSON 创建请求限制1MiB（含空白），拒绝未知字段、超大 body 和尾随第二个 JSON 值。时间使用 RFC3339，输入时区规范化为 UTC；日期范围最多20年。身份精确区分大小写和尾空格：策略/Run/SnapshotID 最多64字节，策略版本32字节，幂等键128字节。证券使用完整 `SSE:600000`、`SZSE:000001` 或 `BSE:920001`。
+JSON 创建请求限制1MiB（含空白），拒绝未知字段、超大 body 和尾随第二个 JSON 值。时间使用 RFC3339，输入时区规范化为 UTC；日期范围最多20年。身份精确区分大小写和尾空格：策略/Run/SnapshotID 最多64字节，策略版本32字节，幂等键128字节。证券使用完整 `SSE:600000`、`SZSE:000001` 或 `BSE:920001`；期货主力连续使用 `SHFE:AU.MAIN` 这类完整身份。
 
 #### 创建回测
 
@@ -134,9 +134,28 @@ Task12 延后的游标输出在此补齐：不可变快照行以1开始连续编
 
 响应 Bar 按 close_time 升序。`has_more` 表示当前游标之前、项目统一的20年查询边界内是否仍有数据；它不承诺提供20年以前的数据。`has_more=true` 时，使用 `next_before` 和相同 `data_version` 获取更早一页。服务先在完整历史上下文计算指标，再裁剪响应页，避免页边界指标跳变。
 
+#### 查询版本化行情
+
+`GET /api/v1/market/bars` 按完整证券身份读取已发布的 `COMPLETE` 行情版本，股票和期货共用同一接口。
+
+```bash
+curl 'http://localhost:8080/api/v1/market/bars?instrument=SHFE%3AAU.MAIN&timeframe=daily&view=raw&from=2026-01-01&to=2026-09-14&limit=100'
+```
+
+| 参数 | 必填 | 缺省值 | 说明 |
+|---|---|---|---|
+| instrument | 是 | - | 完整身份，例如 `SSE:600000`、`SHFE:AU.MAIN` |
+| timeframe | 否 | daily | `daily` 或本地聚合的 `weekly` |
+| view | 否 | raw | `raw` 或 `qfq`；期货当前使用 1:1 因子，两者相同 |
+| from / to | 否 | 最近19年 | `YYYY-MM-DD`，闭区间，最大20年 |
+| version | 否 | 0 | 0 表示读取最新 `COMPLETE` 版本 |
+| limit | 否 | 100 | 1–5000 |
+
+响应 data 含 `instrument,timeframe,view,data_version,bars`。未知参数、重复参数、非法枚举或超限范围返回400。当前期货只采集新浪定义的八条主力连续序列：`SHFE:AU.MAIN`、`SHFE:AG.MAIN`、`SHFE:FU.MAIN`、`INE:SC.MAIN`、`INE:LU.MAIN`、`DCE:J.MAIN`、`DCE:JM.MAIN`、`CZCE:ZC.MAIN`。它们不是可交割合约，系统不自行换月；`ZC.MAIN` 上游历史目前停在 2022-12-30，不能当作仍在更新的实时序列。
+
 ### 1. 保存股票历史数据（兼容路径）
 
-按六位代码从活跃证券主数据中精确解析证券，再通过东方财富版本化行情源获取日线、周线、复权因子与公司行动。所有数据校验通过后一次原子发布新的 `COMPLETE` 版本；不会写旧 K 线表。
+按六位代码从活跃证券主数据中精确解析证券，再通过新浪获取原始日线和前复权因子，周线在本地由日线确定性聚合。所有数据校验通过后一次原子发布新的 `COMPLETE` 版本；不会写旧 K 线表。
 
 - **Method**: `POST`
 - **Path**: `/api/stocks/historical`

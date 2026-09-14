@@ -51,6 +51,13 @@ func TestOpaqueIdentitySchemaPreservesCaseAndTrailingBytes(t *testing.T) {
 	}
 }
 
+func TestInstrumentSchemaFitsCanonicalFuturesIdentity(t *testing.T) {
+	s, err := schema.Parse(&InstrumentModel{}, &sync.Map{}, schema.NamingStrategy{})
+	require.NoError(t, err)
+	require.Equal(t, 8, s.FieldsByName["Exchange"].Size)
+	require.Equal(t, 16, s.FieldsByName["Code"].Size)
+}
+
 func TestUnboundedOrderAndFillIdentityMappingKeepsExactBytes(t *testing.T) {
 	repo, mock := mockRepository(t)
 	for _, id := range []string{"Key", "key", "key ", "成交标识 ", strings.Repeat("长", 500)} {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/goccy/go-yaml"
+	"golang.org/x/time/rate"
 	"gorm.io/gorm"
 
 	"trading/api"
@@ -24,11 +25,11 @@ import (
 	"trading/internal/application"
 	"trading/internal/backtest"
 	mysqlinfra "trading/internal/infrastructure/mysql"
+	"trading/internal/market"
 	"trading/internal/port"
 	"trading/internal/strategy"
 	"trading/internal/strategy/builtin"
 	"trading/pkg/broker"
-	"trading/pkg/indicator"
 )
 
 const marketRefreshInterval = 24 * time.Hour
@@ -41,10 +42,18 @@ type workerRuntimeConfig struct {
 	ScanBatchSize   int
 }
 
+type marketRuntimeConfig struct {
+	StockRequestInterval   time.Duration
+	FuturesEnabled         bool
+	FuturesRefreshInterval time.Duration
+}
+
 type kernelRuntime struct {
-	services        api.KernelServices
-	workers         *application.WorkerPool
-	marketScheduler *application.MarketScheduler
+	services               api.KernelServices
+	workers                *application.WorkerPool
+	marketScheduler        *application.MarketScheduler
+	futuresScheduler       *application.FuturesScheduler
+	futuresRefreshInterval time.Duration
 }
 
 type rootMarketTrigger struct {
@@ -85,7 +94,7 @@ func run(ctx context.Context, configPath string) error {
 	defer sqlDB.Close()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	kernel, err := newKernel(ctx, d.DB(), cfg.Worker)
+	kernel, err := newKernel(ctx, d.DB(), cfg.Worker, cfg.Market)
 	if err != nil {
 		return err
 	}
@@ -111,20 +120,30 @@ func run(ctx context.Context, configPath string) error {
 	log.Println("Server starting on :8080")
 	server := &http.Server{Addr: ":8080", Handler: r, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	err = serve(ctx, server, func(ctx context.Context) error {
-		return runBackground(ctx,
+		runners := []func(context.Context) error{
 			kernel.workers.Run,
 			func(ctx context.Context) error {
 				return kernel.marketScheduler.Start(ctx, marketRefreshInterval, kernel.services.MarketWorkers)
 			},
-		)
+		}
+		if kernel.futuresScheduler != nil {
+			runners = append(runners, func(ctx context.Context) error {
+				return kernel.futuresScheduler.Start(ctx, kernel.futuresRefreshInterval)
+			})
+		}
+		return runBackground(ctx, runners...)
 	})
 	cancel()
 	kernel.marketScheduler.Wait()
 	return err
 }
 
-func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerConfig) (kernelRuntime, error) {
+func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerConfig, marketConfig config.MarketConfig) (kernelRuntime, error) {
 	settings, err := resolveWorkerConfig(workerConfig)
+	if err != nil {
+		return kernelRuntime{}, err
+	}
+	marketSettings, err := resolveMarketConfig(marketConfig)
 	if err != nil {
 		return kernelRuntime{}, err
 	}
@@ -159,18 +178,35 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 		return kernelRuntime{}, err
 	}
 	historyStart := time.Now().UTC().AddDate(-(port.MaxBacktestRangeYears - 1), 0, 0).Truncate(time.Microsecond)
+	sinaLimiter := rate.NewLimiter(rate.Every(marketSettings.StockRequestInterval), 1)
 	ingestion, err := application.NewMarketIngestionService(
-		broker.NewEastmoneyMarketSource(),
+		broker.NewSinaMarketSource(sinaLimiter),
 		marketData,
 		marketData,
-		application.MarketIngestionConfig{Source: "eastmoney", HistoryStart: historyStart, Limiter: indicator.NewLimiter(settings.ScanBatchSize)},
+		application.MarketIngestionConfig{Source: "sina", HistoryStart: historyStart},
 	)
 	if err != nil {
 		return kernelRuntime{}, err
 	}
-	marketScheduler, err := application.NewMarketScheduler(marketData, ingestion, port.InstrumentScope{ActiveOnly: true, Limit: port.MaxScanInstruments})
+	marketScheduler, err := application.NewMarketScheduler(marketData, ingestion, port.InstrumentScope{Exchanges: []market.Exchange{market.SSE, market.SZSE, market.BSE}, ActiveOnly: true, Limit: port.MaxScanInstruments})
 	if err != nil {
 		return kernelRuntime{}, err
+	}
+	var futuresScheduler *application.FuturesScheduler
+	if marketSettings.FuturesEnabled {
+		futuresIngestion, err := application.NewMarketIngestionService(
+			broker.NewSinaFuturesSource(sinaLimiter),
+			marketData,
+			marketData,
+			application.MarketIngestionConfig{Source: "sina-futures", HistoryStart: historyStart, FullHistoryRefresh: true},
+		)
+		if err != nil {
+			return kernelRuntime{}, err
+		}
+		futuresScheduler, err = application.NewFuturesScheduler(futuresIngestion, application.DefaultSinaFuturesInstruments(), slog.Default())
+		if err != nil {
+			return kernelRuntime{}, err
+		}
 	}
 	services := api.KernelServices{
 		Backtests:         backtests,
@@ -189,7 +225,27 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 		PollInterval:      settings.PollInterval,
 		Clock:             time.Now,
 	}
-	return kernelRuntime{services: services, workers: workers, marketScheduler: marketScheduler}, nil
+	return kernelRuntime{services: services, workers: workers, marketScheduler: marketScheduler, futuresScheduler: futuresScheduler, futuresRefreshInterval: marketSettings.FuturesRefreshInterval}, nil
+}
+
+func resolveMarketConfig(input config.MarketConfig) (marketRuntimeConfig, error) {
+	if input.StockRequestIntervalSeconds == 0 {
+		input.StockRequestIntervalSeconds = 5
+	}
+	if input.StockRequestIntervalSeconds < 5 || input.StockRequestIntervalSeconds > 86_400 {
+		return marketRuntimeConfig{}, errors.New("market configuration is out of bounds")
+	}
+	if input.FuturesRefreshIntervalHours == 0 {
+		input.FuturesRefreshIntervalHours = 24
+	}
+	if input.FuturesRefreshIntervalHours < 1 || input.FuturesRefreshIntervalHours > 168 {
+		return marketRuntimeConfig{}, errors.New("market configuration is out of bounds")
+	}
+	return marketRuntimeConfig{
+		StockRequestInterval:   time.Duration(input.StockRequestIntervalSeconds) * time.Second,
+		FuturesEnabled:         input.FuturesEnabled,
+		FuturesRefreshInterval: time.Duration(input.FuturesRefreshIntervalHours) * time.Hour,
+	}, nil
 }
 
 func resolveWorkerConfig(input config.WorkerConfig) (workerRuntimeConfig, error) {

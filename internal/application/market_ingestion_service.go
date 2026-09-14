@@ -23,13 +23,14 @@ type UpstreamLimiter interface {
 	Release()
 }
 type MarketIngestionConfig struct {
-	Source       string
-	HistoryStart time.Time
-	Clock        func() time.Time
-	Limiter      UpstreamLimiter
+	Source             string
+	HistoryStart       time.Time
+	FullHistoryRefresh bool
+	Clock              func() time.Time
+	Limiter            UpstreamLimiter
 }
 type MarketIngestionService struct {
-	source port.MarketSource
+	source port.DailyMarketSource
 	data   port.MarketData
 	writer port.MarketDataWriter
 	config MarketIngestionConfig
@@ -48,7 +49,7 @@ var refreshInstruments = struct {
 	active map[market.InstrumentID]bool
 }{active: map[market.InstrumentID]bool{}}
 
-func NewMarketIngestionService(source port.MarketSource, data port.MarketData, writer port.MarketDataWriter, config MarketIngestionConfig) (*MarketIngestionService, error) {
+func NewMarketIngestionService(source port.DailyMarketSource, data port.MarketData, writer port.MarketDataWriter, config MarketIngestionConfig) (*MarketIngestionService, error) {
 	if source == nil || data == nil || writer == nil {
 		return nil, invalidRequest("market dependencies are required")
 	}
@@ -61,6 +62,7 @@ func NewMarketIngestionService(source port.MarketSource, data port.MarketData, w
 	if config.Clock == nil {
 		config.Clock = time.Now
 	}
+	config.HistoryStart = utcDay(config.HistoryStart)
 	return &MarketIngestionService{source: source, data: data, writer: writer, config: config}, nil
 }
 func (s *MarketIngestionService) Refresh(ctx context.Context, id market.InstrumentID) (RefreshResult, error) {
@@ -80,7 +82,7 @@ func (s *MarketIngestionService) Refresh(ctx context.Context, id market.Instrume
 	refreshInstruments.Unlock()
 	defer func() { refreshInstruments.Lock(); delete(refreshInstruments.active, id); refreshInstruments.Unlock() }()
 	to := s.config.Clock().UTC().Truncate(time.Microsecond)
-	from := s.config.HistoryStart
+	from := utcDay(s.config.HistoryStart)
 	if to.Before(from) || to.After(from.AddDate(port.MaxBacktestRangeYears, 0, 0)) {
 		return result, invalidRequest("invalid history window")
 	}
@@ -94,32 +96,25 @@ func (s *MarketIngestionService) Refresh(ctx context.Context, id market.Instrume
 		if version == 0 {
 			return result, ErrIncompleteMarketData
 		}
-		for _, tf := range []market.Timeframe{market.Day, market.Week} {
-			ds, factors, _, err := s.data.Dataset(ctx, id, tf, from, to, version)
-			if errors.Is(err, port.ErrMarketDataNotFound) {
-				continue
-			}
-			if err != nil {
-				return result, err
-			}
-			if ds.Instrument() != id || ds.Timeframe() != tf || ds.Version() != version {
-				return result, ErrIncompleteMarketData
-			}
-			stored[tf] = ds.Bars()
-			oldFactors[tf] = factors
-		}
-	}
-	starts := refreshStarts(from, stored)
-	batch, err := s.fetchBatch(ctx, id, starts, to, stored)
-	if err != nil {
-		return result, err
-	}
-	// 前复权基准改变会影响窗口之前的历史。此时完整回补后再原子发布。
-	if factorsChanged(stored, oldFactors, batch) && (starts[market.Day].After(from) || starts[market.Week].After(from)) {
-		batch, err = s.fetchBatch(ctx, id, map[market.Timeframe]time.Time{market.Day: from, market.Week: from}, to, stored)
-		if err != nil {
+		ds, factors, _, err := s.data.Dataset(ctx, id, market.Day, from, to, version)
+		if err != nil && !errors.Is(err, port.ErrMarketDataNotFound) {
 			return result, err
 		}
+		if err == nil {
+			if ds.Instrument() != id || ds.Timeframe() != market.Day || ds.Version() != version {
+				return result, ErrIncompleteMarketData
+			}
+			stored[market.Day] = zeroVersionBars(ds.Bars())
+			oldFactors[market.Day] = zeroVersionFactors(factors)
+		}
+	}
+	start := dailyRefreshStart(from, stored[market.Day])
+	if s.config.FullHistoryRefresh {
+		start = from
+	}
+	batch, err := s.fetchBatch(ctx, id, start, to, stored[market.Day])
+	if err != nil {
+		return result, err
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err
@@ -180,14 +175,9 @@ func validateFinalMarketBars(stored, updates map[market.Timeframe][]market.Bar) 
 			latestDailyClose = at
 		}
 	}
-	knownDailyWeeks := map[[2]int]bool{}
-	for _, bar := range stored[market.Day] {
-		year, week := bar.CloseTime.ISOWeek()
-		knownDailyWeeks[[2]int{year, week}] = true
-	}
-	for key, at := range dailyWeekCloses {
-		// 只有最终日线最新 ISO 周组可保持未知；后续日线周组本身证明更早周组已经结束。
-		if at.Equal(latestDailyClose) && !knownDailyWeeks[key] && at.After(latestWeeklyClose) {
+	for _, at := range dailyWeekCloses {
+		// 最终日线所在 ISO 周可以尚未完结；后续周组证明更早周组已经结束。
+		if at.Equal(latestDailyClose) && at.After(latestWeeklyClose) {
 			continue
 		}
 		if _, ok := final[market.Week][at]; !ok {
@@ -197,133 +187,150 @@ func validateFinalMarketBars(stored, updates map[market.Timeframe][]market.Bar) 
 	return nil
 }
 
-func refreshStarts(history time.Time, stored map[market.Timeframe][]market.Bar) map[market.Timeframe]time.Time {
-	starts := map[market.Timeframe]time.Time{market.Day: history, market.Week: history}
-	daily, weekly := stored[market.Day], stored[market.Week]
-	if len(daily) == 0 || len(weekly) == 0 {
-		return starts
+func dailyRefreshStart(history time.Time, daily []market.Bar) time.Time {
+	if len(daily) == 0 {
+		return history
 	}
 	index := len(daily) - 20
 	if index < 0 {
 		index = 0
 	}
-	starts[market.Day] = daily[index].CloseTime
-	starts[market.Week] = starts[market.Day]
-	// 周期边界不靠自然日猜测：补抓覆盖窗口起点的已知周 Bar。
-	for _, b := range weekly {
-		if b.CloseTime.After(starts[market.Day]) {
-			break
-		}
-		starts[market.Week] = b.CloseTime
-	}
-	dailyDates := map[time.Time]bool{}
-	for _, b := range daily {
-		dailyDates[b.CloseTime] = true
-	}
-	for _, b := range weekly {
-		if !dailyDates[b.CloseTime] && b.CloseTime.Before(starts[market.Day]) {
-			starts[market.Day] = b.CloseTime
-		}
-	}
-	weeklyGroups := map[[2]int]bool{}
-	for _, b := range weekly {
-		y, w := b.CloseTime.ISOWeek()
-		weeklyGroups[[2]int{y, w}] = true
-	}
-	for _, b := range daily {
-		y, w := b.CloseTime.ISOWeek()
-		if !weeklyGroups[[2]int{y, w}] && b.CloseTime.Before(starts[market.Week]) {
-			starts[market.Week] = b.CloseTime
-		}
-	}
-	return starts
+	return daily[index].CloseTime
 }
-func (s *MarketIngestionService) fetchBatch(ctx context.Context, id market.InstrumentID, starts map[market.Timeframe]time.Time, to time.Time, stored map[market.Timeframe][]market.Bar) (port.MarketWriteBatch, error) {
+func (s *MarketIngestionService) fetchBatch(ctx context.Context, id market.InstrumentID, start, to time.Time, stored []market.Bar) (port.MarketWriteBatch, error) {
 	batch := port.MarketWriteBatch{Source: s.config.Source, Instrument: id, Bars: map[market.Timeframe][]market.Bar{}}
-	own := map[market.Timeframe][]market.AdjustmentFactor{}
-	merged := map[time.Time]market.AdjustmentFactor{}
-	for _, tf := range []market.Timeframe{market.Day, market.Week} {
-		if err := s.acquire(ctx); err != nil {
-			return batch, err
-		}
-		bars, factors, err := s.source.FetchBars(ctx, id, tf, starts[tf], to)
-		s.release()
-		if err != nil {
-			return batch, err
-		}
-		if len(bars) == 0 {
-			return batch, ErrIncompleteMarketData
-		}
-		if len(bars) > port.MaxLookbackBars || len(factors) > port.MaxLookbackBars {
-			return batch, fmt.Errorf("%w: source response too large", port.ErrInvalidPortValue)
-		}
-		observed := map[time.Time]bool{}
-		for _, b := range bars {
-			if b.CloseTime.Before(starts[tf]) || b.CloseTime.After(to) {
-				return batch, ErrIncompleteMarketData
-			}
-			observed[b.CloseTime] = true
-		}
-		for _, b := range stored[tf] {
-			if !b.CloseTime.Before(starts[tf]) && !b.CloseTime.After(to) && !observed[b.CloseTime] {
-				return batch, ErrIncompleteMarketData
-			}
-		}
-		batch.Bars[tf] = bars
-		normalized, err := normalizeFactors(factors)
-		if err != nil {
-			return batch, err
-		}
-		own[tf] = normalized
-		for _, f := range normalized {
-			if f.EffectiveTime.After(to) {
-				return batch, ErrIncompleteMarketData
-			}
-			if previous, ok := merged[f.EffectiveTime]; ok && !equalFactor(previous, f) {
-				return batch, ErrIncompleteMarketData
-			}
-			merged[f.EffectiveTime] = f
-		}
-	}
-	dailyClose := make(map[time.Time]market.Price, len(batch.Bars[market.Day]))
-	for _, bar := range batch.Bars[market.Day] {
-		dailyClose[bar.CloseTime] = bar.Close
-	}
-	for _, bar := range batch.Bars[market.Week] {
-		if close, ok := dailyClose[bar.CloseTime]; ok && close != bar.Close {
-			return batch, ErrIncompleteMarketData
-		}
-	}
 	if err := s.acquire(ctx); err != nil {
 		return batch, err
 	}
-	actions, err := s.source.FetchCorporateActions(ctx, id)
+	updates, err := s.source.FetchDailyBars(ctx, id, start, to)
 	s.release()
 	if err != nil {
 		return batch, err
 	}
-	if len(actions) > port.MaxLookbackBars {
-		return batch, fmt.Errorf("%w: too many corporate actions", port.ErrInvalidPortValue)
+	if len(updates) == 0 {
+		return batch, ErrIncompleteMarketData
 	}
-	batch.Actions = actions
-	for _, f := range merged {
-		batch.Factors = append(batch.Factors, f)
+	if len(updates) > port.MaxLookbackBars {
+		return batch, fmt.Errorf("%w: source response too large", port.ErrInvalidPortValue)
 	}
+	observed := make(map[time.Time]bool, len(updates))
+	for _, bar := range updates {
+		if bar.Instrument != id || bar.Timeframe != market.Day || bar.CloseTime.Before(start) || bar.CloseTime.After(to) {
+			return batch, ErrIncompleteMarketData
+		}
+		if observed[bar.CloseTime] {
+			return batch, fmt.Errorf("%w: duplicate daily source bar", port.ErrInvalidPortValue)
+		}
+		observed[bar.CloseTime] = true
+	}
+	for _, bar := range stored {
+		if !bar.CloseTime.Before(start) && !bar.CloseTime.After(to) && !observed[bar.CloseTime] {
+			return batch, ErrIncompleteMarketData
+		}
+	}
+	finalDaily, err := mergeDailyBars(id, stored, updates)
+	if err != nil {
+		return batch, err
+	}
+	weekly, err := market.AggregateWeekly(id, finalDaily)
+	if err != nil {
+		return batch, fmt.Errorf("%w: %v", port.ErrInvalidPortValue, err)
+	}
+	weekly = completedWeeklyBars(weekly, to)
+	if err := s.acquire(ctx); err != nil {
+		return batch, err
+	}
+	factors, err := s.source.FetchAdjustmentFactors(ctx, id)
+	s.release()
+	if err != nil {
+		return batch, err
+	}
+	if len(factors) == 0 || len(factors) > port.MaxLookbackBars {
+		return batch, ErrIncompleteMarketData
+	}
+	factors, err = normalizeFactors(factors)
+	if err != nil {
+		return batch, err
+	}
+	if factors[0].EffectiveTime.After(finalDaily[0].CloseTime) {
+		first := factors[0]
+		first.EffectiveTime = finalDaily[0].CloseTime
+		factors = append([]market.AdjustmentFactor{first}, factors...)
+	}
+	for _, factor := range factors {
+		if factor.EffectiveTime.After(to) {
+			return batch, ErrIncompleteMarketData
+		}
+	}
+	batch.Bars[market.Day] = finalDaily
+	batch.Bars[market.Week] = weekly
+	batch.Factors = factors
 	batch, _, err = port.CanonicalMarketBatch(batch)
 	if err != nil {
 		return batch, fmt.Errorf("%w: %w", port.ErrInvalidPortValue, err)
 	}
-	for tf, bars := range batch.Bars {
-		ownIndex, mergedIndex := 0, 0
+	for _, bars := range batch.Bars {
+		factorIndex := 0
 		for _, b := range bars {
-			a, aOK := factorAt(own[tf], &ownIndex, b.CloseTime)
-			m, mOK := factorAt(batch.Factors, &mergedIndex, b.CloseTime)
-			if !aOK || !mOK || !equalFactor(a, m) {
+			if _, ok := factorAt(batch.Factors, &factorIndex, b.CloseTime); !ok {
 				return batch, ErrIncompleteMarketData
 			}
 		}
 	}
 	return batch, nil
+}
+
+func mergeDailyBars(id market.InstrumentID, stored, updates []market.Bar) ([]market.Bar, error) {
+	byDate := make(map[time.Time]market.Bar, len(stored)+len(updates))
+	for _, input := range [][]market.Bar{stored, updates} {
+		for _, bar := range input {
+			bar.Version = 0
+			byDate[bar.CloseTime] = bar
+		}
+	}
+	bars := make([]market.Bar, 0, len(byDate))
+	for _, bar := range byDate {
+		bars = append(bars, bar)
+	}
+	dataset, err := market.NewDataset(id, market.Day, 0, bars)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", port.ErrInvalidPortValue, err)
+	}
+	return dataset.Bars(), nil
+}
+
+func completedWeeklyBars(weekly []market.Bar, asOf time.Time) []market.Bar {
+	year, week := asOf.ISOWeek()
+	completed := make([]market.Bar, 0, len(weekly))
+	for _, bar := range weekly {
+		barYear, barWeek := bar.CloseTime.ISOWeek()
+		if barYear == year && barWeek == week {
+			continue
+		}
+		completed = append(completed, bar)
+	}
+	return completed
+}
+
+func utcDay(value time.Time) time.Time {
+	value = value.UTC()
+	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func zeroVersionBars(input []market.Bar) []market.Bar {
+	result := append([]market.Bar(nil), input...)
+	for index := range result {
+		result[index].Version = 0
+	}
+	return result
+}
+
+func zeroVersionFactors(input []market.AdjustmentFactor) []market.AdjustmentFactor {
+	result := append([]market.AdjustmentFactor(nil), input...)
+	for index := range result {
+		result[index].Version = 0
+	}
+	return result
 }
 func (s *MarketIngestionService) acquire(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
@@ -372,9 +379,6 @@ func factorAt(factors []market.AdjustmentFactor, index *int, at time.Time) (mark
 	}
 	return factors[*index-1], true
 }
-func equalFactor(a, b market.AdjustmentFactor) bool {
-	return a.Numerator == b.Numerator && a.Denominator == b.Denominator
-}
 
 // 增量 upsert 不删除旧断点；用新时间线在其时点的值覆盖，避免被废弃断点继续生效。
 func replaceFactorBreakpoints(batch port.MarketWriteBatch, previous map[market.Timeframe][]market.AdjustmentFactor) (port.MarketWriteBatch, error) {
@@ -418,25 +422,4 @@ func replaceFactorBreakpoints(batch port.MarketWriteBatch, previous map[market.T
 	batch.Digest = ""
 	batch, _, err := port.CanonicalMarketBatch(batch)
 	return batch, err
-}
-func factorsChanged(stored map[market.Timeframe][]market.Bar, previous map[market.Timeframe][]market.AdjustmentFactor, batch port.MarketWriteBatch) bool {
-	for tf, bars := range batch.Bars {
-		old, err := normalizeFactors(previous[tf])
-		if err != nil {
-			return true
-		}
-		oldDates := map[time.Time]bool{}
-		for _, b := range stored[tf] {
-			oldDates[b.CloseTime] = true
-		}
-		oldIndex, newIndex := 0, 0
-		for _, b := range bars {
-			a, ok := factorAt(old, &oldIndex, b.CloseTime)
-			n, _ := factorAt(batch.Factors, &newIndex, b.CloseTime)
-			if oldDates[b.CloseTime] && (!ok || !equalFactor(a, n)) {
-				return true
-			}
-		}
-	}
-	return false
 }

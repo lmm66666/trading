@@ -3,7 +3,7 @@ package mysql
 type InstrumentModel struct {
 	BaseModel
 	Exchange string `gorm:"size:8;not null;uniqueIndex:uq_instrument,priority:1"`
-	Code     string `gorm:"size:6;not null;uniqueIndex:uq_instrument,priority:2"`
+	Code     string `gorm:"size:16;not null;uniqueIndex:uq_instrument,priority:2"`
 	Name     string `gorm:"size:128;not null"`
 	Board    string `gorm:"size:32;not null"`
 	Active   bool   `gorm:"not null;index:idx_instrument_active"`

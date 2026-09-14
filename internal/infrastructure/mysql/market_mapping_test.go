@@ -76,3 +76,20 @@ func TestBarMappingPreservesRawMoneyAndPinnedVersion(t *testing.T) {
 	_, err = row.bar(b.Instrument, 12)
 	require.Error(t, err)
 }
+
+func TestInstrumentMappingStoresCanonicalIdentity(t *testing.T) {
+	equity, err := instrumentModel(market.InstrumentID{Exchange: market.SSE, Code: "600000"}, "fixture")
+	require.NoError(t, err)
+	require.Equal(t, "SSE", equity.Exchange)
+	require.Equal(t, "600000", equity.Code)
+	require.Equal(t, "fixture", equity.Source)
+
+	future, err := instrumentModel(market.InstrumentID{Exchange: market.SHFE, Code: "AU.MAIN"}, "sina-futures")
+	require.NoError(t, err)
+	require.Equal(t, "SHFE", future.Exchange)
+	require.Equal(t, "AU.MAIN", future.Code)
+	require.Equal(t, "sina-futures", future.Source)
+
+	_, err = instrumentModel(market.InstrumentID{Exchange: market.SHFE, Code: "AU202612"}, "fixture")
+	require.Error(t, err)
+}

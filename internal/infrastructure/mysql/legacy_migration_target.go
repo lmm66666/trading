@@ -100,7 +100,11 @@ func writeLegacyInstrument(db *gorm.DB, version market.DataVersion, item legacyI
 			var instrument InstrumentModel
 			err := tx.Where("exchange = ? AND code = ?", string(item.ID.Exchange), item.ID.Code).Take(&instrument).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				instrument = InstrumentModel{Exchange: string(item.ID.Exchange), Code: item.ID.Code, Name: item.Name, Source: legacyMigrationSource}
+				instrument, err = instrumentModel(item.ID, legacyMigrationSource)
+				if err != nil {
+					return err
+				}
+				instrument.Name = item.Name
 				if err := tx.Create(&instrument).Error; err != nil {
 					return err
 				}
