@@ -14,9 +14,9 @@ import (
 )
 
 func TestPublishClosesChangedRevisionAndKeepsUnchangedBar(t *testing.T) {
-	for _, image := range []string{"mysql:5.7", "mysql:8.0"} {
-		t.Run(image, func(t *testing.T) {
-			db := dbtest.StartMySQL(t, image)
+	for _, target := range dbtest.Targets() {
+		t.Run(target, func(t *testing.T) {
+			db := dbtest.OpenIsolatedMySQL(t, target)
 			require.NoError(t, Migrate(db))
 			repo := NewMarketDataRepository(db)
 			ctx := context.Background()
@@ -49,9 +49,9 @@ func TestPublishClosesChangedRevisionAndKeepsUnchangedBar(t *testing.T) {
 }
 
 func TestPublishRollsBackRevisionClosuresOnInsertFailure(t *testing.T) {
-	for _, image := range []string{"mysql:5.7", "mysql:8.0"} {
-		t.Run(image, func(t *testing.T) {
-			db := dbtest.StartMySQL(t, image)
+	for _, target := range dbtest.Targets() {
+		t.Run(target, func(t *testing.T) {
+			db := dbtest.OpenIsolatedMySQL(t, target)
 			require.NoError(t, Migrate(db))
 			repo := NewMarketDataRepository(db)
 			ctx := context.Background()
@@ -80,9 +80,9 @@ func TestPublishRollsBackRevisionClosuresOnInsertFailure(t *testing.T) {
 }
 
 func TestPublishConcurrentSameBatchHasOneVersion(t *testing.T) {
-	for _, image := range []string{"mysql:5.7", "mysql:8.0"} {
-		t.Run(image, func(t *testing.T) {
-			db := dbtest.StartMySQL(t, image)
+	for _, target := range dbtest.Targets() {
+		t.Run(target, func(t *testing.T) {
+			db := dbtest.OpenIsolatedMySQL(t, target)
 			require.NoError(t, Migrate(db))
 			repo := NewMarketDataRepository(db)
 			versions := make([]market.DataVersion, 8)

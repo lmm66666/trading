@@ -12,9 +12,9 @@ import (
 )
 
 func TestApplicationMarketChangeClassificationMySQL(t *testing.T) {
-	for _, image := range []string{"mysql:5.7", "mysql:8.0"} {
-		t.Run(image, func(t *testing.T) {
-			db := dbtest.StartMySQL(t, image)
+	for _, target := range dbtest.Targets() {
+		t.Run(target, func(t *testing.T) {
+			db := dbtest.OpenIsolatedMySQL(t, target)
 			require.NoError(t, Migrate(db))
 			repo := NewMarketDataRepository(db)
 			ctx := context.Background()

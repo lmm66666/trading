@@ -67,10 +67,13 @@ grep -q '^config\*\.yaml$' .dockerignore
 grep -q '^!config\.example\.yaml$' .dockerignore
 grep -q '^\*.tar$' .dockerignore
 
-echo "[9/10] MySQL 5.7/8.0 集成测试"
+: "${TRADING_TEST_MYSQL_DSN:?TRADING_TEST_MYSQL_DSN is required for remote MySQL acceptance}"
+
+echo "[9/10] 远端 MySQL 8.4/x86_64 兼容性与隔离集成测试"
+go test -tags=deployment ./internal/infrastructure/mysql -run '^TestDeploymentMySQLCompatibility$' -count=1
 go test -tags=integration ./internal/infrastructure/mysql -count=1
 
-echo "[10/10] 无本地配置镜像构建"
-docker build --no-cache -t trading:verify .
+echo "[10/10] linux/amd64 无本地配置镜像构建"
+docker buildx build --platform linux/amd64 --load --no-cache -t trading:verify .
 
 echo "验证全部通过"

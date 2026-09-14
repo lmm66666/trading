@@ -14,10 +14,10 @@ import (
 	"trading/internal/infrastructure/mysql/dbtest"
 )
 
-func TestOpaqueIdentityIsExactOnMySQL57And80(t *testing.T) {
-	for _, image := range []string{"mysql:5.7", "mysql:8.0"} {
-		t.Run(image, func(t *testing.T) {
-			db := dbtest.StartMySQL(t, image)
+func TestOpaqueIdentityIsExactOnMySQL84(t *testing.T) {
+	for _, target := range dbtest.Targets() {
+		t.Run(target, func(t *testing.T) {
+			db := dbtest.OpenIsolatedMySQL(t, target)
 			require.NoError(t, Migrate(db))
 			for _, entry := range exactIdentityModels {
 				s, err := schema.Parse(entry.model, &sync.Map{}, schema.NamingStrategy{})
@@ -98,10 +98,10 @@ func TestOpaqueIdentityIsExactOnMySQL57And80(t *testing.T) {
 	}
 }
 
-func TestUnboundedIdentityBytesRoundTripOnMySQL57And80(t *testing.T) {
-	for _, image := range []string{"mysql:5.7", "mysql:8.0"} {
-		t.Run(image, func(t *testing.T) {
-			db := dbtest.StartMySQL(t, image)
+func TestUnboundedIdentityBytesRoundTripOnMySQL84(t *testing.T) {
+	for _, target := range dbtest.Targets() {
+		t.Run(target, func(t *testing.T) {
+			db := dbtest.OpenIsolatedMySQL(t, target)
 			require.NoError(t, Migrate(db))
 			at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 			for i, key := range []string{"Key", "key", "key ", "成交标识 ", strings.Repeat("长", 500)} {

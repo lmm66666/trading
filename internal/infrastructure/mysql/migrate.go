@@ -1,4 +1,4 @@
-// Package mysql implements the kernel's MySQL 5.7/8.0 persistence boundary.
+// Package mysql implements the kernel's MySQL 8.4 persistence boundary.
 package mysql
 
 import (

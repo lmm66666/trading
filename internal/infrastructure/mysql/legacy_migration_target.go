@@ -180,7 +180,7 @@ func insertLegacyTargetChunk(tx *gorm.DB, id, version uint64, batch port.MarketW
 	return invalid("unknown legacy target kind")
 }
 
-// MySQL 5.7/8.0 每条预处理语句最多绑定 65535 个参数，预留 1024。
+// MySQL 8.4 每条预处理语句最多绑定 65535 个参数，预留 1024。
 // 只拆 SQL，不另开事务：调用方的外部批次及其检查点仍原子提交。
 func createLegacyTargetRows[T any](tx *gorm.DB, rows []T) error {
 	statement := &gorm.Statement{DB: tx}

@@ -12,9 +12,9 @@ import (
 )
 
 func TestApplicationSnapshotIndexUpgradeAndRepeatedRunsMySQL(t *testing.T) {
-	for _, image := range []string{"mysql:5.7", "mysql:8.0"} {
-		t.Run(image, func(t *testing.T) {
-			db := dbtest.StartMySQL(t, image)
+	for _, target := range dbtest.Targets() {
+		t.Run(target, func(t *testing.T) {
+			db := dbtest.OpenIsolatedMySQL(t, target)
 			require.NoError(t, Migrate(db))
 			require.NoError(t, db.Exec("ALTER TABLE t_signal_snapshots ADD UNIQUE INDEX uq_snapshot_business (strategy_id, strategy_version, parameters_hash, data_version, as_of)").Error)
 			require.True(t, db.Migrator().HasIndex(&SignalSnapshotModel{}, "uq_snapshot_business"))

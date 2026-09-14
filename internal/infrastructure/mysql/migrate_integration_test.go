@@ -8,10 +8,10 @@ import (
 	"trading/internal/infrastructure/mysql/dbtest"
 )
 
-func TestMigrateCreatesKernelTablesOnMySQL57And80(t *testing.T) {
-	for _, image := range []string{"mysql:5.7", "mysql:8.0"} {
-		t.Run(image, func(t *testing.T) {
-			db := dbtest.StartMySQL(t, image)
+func TestMigrateCreatesKernelTablesOnMySQL84(t *testing.T) {
+	for _, target := range dbtest.Targets() {
+		t.Run(target, func(t *testing.T) {
+			db := dbtest.OpenIsolatedMySQL(t, target)
 			require.NoError(t, Migrate(db))
 			require.NoError(t, Migrate(db))
 			for _, table := range []string{"t_instruments", "t_market_data_versions", "t_market_bars", "t_adjustment_factors", "t_corporate_actions", "t_compute_runs", "t_backtest_runs", "t_backtest_orders", "t_backtest_trades", "t_backtest_equity_points", "t_signal_snapshots", "t_signal_snapshot_rows", "t_outbox_events"} {

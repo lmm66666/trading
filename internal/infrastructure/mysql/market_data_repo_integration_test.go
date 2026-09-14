@@ -22,9 +22,9 @@ func requestFor(b port.MarketWriteBatch, v market.DataVersion) port.BatchRequest
 }
 
 func TestDatasetReadsRevisionVisibleAtRequestedVersion(t *testing.T) {
-	for _, image := range []string{"mysql:5.7", "mysql:8.0"} {
-		t.Run(image, func(t *testing.T) {
-			db := dbtest.StartMySQL(t, image)
+	for _, target := range dbtest.Targets() {
+		t.Run(target, func(t *testing.T) {
+			db := dbtest.OpenIsolatedMySQL(t, target)
 			require.NoError(t, Migrate(db))
 			repo := NewMarketDataRepository(db)
 			ctx := context.Background()
@@ -52,9 +52,9 @@ func TestDatasetReadsRevisionVisibleAtRequestedVersion(t *testing.T) {
 }
 
 func TestBatchDatasetsUsesBoundedStatementCount(t *testing.T) {
-	for _, image := range []string{"mysql:5.7", "mysql:8.0"} {
-		t.Run(image, func(t *testing.T) {
-			db := dbtest.StartMySQL(t, image)
+	for _, target := range dbtest.Targets() {
+		t.Run(target, func(t *testing.T) {
+			db := dbtest.OpenIsolatedMySQL(t, target)
 			require.NoError(t, Migrate(db))
 			repo := NewMarketDataRepository(db)
 			ctx := context.Background()
@@ -146,9 +146,9 @@ func (c selectCounter) Trace(ctx context.Context, begin time.Time, fc func() (st
 }
 
 func TestDirtyInstrumentsIncludesFactorAndActionRevisions(t *testing.T) {
-	for _, image := range []string{"mysql:5.7", "mysql:8.0"} {
-		t.Run(image, func(t *testing.T) {
-			db := dbtest.StartMySQL(t, image)
+	for _, target := range dbtest.Targets() {
+		t.Run(target, func(t *testing.T) {
+			db := dbtest.OpenIsolatedMySQL(t, target)
 			require.NoError(t, Migrate(db))
 			repo := NewMarketDataRepository(db)
 			ctx := context.Background()
