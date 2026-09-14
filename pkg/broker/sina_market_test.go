@@ -112,12 +112,7 @@ func TestParseSinaQFQRejectsMalformedPayloads(t *testing.T) {
 }
 
 func TestSinaMarketSourceUsesDailyAndFactorContractsWithSharedPacing(t *testing.T) {
-	var mu sync.Mutex
-	var arrivals []time.Time
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		arrivals = append(arrivals, time.Now())
-		mu.Unlock()
 		require.Equal(t, "https://finance.sina.com.cn/", r.Header.Get("Referer"))
 		switch r.URL.Path {
 		case "/daily":
@@ -134,8 +129,11 @@ func TestSinaMarketSourceUsesDailyAndFactorContractsWithSharedPacing(t *testing.
 	}))
 	t.Cleanup(server.Close)
 
+	client := server.Client()
+	starts := &requestStartRecorder{base: client.Transport}
+	client.Transport = starts
 	pacer := rate.NewLimiter(rate.Every(20*time.Millisecond), 1)
-	source := NewSinaMarketSourceWithClient(server.Client(), pacer, server.URL+"/daily", server.URL+"/factor")
+	source := NewSinaMarketSourceWithClient(client, pacer, server.URL+"/daily", server.URL+"/factor")
 	id := market.InstrumentID{Exchange: market.SSE, Code: "600000"}
 	at := time.Date(2026, 9, 11, 0, 0, 0, 0, time.UTC)
 
@@ -146,19 +144,18 @@ func TestSinaMarketSourceUsesDailyAndFactorContractsWithSharedPacing(t *testing.
 	require.NoError(t, err)
 	require.Len(t, factors, 1)
 
-	mu.Lock()
-	defer mu.Unlock()
-	require.Len(t, arrivals, 2)
-	require.GreaterOrEqual(t, arrivals[1].Sub(arrivals[0]), 15*time.Millisecond)
+	times := starts.Times()
+	require.Len(t, times, 2)
+	require.GreaterOrEqual(t, times[1].Sub(times[0]), 15*time.Millisecond)
 }
 
 func TestSinaMarketSourceRetriesServerFailureThroughSharedPacing(t *testing.T) {
 	var mu sync.Mutex
-	var arrivals []time.Time
+	var attempts int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		arrivals = append(arrivals, time.Now())
-		attempt := len(arrivals)
+		attempts++
+		attempt := attempts
 		mu.Unlock()
 		if attempt == 1 {
 			http.Error(w, "temporary detail that must not escape", http.StatusServiceUnavailable)
@@ -168,17 +165,19 @@ func TestSinaMarketSourceRetriesServerFailureThroughSharedPacing(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	source := NewSinaMarketSourceWithClient(server.Client(), rate.NewLimiter(rate.Every(20*time.Millisecond), 1), server.URL, server.URL)
+	client := server.Client()
+	starts := &requestStartRecorder{base: client.Transport}
+	client.Transport = starts
+	source := NewSinaMarketSourceWithClient(client, rate.NewLimiter(rate.Every(20*time.Millisecond), 1), server.URL, server.URL)
 	id := market.InstrumentID{Exchange: market.SSE, Code: "600000"}
 	at := time.Date(2026, 9, 11, 0, 0, 0, 0, time.UTC)
 	bars, err := source.FetchDailyBars(context.Background(), id, at, at)
 	require.NoError(t, err)
 	require.Len(t, bars, 1)
 
-	mu.Lock()
-	defer mu.Unlock()
-	require.Len(t, arrivals, 2)
-	require.GreaterOrEqual(t, arrivals[1].Sub(arrivals[0]), 15*time.Millisecond)
+	times := starts.Times()
+	require.Len(t, times, 2)
+	require.GreaterOrEqual(t, times[1].Sub(times[0]), 15*time.Millisecond)
 }
 
 func TestSinaMarketSourceHonorsRetryAfter(t *testing.T) {
@@ -232,6 +231,25 @@ func TestSinaMarketSourceRetriesResponseBodyReadFailure(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return fn(request) }
+
+type requestStartRecorder struct {
+	base   http.RoundTripper
+	mu     sync.Mutex
+	starts []time.Time
+}
+
+func (r *requestStartRecorder) RoundTrip(request *http.Request) (*http.Response, error) {
+	r.mu.Lock()
+	r.starts = append(r.starts, time.Now())
+	r.mu.Unlock()
+	return r.base.RoundTrip(request)
+}
+
+func (r *requestStartRecorder) Times() []time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]time.Time(nil), r.starts...)
+}
 
 type failingReader struct{}
 
