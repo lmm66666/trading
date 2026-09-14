@@ -167,7 +167,7 @@
 - MySQL 语义必须在获批的远端 8.4/x86_64 服务上，以随机隔离数据库验证；本地不运行 MySQL 验收，部署应用镜像按 `linux/amd64` 构建。测试不得使用现有业务库，SQL mock 或只编译不能替代。
 - 快速检查：`npm --prefix web run check && go test ./... && go vet ./...`。
 - 完整交付：`bash scripts/verify.sh`。
-- 缺少远端测试凭据时准确报告未完成的 MySQL 门禁；Docker 不可用时准确报告未完成的 amd64 镜像门禁，均不能伪报通过。
+- 缺少或无法读取本地 `config.yaml` 的数据库配置时，准确报告未完成的 MySQL 门禁；Docker 不可用时准确报告未完成的 amd64 镜像门禁，均不能伪报通过。`config.yaml` 只在本地保存且不得纳入 Git。
 
 ## 10. Git 规范
 

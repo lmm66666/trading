@@ -134,7 +134,7 @@ go test -tags=integration ./internal/infrastructure/mysql -run TestLegacyMigrati
 go test -tags=integration ./internal/infrastructure/mysql/... -count=1
 ```
 
-单元与 SQL mock 测试验证端口校验、SQL 边界、映射和错误传播；真实集成测试在获批远端 MySQL 8.4/x86_64 服务上，为每个测试创建随机隔离数据库，覆盖迁移、索引、锁、租约、提交可见性、失败恢复和幂等重跑，结束后删除。夹具必须先只读验证版本与编译架构，且绝不使用 DSN 自带业务库。缺少环境变量或清理失败时明确失败，不能以本地 MySQL、mock 或只编译替代。
+单元与 SQL mock 测试验证端口校验、SQL 边界、映射和错误传播；真实集成测试读取仓库根目录下、本地保存且不纳入 Git 的 `config.yaml`，连接获批远端 MySQL 8.4.x/x86_64 服务，并为每个测试创建随机隔离数据库，覆盖迁移、索引、锁、租约、提交可见性、失败恢复和幂等重跑，结束后删除。夹具必须先只读验证版本与编译架构，且绝不使用配置中的业务库；创建结果不确定时也必须尝试幂等删除随机数据库。缺少配置、配置无效或清理失败时明确失败，不能以本地 MySQL、mock 或只编译替代。
 
 ## 9. 相关文档
 
