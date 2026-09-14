@@ -5,20 +5,22 @@ package mysql
 import (
 	"context"
 	"database/sql"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+
+	"trading/internal/infrastructure/mysql/dbtest"
 )
 
 func TestDeploymentMySQLCompatibility(t *testing.T) {
-	dsn := os.Getenv("TRADING_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Fatal("TRADING_TEST_MYSQL_DSN is required")
+	config, err := dbtest.ConfiguredMySQLConfig()
+	if err != nil {
+		t.Fatal("load local MySQL test configuration failed")
 	}
-	db, err := sql.Open("mysql", dsn)
+	config.DBName = ""
+	db, err := sql.Open("mysql", config.FormatDSN())
 	if err != nil {
 		t.Fatal("open deployment MySQL failed")
 	}
