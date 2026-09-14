@@ -1,6 +1,6 @@
 # A 股图表工作台设计
 
-> 历史规格（已废止）：MySQL 版本和验收方式已由 [REQ-2026-002](../../requirements/active/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)取代；当前工作台行为以 [web 设计](../../../web/DESIGN.md)为准。
+> 历史规格（已废止）：MySQL 版本和验收方式已由 [REQ-2026-002](../../requirements/archived/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)取代；当前工作台行为以 [web 设计](../../../web/DESIGN.md)为准。
 
 ## 目标
 

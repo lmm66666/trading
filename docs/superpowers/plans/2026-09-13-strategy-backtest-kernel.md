@@ -1,6 +1,6 @@
 # Go Strategy and Backtest Kernel Migration Implementation Plan
 
-> 历史计划（已废止）：其中的 MySQL 容器、版本矩阵和验收指令已由 [REQ-2026-002](../../requirements/active/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)取代，不得直接执行本文的旧步骤。
+> 历史计划（已废止）：其中的 MySQL 容器、版本矩阵和验收指令已由 [REQ-2026-002](../../requirements/archived/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)取代，不得直接执行本文的旧步骤。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

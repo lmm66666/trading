@@ -1,6 +1,6 @@
 # Go 策略与回测内核整体迁移设计
 
-> 历史规格（已废止）：MySQL 版本、测试环境及当前模块行为已由 [REQ-2026-002](../../requirements/active/REQ-2026-002-mysql8-cross-architecture.md)和各模块 `DESIGN.md` 取代；本文仅用于追溯最初方案。
+> 历史规格（已废止）：MySQL 版本、测试环境及当前模块行为已由 [REQ-2026-002](../../requirements/archived/REQ-2026-002-mysql8-cross-architecture.md)和各模块 `DESIGN.md` 取代；本文仅用于追溯最初方案。
 
 ## 1. 背景
 

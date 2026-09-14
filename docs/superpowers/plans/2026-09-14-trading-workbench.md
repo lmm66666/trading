@@ -1,6 +1,6 @@
 # A 股图表工作台 Implementation Plan
 
-> 历史计划（已废止）：MySQL 版本和验收指令已由 [REQ-2026-002](../../requirements/active/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)取代，本文仅保留需求追溯价值。
+> 历史计划（已废止）：MySQL 版本和验收指令已由 [REQ-2026-002](../../requirements/archived/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)取代，本文仅保留需求追溯价值。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

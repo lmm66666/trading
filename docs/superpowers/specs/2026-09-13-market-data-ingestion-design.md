@@ -1,6 +1,6 @@
 # 新浪股票与商品期货日线接入设计
 
-> 历史规格（已废止）：MySQL 验收方式已由 [REQ-2026-002](../../requirements/active/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)取代；当前行为以模块 `DESIGN.md` 为准。
+> 历史规格（已废止）：MySQL 验收方式已由 [REQ-2026-002](../../requirements/archived/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)取代；当前行为以模块 `DESIGN.md` 为准。
 
 ## 1. 决策摘要
 

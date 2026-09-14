@@ -140,4 +140,4 @@ A 股使用新浪原始日线和前复权因子，近期 20 根日线重叠增�
 
 - [Roadmap](../roadmap.md)
 - [领域地图](domain-map.md)
-- [文档治理需求](../requirements/active/REQ-2026-001-document-governance.md)
+- [文档治理需求](../requirements/archived/REQ-2026-001-document-governance.md)
