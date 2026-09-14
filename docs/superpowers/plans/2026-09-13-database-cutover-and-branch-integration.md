@@ -36,7 +36,7 @@
 
 - [ ] **Step 2: 验证客户端与服务端连接**
 
-运行 `<mysql-prefix>/bin/mysql --host=192.168.31.85 --port=45709 --user=root -p --database=trading --connect-timeout=10 --execute='SELECT VERSION(), DATABASE(), CURRENT_USER(), 1'`，预期认证成功且数据库为 `trading`。
+从本地且不纳入 Git 的 `config.yaml` 读取连接信息，运行 `<mysql-prefix>/bin/mysql --host=<mysql-host> --port=<mysql-port> --user=<mysql-user> -p --database=<mysql-database> --connect-timeout=10 --execute='SELECT VERSION(), 1'`，预期认证成功。不得把真实地址、端口、用户或数据库名写回计划文档。
 
 - [ ] **Step 3: 验证迁移代码基线**
 

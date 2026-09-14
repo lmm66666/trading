@@ -1,13 +1,17 @@
 #!/bin/bash
 #
 # 每 7s 调用 SaveFinancialReportData 保存一只股票的财报数据
-# 用法: ./save_financial_report.sh [base_url]
+# 用法: ./save_financial_report.sh <base_url>
 # 示例: ./save_financial_report.sh http://localhost:8080
 #
 
 set -euo pipefail
 
-BASE_URL="${1:-http://192.168.31.85:41027}"
+BASE_URL="${1:-${TRADING_API_BASE_URL:-}}"
+if [[ -z "$BASE_URL" ]]; then
+  echo "base_url 参数或 TRADING_API_BASE_URL 环境变量不能为空" >&2
+  exit 2
+fi
 API_URL="${BASE_URL}/api/stocks/financial-report"
 INTERVAL=2
 
