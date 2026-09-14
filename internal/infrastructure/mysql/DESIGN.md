@@ -21,7 +21,7 @@
 
 ## 3. 依赖和边界
 
-本目录提供 MySQL 5.7/8.0 的版本化行情仓储和内核表结构。一张表一个模型，领域及 port 不依赖 GORM。连接必须使用 `parseTime=true&loc=UTC`；时间以 UTC `DATETIME(6)` 存储，Price/Money 使用有符号 BIGINT，版本和序号使用无符号整数。
+本目录提供 MySQL 8.4 的版本化行情仓储和内核表结构。一张表一个模型，领域及 port 不依赖 GORM。连接必须使用 `parseTime=true&loc=UTC`；时间以 UTC `DATETIME(6)` 存储，Price/Money 使用有符号 BIGINT，版本和序号使用无符号整数。
 
 本模块依赖 `port`、`market` 和 `backtest` 完成端口映射；对根 `model` 的依赖只服务财报兼容与旧行情迁移。它不得调用外部 HTTP，也不得在数据库事务中执行领域长计算。
 
@@ -57,7 +57,7 @@ COMPLETE 表示已提供变更全部提交。当前写入端口没有上游质�
 
 `NewJobQueue`、`NewRunStore`、`NewSignalSnapshotStore` 和 `NewOutbox` 实现对应 port。入队只接受零 Attempts、未取消的 PENDING Run；同 kind 与幂等键返回原 Run，输入 hash 不同则拒绝。所有身份按字节精确匹配。
 
-领取使用 MySQL 5.7 兼容的单条有序 `UPDATE ... ORDER BY created_at, id LIMIT 1`，不依赖 SKIP LOCKED。每次领取生成独立的 256 位随机 token，数据库 `UTC_TIMESTAMP(6)` 计算租约期限和重试就绪状态。Run.Attempts 返回持久化领取次数，最多4次（初次加3次重试）；取消任务不能领取。续租、重试和发布先锁定 run/token 记录，再用 run/owner/token、未过期和未取消条件更新，旧 worker 无法覆盖重领结果。
+领取使用单条有序 `UPDATE ... ORDER BY created_at, id LIMIT 1`，当前不依赖 `SKIP LOCKED`。每次领取生成独立的 256 位随机 token，数据库 `UTC_TIMESTAMP(6)` 计算租约期限和重试就绪状态。Run.Attempts 返回持久化领取次数，最多4次（初次加3次重试）；取消任务不能领取。续租、重试和发布先锁定 run/token 记录，再用 run/owner/token、未过期和未取消条件更新，旧 worker 无法覆盖重领结果。
 
 `Retry` 清理租约并写入下次执行时间；第四次执行或不可重试错误直接进入 FAILED。应用 worker 必须通过 `port.JobQueue.ReapExpired(ctx)` 周期清理已耗尽次数的过期租约，每轮最多1000个。取消请求在行锁下直接进入 CANCELLED，同时保留数据库 UTC 请求时间；计算中的 worker 应通过 Get 检查并退出。
 
@@ -75,7 +75,7 @@ Enqueue 的同幂等键异 hash 冲突以 `port.ErrIdempotencyConflict` 明确�
 
 Outbox 的 Payload 是端口定义的不透明字节，用 JSON base64 字符串无损保存；消费者需先 JSON 解码为字节，再按事件协议解码。独立 Publish 按 EventID 幂等，重复 ID 的内容不同会拒绝。成功/部分成功/Fail 发布生成稳定的 compute.completed 事件 ID。当前没有外部投递器，PublishedAt 保持空值供后续消费。
 
-事务只重试已经回滚的 MySQL 1213/1205 锁冲突，最多3次、退避遵守 context；commit 返回错误时不重放、不报告成功或有效租约。真实并发、过期重领、取消、结果分批回滚和提交可见性必须通过 MySQL 5.7/8.0 集成门禁。
+事务只重试已经回滚的 MySQL 1213/1205 锁冲突，最多3次、退避遵守 context；commit 返回错误时不重放、不报告成功或有效租约。真实并发、过期重领、取消、结果分批回滚和提交可见性必须通过 MySQL 8.4 集成门禁。
 
 ### 5.3 兼容查询
 
@@ -102,7 +102,7 @@ apply 在固定专用连接上持有 MySQL GET_LOCK，并在所有退出路径�
 
 目标市场行按 batch-size 分批写入真实 INCOMPLETE 版本，每批与目标游标在同一短事务提交。目标证券全部写完后按批读取并校验完整摘要，写入验证凭证。中途失败只重做未提交批次；已验证证券不重复写入。最后一次轻量事务只检查凭证数量并更新版本和报告为 COMPLETE，不搬运市场历史。普通 Publish 遇到本迁移的 INCOMPLETE 版本会拒绝新发布，防止更高版本间接暴露部分数据；版本查询始终拒绝 INCOMPLETE。
 
-每个外部目标批次内部再按模型可绑定列数拆分 INSERT，单条最多使用 64511 个参数，低于 MySQL 5.7/8.0 的 65535 参数上限并预留1024。当前 Bar/因子/公司行动分别绑定18/9/11列，对应最多3583/7167/5864行；新增可写字段会自动缩小内部块。所有内部 INSERT 和最后的目标检查点仍属于同一外部事务，任一内部块失败整批回滚；命令的 batch-size 上限仍为10000。
+每个外部目标批次内部再按模型可绑定列数拆分 INSERT，单条最多使用 64511 个参数，低于 MySQL 8.4 的 65535 参数上限并预留1024。当前 Bar/因子/公司行动分别绑定18/9/11列，对应最多3583/7167/5864行；新增可写字段会自动缩小内部块。所有内部 INSERT 和最后的目标检查点仍属于同一外部事务，任一内部块失败整批回滚；命令的 batch-size 上限仍为10000。
 
 未知代码、无历史 Bar、缺失日期、复权冲突或来源失败都会阻止最终切换。Failures 保留证券及稳定白名单分类：SOURCE_UNAVAILABLE、INCOMPLETE_DATA、INVALID_DATA、STORAGE_FAILURE、CANCELED，不保存底层错误、URL或凭据。任何最终事务/commit/解锁失败，返回报告均为 INCOMPLETE 且 BacktestEnabled=false；只有确认最终提交成功才启用。命令返回脱敏错误和非零退出码。未知上市状态和交易单位仍保留未激活/零值，后续主数据同步补齐。
 
@@ -122,7 +122,7 @@ apply 在固定专用连接上持有 MySQL GET_LOCK，并在所有退出路径�
 - 批量证券上限 5000，明细写入按最多 1000 行分批；SQL 参数数量从 MySQL 65535 上限扣除安全余量后计算，禁止无界 `IN`、`UNION ALL` 或结果集。
 - 身份字段使用二进制精确比较，所有 SQL 参数化并显式列名；事务不包含外部 HTTP、长计算或无界循环。
 - 错误与迁移报告不得泄露 DSN、SQL、路径、凭据、来源 URL 或原始响应；数据库时间统一 UTC 微秒。
-- MySQL 5.7 与 8.0 的 DDL、索引、事务隔离和并发语义必须在真实实例验证。
+- MySQL 8.4 的 DDL、索引、事务隔离和并发语义必须在真实实例验证。
 
 ## 8. 测试与验收证据
 
@@ -134,7 +134,7 @@ go test -tags=integration ./internal/infrastructure/mysql -run TestLegacyMigrati
 go test -tags=integration ./internal/infrastructure/mysql/... -count=1
 ```
 
-单元与 SQL mock 测试验证端口校验、SQL 边界、映射和错误传播；真实集成测试覆盖 MySQL 5.7/8.0 的迁移、索引、锁、租约、提交可见性、失败恢复和幂等重跑。无 Docker 时必须明确失败，不能以 mock 或只编译替代。
+单元与 SQL mock 测试验证端口校验、SQL 边界、映射和错误传播；本地使用宿主原生 `mysql:8.4` 容器覆盖迁移、索引、锁、租约、提交可见性、失败恢复和幂等重跑。部署数据库只执行版本与编译架构的只读兼容检查。无 Docker 时必须明确失败，不能以 mock 或只编译替代。
 
 ## 9. 相关文档
 

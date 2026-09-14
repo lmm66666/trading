@@ -155,7 +155,7 @@
 - 简单 CRUD 优先 GORM；复杂批量、锁和性能路径可用参数化原生 SQL，显式列名，禁止新增 `SELECT *`。
 - 表名使用 `t_` 前缀，列与索引使用 snake_case；主键为无符号自增整数，业务唯一性由数据库唯一索引保证。
 - 时间戳存 UTC `DATETIME(6)`；交易日期使用 date-only；Price/Money 按 10000 缩放整数落库。
-- 精确身份使用已验证的二进制列/排序方案，并配套 MySQL 5.7、8.0 集成测试。
+- 精确身份使用已验证的二进制列/排序方案，并配套 MySQL 8.4 真实集成测试。
 - 事务只包围必须原子提交的数据库操作；禁止在事务内调用外部 HTTP、执行长计算或无界循环。
 - 并发写入使用唯一约束、条件更新或明确行锁，锁定顺序稳定。
 - 数据库语义变化默认停机更新：停止服务、备份、迁移、校验、启动。操作细节见 [运行手册](docs/operations.md)。
@@ -164,7 +164,7 @@
 
 - 新增业务逻辑有单元测试，总覆盖率不低于 80%。
 - `internal/market`、`internal/indicator`、`internal/strategy/...`、`internal/backtest` 各自覆盖率不低于 90%。
-- MySQL 语义必须在 5.7 和 8.0 真实实例验证；SQL mock 或只编译不能替代。
+- MySQL 语义必须在 8.4 真实实例验证；本地 ARM64 使用原生容器，部署应用镜像按 `linux/amd64` 构建。SQL mock 或只编译不能替代。
 - 快速检查：`npm --prefix web run check && go test ./... && go vet ./...`。
 - 完整交付：`bash scripts/verify.sh`。
 - Docker 不可用时准确报告未完成的 MySQL 和镜像门禁，不能伪报通过。

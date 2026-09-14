@@ -458,4 +458,4 @@ roadmap 允许调整方向，但不能替代已批准的需求和模块设计。
 - Broker 两个限频测试连续运行 20 次通过，`pkg/broker` 全包连续运行 5 次通过。
 - 完整门禁中的总覆盖率为 85.5%；market 94.3%、indicator 90.3%、strategy 94.8%、backtest 90.4%。
 - Race Detector、静态检查、5000 证券性能门禁和容器配置安全检查通过；全市场扫描耗时 254.47ms，批量读取 1 次。
-- MySQL 5.7/8.0 集成测试因当前主机没有可用 Docker provider 明确失败；因此镜像构建步骤未执行。该环境限制没有被 SQL mock 或只编译替代，需在具备 Docker daemon 的环境补跑 `bash scripts/verify.sh` 才能完成全部交付门禁。
+- 初次运行 MySQL 5.7/8.0 集成门禁时 Docker daemon 不可用；启动 daemon 后再次执行又确认旧门禁会在 ARM64 本地启动非原生 MySQL 5.7，并因 MySQL 8.0 镜像拉取超时失败。用户随后批准 [REQ-2026-002](REQ-2026-002-mysql8-cross-architecture.md)，统一改用 MySQL 8.4；本需求将在新门禁完整通过后更新最终验收结果。

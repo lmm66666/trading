@@ -84,7 +84,7 @@ go test ./cmd/migrate-strategy-kernel
 go test -tags=integration ./internal/infrastructure/mysql -run TestLegacyMigrationMySQLRestartAndIncompleteVisibility
 ```
 
-MySQL 5.7/8.0 集成测试不可由 SQL mock 替代。
+MySQL 8.4 集成测试不可由 SQL mock 替代。
 
 ## 8. 相关文档
 
