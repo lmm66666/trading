@@ -24,11 +24,14 @@ require_coverage() {
   echo "$label 覆盖率：${actual}%"
 }
 
-echo "[1/9] 前端测试、覆盖率与生产构建"
+echo "[1/10] 前端测试、覆盖率与生产构建"
 npm --prefix web ci
 npm --prefix web run check
 
-echo "[2/9] 全量测试与总覆盖率"
+echo "[2/10] 文档契约"
+go test . -run '^TestDocumentation' -count=1
+
+echo "[3/10] 全量测试与总覆盖率"
 go test ./... -count=1
 tested_packages=()
 while IFS= read -r package; do
@@ -39,7 +42,7 @@ done < <(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}'
 go test "${tested_packages[@]}" -coverprofile="$verify_dir/all.cover" -count=1
 require_coverage "总计" "$verify_dir/all.cover" 80
 
-echo "[3/9] 核心领域覆盖率"
+echo "[4/10] 核心领域覆盖率"
 for area in market indicator strategy backtest; do
   package="./internal/$area"
   if [[ "$area" == "strategy" ]]; then
@@ -49,25 +52,25 @@ for area in market indicator strategy backtest; do
   require_coverage "$area" "$verify_dir/$area.cover" 90
 done
 
-echo "[4/9] Race Detector"
+echo "[5/10] Race Detector"
 go test -race ./... -count=1
 
-echo "[5/9] 静态检查"
+echo "[6/10] 静态检查"
 go vet ./...
 
-echo "[6/9] 全市场性能门禁"
+echo "[7/10] 全市场性能门禁"
 go test ./internal/application -run '^TestFullMarketScanPerformance$' -count=1 -v
 
-echo "[7/9] 容器配置安全检查"
+echo "[8/10] 容器配置安全检查"
 ! grep -q 'COPY config-nas.yaml' Dockerfile
 grep -q '^config\*\.yaml$' .dockerignore
 grep -q '^!config\.example\.yaml$' .dockerignore
 grep -q '^\*.tar$' .dockerignore
 
-echo "[8/9] MySQL 5.7/8.0 集成测试"
+echo "[9/10] MySQL 5.7/8.0 集成测试"
 go test -tags=integration ./internal/infrastructure/mysql -count=1
 
-echo "[9/9] 无本地配置镜像构建"
+echo "[10/10] 无本地配置镜像构建"
 docker build --no-cache -t trading:verify .
 
 echo "验证全部通过"
