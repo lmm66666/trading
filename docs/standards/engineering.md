@@ -6,7 +6,7 @@ approval_provenance: inherited-current-design
 approved_by: null
 approved_at: null
 approved_revision: null
-owns: ["scripts/", "documentation_test.go", "Dockerfile", ".dockerignore"]
+owns: ["scripts/", "documentation_test.go", "verification_test.go", "Dockerfile", ".dockerignore"]
 related: []
 ---
 

@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+verify_mysql=false
+verify_image=false
+for option in "$@"; do
+  case "$option" in
+    --mysql) verify_mysql=true ;;
+    --image) verify_image=true ;;
+    --full) verify_mysql=true; verify_image=true ;;
+    --help|-h)
+      echo "用法: bash scripts/verify.sh [--mysql] [--image] [--full]"
+      echo "默认执行本地门禁；--mysql 追加远端隔离数据库验收；--image 追加 amd64 镜像；--full 全部执行。"
+      exit 0
+      ;;
+    *) echo "未知参数: $option（使用 --help 查看用法）" >&2; exit 2 ;;
+  esac
+done
+
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 verify_dir="$(mktemp -d "${TMPDIR:-/tmp}/trading-verify.XXXXXX")"
 trap 'rm -rf -- "$verify_dir"' EXIT
@@ -67,18 +83,26 @@ grep -q '^config\*\.yaml$' .dockerignore
 grep -q '^!config\.example\.yaml$' .dockerignore
 grep -q '^\*.tar$' .dockerignore
 
-echo "[9/10] 远端 MySQL 8.4/x86_64 兼容性与隔离集成测试"
-go test -tags=deployment ./internal/infrastructure/mysql -run '^TestDeploymentMySQLCompatibility$' -count=1
-go test -tags=integration ./internal/infrastructure/mysql/... -count=1
-
-echo "[10/10] linux/amd64 无本地配置镜像构建"
-build_proxy_args=()
-if [[ -n "${TRADING_DOCKER_BUILD_PROXY:-}" ]]; then
-  build_proxy_args+=(
-    --build-arg "HTTP_PROXY=$TRADING_DOCKER_BUILD_PROXY"
-    --build-arg "HTTPS_PROXY=$TRADING_DOCKER_BUILD_PROXY"
-  )
+if "$verify_mysql"; then
+  echo "[9/10] 远端 MySQL 8.4/x86_64 兼容性与隔离集成测试"
+  go test -tags=deployment ./internal/infrastructure/mysql -run '^TestDeploymentMySQLCompatibility$' -count=1
+  go test -tags=integration ./internal/infrastructure/mysql/... -count=1
+else
+  echo "[9/10] MySQL：未选择（涉及数据库语义时必须使用 --mysql）"
 fi
-docker buildx build --platform linux/amd64 --load --no-cache "${build_proxy_args[@]}" -t trading:verify .
 
-echo "验证全部通过"
+if "$verify_image"; then
+  echo "[10/10] linux/amd64 无本地配置镜像构建"
+  build_proxy_args=()
+  if [[ -n "${TRADING_DOCKER_BUILD_PROXY:-}" ]]; then
+    build_proxy_args+=(
+      --build-arg "HTTP_PROXY=$TRADING_DOCKER_BUILD_PROXY"
+      --build-arg "HTTPS_PROXY=$TRADING_DOCKER_BUILD_PROXY"
+    )
+  fi
+  docker buildx build --platform linux/amd64 --load --no-cache "${build_proxy_args[@]}" -t trading:verify .
+else
+  echo "[10/10] 镜像：未选择（涉及构建或部署时必须使用 --image）"
+fi
+
+echo "所选门禁全部通过；未选择的外部门禁不计为通过"

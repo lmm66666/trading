@@ -5,6 +5,7 @@ approval_status: approved
 approved_by: user
 approved_at: "2026-09-17"
 approved_revision: "d4dc69f14fd023a8026d4fe67991b40762a3bee6:docs/requirements/active/REQ-2026-004-document-driven-development.md"
+amendment_revision: "01f9bcb:docs/changes/active/2026-09-17-document-driven-development/"
 approved_scope:
   - "DOC-001 through DOC-006 and sections 3–5 of the approved migration specification"
   - "DOC-007: 2026-09-17 explicit user approval in this task of risk-based local/MySQL/image verification"
