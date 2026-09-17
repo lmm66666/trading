@@ -1,3 +1,15 @@
+---
+status: approved
+authority: normative
+baseline_revision: 8693e59
+approval_provenance: inherited-current-design
+approved_by: null
+approved_at: null
+approved_revision: null
+owns: ["pkg/broker/", "pkg/broker/testdata/", "pkg/indicator/limiter.go", "pkg/indicator/limiter_test.go"]
+related: []
+---
+
 # 外部数据源适配设计
 
 | 属性 | 内容 |
@@ -84,7 +96,7 @@ go test ./pkg/broker ./pkg/indicator -cover
 
 ## 8. 相关文档
 
-- [系统设计](../../docs/architecture/system-design.md)
-- [行情领域设计](../../internal/market/DESIGN.md)
-- [应用层设计](../../internal/application/DESIGN.md)
-- [端口设计](../../internal/port/DESIGN.md)
+- [系统设计](../../architecture/system-design.md)
+- [行情领域设计](../internal/market.md)
+- [应用层设计](../internal/application.md)
+- [端口设计](../internal/port.md)

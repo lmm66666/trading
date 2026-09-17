@@ -1,3 +1,15 @@
+---
+status: approved
+authority: normative
+baseline_revision: 8693e59
+approval_provenance: inherited-current-design
+approved_by: null
+approved_at: null
+approved_revision: null
+owns: ["main.go", "main_test.go", "config/", "config.example.yaml"]
+related: []
+---
+
 # 系统设计
 
 | 属性 | 内容 |
@@ -36,13 +48,13 @@ api / infrastructure / pkg
 - `internal/market`、`internal/indicator`、`internal/strategy`、`internal/backtest` 是纯领域/计算模块，不依赖 Gin、GORM、MySQL、HTTP 客户端或具体数据源。
 - `internal/application` 编排用例、重试、取消、事务外流程和生命周期，只依赖领域对象与 `internal/port`。
 - `internal/port` 定义应用真正需要隔离或替换的能力边界。
-- 财报、宏观、旧 HTTP 与迁移链路仍有现行兼容依赖；这些例外及其收敛规则以 [领域地图](domain-map.md) 为准，不代表新增代码可以绕过上述方向。
+- 财报、宏观、旧 HTTP 与迁移链路仍有现行兼容依赖；这些例外及其收敛规则以 [领域地图](../design/README.md) 为准，不代表新增代码可以绕过上述方向。
 - `internal/infrastructure/mysql` 实现持久化端口。
 - `pkg/broker` 实现外部数据源适配，外部 DTO 在进入领域前完成解析和校验。
 - `api` 负责传输校验、调用应用服务和响应映射，不直接访问 GORM 或编写业务规则。
 - `business`、`data`、`model` 保留财报、宏观和旧迁移兼容职责，不得形成与新技术策略内核平行的实现栈。
 
-模块索引和允许依赖见 [领域地图](domain-map.md)。
+模块索引和允许依赖见 [领域地图](../design/README.md)。
 
 ## 3. 全局业务不变量
 
@@ -99,7 +111,7 @@ A 股使用新浪原始日线和前复权因子，近期 20 根日线重叠增�
 3. 返回页按时间升序，向前分页继续使用相同版本和排他游标。
 4. 客户端取消陈旧请求，不能让旧响应覆盖新查询状态。
 
-详细 HTTP 契约见 [API 文档](../../api/api.md)。
+详细 HTTP 契约见 [API 文档](../standards/http-api.md)。
 
 ### 4.3 扫描
 
@@ -134,10 +146,10 @@ A 股使用新浪原始日线和前复权因子，近期 20 根日线重叠增�
 
 ## 7. 质量门禁
 
-测试顺序、覆盖率阈值、快速检查、完整门禁及 Docker 不可用时的报告要求统一以 [项目开发宪法](../../AGENTS.md) 的“测试与交付”章节为准。本设计只定义系统边界，不复制工程门禁数值。
+测试顺序、覆盖率阈值、快速检查、完整门禁及 Docker 不可用时的报告要求统一以 [工程标准](../standards/engineering.md) 的“测试与交付”章节为准。本设计只定义系统边界，不复制工程门禁数值。
 
 ## 8. 相关文档
 
 - [Roadmap](../roadmap.md)
-- [领域地图](domain-map.md)
-- [文档治理需求](../requirements/archived/REQ-2026-001-document-governance.md)
+- [领域地图](../design/README.md)
+- [文档治理需求](../changes/archive/legacy/REQ-2026-001-document-governance.md)

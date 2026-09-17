@@ -1,3 +1,15 @@
+---
+status: approved
+authority: normative
+baseline_revision: 8693e59
+approval_provenance: inherited-current-design
+approved_by: null
+approved_at: null
+approved_revision: null
+owns: ["api/", "shell/save_stock_historical.sh"]
+related: []
+---
+
 # API 模块设计
 
 | 属性 | 内容 |
@@ -8,7 +20,7 @@
 
 ## 1. 职责与非职责
 
-API 是 Gin HTTP 传输适配器，负责路由、请求边界、DTO 校验、调用应用服务、错误映射、响应脱敏和静态前端托管。详细路径、字段、状态码、分页参数和示例以 [HTTP 契约](api.md) 为准。
+API 是 Gin HTTP 传输适配器，负责路由、请求边界、DTO 校验、调用应用服务、错误映射、响应脱敏和静态前端托管。详细路径、字段、状态码、分页参数和示例以 [HTTP 契约](../standards/http-api.md) 为准。
 
 API 不实现指标、策略、扫描、回测、行情版本或数据库规则；不得导入 GORM、拼写 SQL，或在新内核服务失败时回退到旧技术策略。
 
@@ -83,11 +95,11 @@ HTTP 请求
 go test ./api -cover
 ```
 
-接口行为变更还必须同步更新 [HTTP 契约](api.md)。
+接口行为变更还必须同步更新 [HTTP 契约](../standards/http-api.md)。
 
 ## 9. 相关文档
 
-- [HTTP 契约](api.md)
-- [系统设计](../docs/architecture/system-design.md)
-- [应用层设计](../internal/application/DESIGN.md)
-- [端口设计](../internal/port/DESIGN.md)
+- [HTTP 契约](../standards/http-api.md)
+- [系统设计](../architecture/system-design.md)
+- [应用层设计](internal/application.md)
+- [端口设计](internal/port.md)

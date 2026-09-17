@@ -1,3 +1,15 @@
+---
+status: approved
+authority: normative
+baseline_revision: 8693e59
+approval_provenance: inherited-current-design
+approved_by: null
+approved_at: null
+approved_revision: null
+owns: ["data/", "model/"]
+related: []
+---
+
 # 财报与兼容数据访问设计
 
 | 属性 | 内容 |
@@ -74,7 +86,7 @@ go test ./data -cover
 
 ## 9. 相关文档
 
-- [系统设计](../docs/architecture/system-design.md)
-- [财报业务设计](../business/DESIGN.md)
-- [MySQL 新内核设计](../internal/infrastructure/mysql/DESIGN.md)
-- [迁移命令设计](../cmd/migrate-strategy-kernel/DESIGN.md)
+- [系统设计](../architecture/system-design.md)
+- [财报业务设计](business.md)
+- [MySQL 新内核设计](internal/infrastructure/mysql.md)
+- [迁移命令设计](cmd/migrate-strategy-kernel.md)

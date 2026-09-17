@@ -1,3 +1,15 @@
+---
+status: approved
+authority: normative
+baseline_revision: 8693e59
+approval_provenance: inherited-current-design
+approved_by: null
+approved_at: null
+approved_revision: null
+owns: ["internal/market/"]
+related: []
+---
+
 # 行情领域设计
 
 | 属性 | 内容 |
@@ -97,6 +109,6 @@ go test ./internal/market -cover
 
 ## 9. 相关文档
 
-- [系统设计](../../docs/architecture/system-design.md)
-- [Broker 设计](../../pkg/broker/DESIGN.md)
-- [MySQL 设计](../infrastructure/mysql/DESIGN.md)
+- [系统设计](../../architecture/system-design.md)
+- [Broker 设计](../pkg/broker.md)
+- [MySQL 设计](infrastructure/mysql.md)

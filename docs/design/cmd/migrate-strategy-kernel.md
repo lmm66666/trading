@@ -1,3 +1,15 @@
+---
+status: approved
+authority: normative
+baseline_revision: 8693e59
+approval_provenance: inherited-current-design
+approved_by: null
+approved_at: null
+approved_revision: null
+owns: ["cmd/migrate-strategy-kernel/"]
+related: []
+---
+
 # 旧行情迁移命令设计
 
 | 属性 | 内容 |
@@ -88,7 +100,7 @@ MySQL 8.4 集成测试不可由 SQL mock 替代。
 
 ## 8. 相关文档
 
-- [系统设计](../../docs/architecture/system-design.md)
-- [旧数据访问设计](../../data/DESIGN.md)
-- [MySQL 设计](../../internal/infrastructure/mysql/DESIGN.md)
-- [Broker 设计](../../pkg/broker/DESIGN.md)
+- [系统设计](../../architecture/system-design.md)
+- [旧数据访问设计](../data.md)
+- [MySQL 设计](../internal/infrastructure/mysql.md)
+- [Broker 设计](../pkg/broker.md)

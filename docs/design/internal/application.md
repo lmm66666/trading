@@ -1,3 +1,15 @@
+---
+status: approved
+authority: normative
+baseline_revision: 8693e59
+approval_provenance: inherited-current-design
+approved_by: null
+approved_at: null
+approved_revision: null
+owns: ["internal/application/"]
+related: []
+---
+
 # 应用层设计
 
 | 属性 | 内容 |
@@ -85,9 +97,9 @@ go vet ./...
 
 ## 9. 相关文档
 
-- [系统设计](../../docs/architecture/system-design.md)
-- [领域地图](../../docs/architecture/domain-map.md)
-- [应用端口设计](../port/DESIGN.md)
-- [行情领域设计](../market/DESIGN.md)
-- [MySQL 适配器设计](../infrastructure/mysql/DESIGN.md)
-- [Broker 设计](../../pkg/broker/DESIGN.md)
+- [系统设计](../../architecture/system-design.md)
+- [领域地图](../README.md)
+- [应用端口设计](port.md)
+- [行情领域设计](market.md)
+- [MySQL 适配器设计](infrastructure/mysql.md)
+- [Broker 设计](../pkg/broker.md)

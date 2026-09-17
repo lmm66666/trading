@@ -1,3 +1,15 @@
+---
+status: approved
+authority: normative
+baseline_revision: 8693e59
+approval_provenance: inherited-current-design
+approved_by: null
+approved_at: null
+approved_revision: null
+owns: ["internal/backtest/"]
+related: []
+---
+
 # 回测模块设计
 
 | 属性 | 内容 |
@@ -102,6 +114,6 @@ go test ./internal/backtest -cover
 
 ## 9. 相关文档
 
-- [系统设计](../../docs/architecture/system-design.md)
-- [策略设计](../strategy/DESIGN.md)
-- [应用层设计](../application/DESIGN.md)
+- [系统设计](../../architecture/system-design.md)
+- [策略设计](strategy.md)
+- [应用层设计](application.md)

@@ -1,3 +1,15 @@
+---
+status: approved
+authority: normative
+baseline_revision: 8693e59
+approval_provenance: inherited-current-design
+approved_by: null
+approved_at: null
+approved_revision: null
+owns: ["internal/infrastructure/mysql/", "internal/infrastructure/mysql/dbtest/"]
+related: []
+---
+
 # 策略内核 MySQL 存储设计
 
 | 属性 | 内容 |
@@ -138,9 +150,9 @@ go test -tags=integration ./internal/infrastructure/mysql/... -count=1
 
 ## 9. 相关文档
 
-- [系统设计](../../../docs/architecture/system-design.md)
-- [领域地图](../../../docs/architecture/domain-map.md)
-- [应用端口设计](../../port/DESIGN.md)
-- [应用层设计](../../application/DESIGN.md)
-- [行情领域设计](../../market/DESIGN.md)
-- [旧行情迁移命令设计](../../../cmd/migrate-strategy-kernel/DESIGN.md)
+- [系统设计](../../../architecture/system-design.md)
+- [领域地图](../../README.md)
+- [应用端口设计](../port.md)
+- [应用层设计](../application.md)
+- [行情领域设计](../market.md)
+- [旧行情迁移命令设计](../../cmd/migrate-strategy-kernel.md)

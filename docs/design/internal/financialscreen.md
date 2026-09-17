@@ -1,3 +1,15 @@
+---
+status: approved
+authority: normative
+baseline_revision: 8693e59
+approval_provenance: inherited-current-design
+approved_by: null
+approved_at: null
+approved_revision: null
+owns: ["internal/financialscreen/"]
+related: []
+---
+
 # 财报筛选模块设计
 
 | 属性 | 内容 |
@@ -63,5 +75,5 @@ go test ./internal/financialscreen -cover
 
 ## 9. 相关文档
 
-- [财报业务设计](../../business/DESIGN.md)
-- [旧数据访问设计](../../data/DESIGN.md)
+- [财报业务设计](../business.md)
+- [旧数据访问设计](../data.md)

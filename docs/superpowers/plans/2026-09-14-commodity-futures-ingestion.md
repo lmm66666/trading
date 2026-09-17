@@ -1,6 +1,6 @@
 # 新浪商品期货主力日线实施计划
 
-> 历史计划（已废止）：MySQL 验收方式已由 [REQ-2026-002](../../requirements/archived/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)取代，本文仅保留需求追溯价值。
+> 历史计划（已废止）：MySQL 验收方式已由 [REQ-2026-002](../../changes/archive/legacy/REQ-2026-002-mysql8-cross-architecture.md)与[MySQL 设计](../../design/internal/infrastructure/mysql.md)取代，本文仅保留需求追溯价值。
 
 **目标：** 使用一个已实测可用的新浪期货日线接口，为 AU、AG、FU、SC、LU、J、JM、ZC 八个主力连续品种保存日线与本地周线。
 

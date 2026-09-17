@@ -1,6 +1,6 @@
 # Database Cutover And Branch Integration Implementation Plan
 
-> 历史计划（已废止）：其中的 MySQL 环境、验收和迁移指令已由 [REQ-2026-002](../../requirements/archived/REQ-2026-002-mysql8-cross-architecture.md)、[MySQL 设计](../../../internal/infrastructure/mysql/DESIGN.md)与[运行手册](../../operations.md)取代，不得直接执行本文的旧步骤。
+> 历史计划（已废止）：其中的 MySQL 环境、验收和迁移指令已由 [REQ-2026-002](../../changes/archive/legacy/REQ-2026-002-mysql8-cross-architecture.md)、[MySQL 设计](../../design/internal/infrastructure/mysql.md)与[运行手册](../../operations.md)取代，不得直接执行本文的旧步骤。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

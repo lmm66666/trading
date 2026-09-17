@@ -1,3 +1,15 @@
+---
+status: approved
+authority: normative
+baseline_revision: 8693e59
+approval_provenance: inherited-current-design
+approved_by: null
+approved_at: null
+approved_revision: null
+owns: ["business/", "pkg/indicator/kdj.go", "pkg/indicator/ma.go", "pkg/indicator/macd.go", "pkg/indicator/macd_test.go", "pkg/indicator/round.go", "pkg/indicator/kdj_test.go", "shell/save_financial_report.sh"]
+related: []
+---
+
 # 财报与宏观业务设计
 
 | 属性 | 内容 |
@@ -73,7 +85,7 @@ go test ./business -cover
 
 ## 9. 相关文档
 
-- [系统设计](../docs/architecture/system-design.md)
-- [旧数据访问设计](../data/DESIGN.md)
-- [财报筛选设计](../internal/financialscreen/DESIGN.md)
-- [Broker 设计](../pkg/broker/DESIGN.md)
+- [系统设计](../architecture/system-design.md)
+- [旧数据访问设计](data.md)
+- [财报筛选设计](internal/financialscreen.md)
+- [Broker 设计](pkg/broker.md)

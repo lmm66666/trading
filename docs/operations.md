@@ -11,7 +11,7 @@
 - Go 1.25.7+
 - Node.js 24+
 - MySQL 8.4.x LTS
-- 完整集成验证和镜像构建需要可用的 Docker daemon
+- 远端集成验证需要可达的获批 MySQL 服务；镜像构建需要可用的 Docker daemon
 
 ## 2. 本地启动
 
@@ -49,7 +49,7 @@ Vite 将 `/api` 代理到 `:8080`。
 - 期货来源按配置历史起点重读完整快照；股票按最近 20 根日线重叠增量刷新。
 - 本地配置、密码、Token、数据库转储和导出包不得提交或写入镜像层。
 
-具体模块语义见 [应用层设计](../internal/application/DESIGN.md) 和 [Broker 设计](../pkg/broker/DESIGN.md)。
+具体模块语义见 [应用层设计](design/internal/application.md) 和 [Broker 设计](design/pkg/broker.md)。
 
 ## 5. Docker
 
@@ -89,7 +89,7 @@ docker run -d --name trading -p 8080:8080 \
 
 简单新增表/列可以由受控 AutoMigrate 完成；删除、重命名、索引/约束调整和数据重写使用显式迁移。破坏性变更的默认回滚方式是旧程序加数据库备份恢复。
 
-旧行情内核迁移的完整流程见 [迁移命令设计](../cmd/migrate-strategy-kernel/DESIGN.md)。
+旧行情内核迁移的完整流程见 [迁移命令设计](design/cmd/migrate-strategy-kernel.md)。
 
 ## 7. 旧行情迁移入口
 
@@ -117,13 +117,19 @@ go test ./...
 go vet ./...
 ```
 
-完整交付：
+按风险选择门禁：
 
 ```bash
-bash scripts/verify.sh
+bash scripts/verify.sh                 # 默认本地门禁，无 MySQL / Docker 调用
+bash scripts/verify.sh --mysql         # 追加远端隔离数据库验收
+bash scripts/verify.sh --image         # 追加 linux/amd64 镜像构建
+bash scripts/verify.sh --full          # 所有门禁；等价于 --mysql --image
+bash scripts/verify.sh --help          # 仅显示用法
 ```
 
-完整脚本包含覆盖率、Race Detector、静态检查、5000 证券性能、远端 MySQL 8.4 随机隔离数据库集成和 `linux/amd64` 应用镜像构建。缺少或无法读取本地 `config.yaml` 的数据库配置，或 Docker 不可用时，必须准确报告未完成步骤，不能用 SQL mock 替代真实事务与并发验证。
+默认包含前端构建/覆盖率、Go 测试/覆盖率、文档、Race Detector、静态检查、5000 证券性能及容器配置安全检查。SQL/模型/索引/迁移/事务/锁/持久化队列/数据库驱动变化必须选择 MySQL；Dockerfile/构建依赖/打包/部署方式变化必须选择镜像；完整触发规则以 [工程标准](standards/engineering.md) 为准。CI/发布可用 `--full`。
+
+未选择的外部门禁会显式显示“未选择”，不能当作通过；评审确认不适用时在单项记录 `not-required` 和原因。必要门禁缺少前提或执行失败则记录阻塞/失败，禁止归档与合并。脚本未知参数立即退出，所选门禁任一失败返回非零状态。
 
 本地不得启动或拉取 MySQL 作为验收环境。远端预检只读取版本和编译架构；完整集成测试为每个测试创建 `trading_test_` 前缀的随机空数据库，结束后删除。测试直接读取仓库根目录下、本地保存且已被 Git 忽略的 `config.yaml` 中的数据库配置；配置内的业务库名只用于定位连接，测试连接必须改写到随机空数据库。缺少文件、配置无效或连接失败时门禁失败。凭据、完整 DSN 和内网地址不得写入仓库、日志或命令示例。
 
@@ -135,4 +141,4 @@ Docker Hub 或镜像构建阶段需要代理时，宿主侧继续使用标准 `h
 
 - [系统设计](architecture/system-design.md)
 - [Roadmap](roadmap.md)
-- [API 契约](../api/api.md)
+- [API 契约](standards/http-api.md)

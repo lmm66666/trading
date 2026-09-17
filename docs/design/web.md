@@ -1,3 +1,15 @@
+---
+status: approved
+authority: normative
+baseline_revision: 8693e59
+approval_provenance: inherited-current-design
+approved_by: null
+approved_at: null
+approved_revision: null
+owns: ["web/", "web/src/", "web/src/api/", "web/src/features/chart/", "web/src/features/indicators/", "web/src/features/search/", "web/src/test/"]
+related: []
+---
+
 # 行情工作台前端设计
 
 | 属性 | 内容 |
@@ -21,7 +33,7 @@
 - `IndicatorManager` 只管理服务端支持的参数预设，不在浏览器重新计算指标。
 - `api/client` 定义前端契约 DTO、统一解析响应 Envelope 并转成人类可读错误。
 
-后端契约见 [API 文档](../api/api.md)。
+后端契约见 [API 文档](../standards/http-api.md)。
 
 ## 3. 核心状态与不变量
 
@@ -78,6 +90,6 @@ npm --prefix web run check
 
 ## 9. 相关文档
 
-- [API 设计](../api/DESIGN.md)
-- [HTTP 契约](../api/api.md)
-- [系统设计](../docs/architecture/system-design.md)
+- [API 设计](api.md)
+- [HTTP 契约](../standards/http-api.md)
+- [系统设计](../architecture/system-design.md)

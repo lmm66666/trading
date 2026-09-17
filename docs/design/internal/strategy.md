@@ -1,3 +1,15 @@
+---
+status: approved
+authority: normative
+baseline_revision: 8693e59
+approval_provenance: inherited-current-design
+approved_by: null
+approved_at: null
+approved_revision: null
+owns: ["internal/strategy/", "internal/strategy/builtin/"]
+related: []
+---
+
 # 策略模块设计
 
 | 属性 | 内容 |
@@ -92,7 +104,7 @@ go test ./internal/strategy/... -cover
 
 ## 9. 相关文档
 
-- [系统设计](../../docs/architecture/system-design.md)
-- [指标设计](../indicator/DESIGN.md)
-- [回测设计](../backtest/DESIGN.md)
-- [应用层设计](../application/DESIGN.md)
+- [系统设计](../../architecture/system-design.md)
+- [指标设计](indicator.md)
+- [回测设计](backtest.md)
+- [应用层设计](application.md)

@@ -10,7 +10,7 @@
 
 建设一个面向 A 股和大宗商品期货的行情、财报、指标、策略扫描与回测平台。策略以版本化 Go 实现为当前基础，长期逐步获得类似 TradingView 的指标组合、策略表达、可复现回测和交互分析能力。
 
-Roadmap 表达方向和进入条件，不等同于已批准需求。大型事项只有进入需求文档的“已批准”状态后才能开始生产实现。
+Roadmap 表达方向和进入条件，不等同于已批准需求。大型事项只有进入变更记录的 `approved` 状态后才能开始生产实现。
 
 ## 当前阶段：策略内核与行情工作台稳定化
 
@@ -31,8 +31,8 @@ Roadmap 表达方向和进入条件，不等同于已批准需求。大型事项
 - 持久化回测/扫描任务、租约、取消、重试、不可变快照和游标分页。
 - React 行情工作台、证券搜索、固定版本 K 线分页与指标交互。
 - 旧行情到新内核的可检查点、可重跑迁移命令。
-- 以设计文档为实现上游约束的文档治理、模块设计和需求归档流程，见 [REQ-2026-001](requirements/archived/REQ-2026-001-document-governance.md)。
-- 读取本地配置、在远端 MySQL 8.4.x/x86_64 上创建随机隔离数据库的真实验收门禁，见 [REQ-2026-002](requirements/archived/REQ-2026-002-mysql8-cross-architecture.md)。
+- 以设计文档为实现上游约束的文档治理、模块设计和需求归档流程，见 [REQ-2026-001](changes/archive/legacy/REQ-2026-001-document-governance.md)。
+- 读取本地配置、在远端 MySQL 8.4.x/x86_64 上创建随机隔离数据库的真实验收门禁，见 [REQ-2026-002](changes/archive/legacy/REQ-2026-002-mysql8-cross-architecture.md)。
 
 ### 当前重点
 
@@ -75,4 +75,4 @@ Roadmap 表达方向和进入条件，不等同于已批准需求。大型事项
 - “当前重点”最多保留少量阶段目标，不用作个人任务列表。
 - “候选方向”必须包含进入条件，避免把想法误读为承诺。
 - 方向变化更新本文件；具体业务行为更新需求和模块设计。
-- 完整系统边界见 [系统设计](architecture/system-design.md)，模块归属见 [领域地图](architecture/domain-map.md)。
+- 完整系统边界见 [系统设计](architecture/system-design.md)，模块归属见 [领域地图](design/README.md)。

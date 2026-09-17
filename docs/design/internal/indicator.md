@@ -1,3 +1,15 @@
+---
+status: approved
+authority: normative
+baseline_revision: 8693e59
+approval_provenance: inherited-current-design
+approved_by: null
+approved_at: null
+approved_revision: null
+owns: ["internal/indicator/"]
+related: []
+---
+
 # 指标模块设计
 
 | 属性 | 内容 |
@@ -88,6 +100,6 @@ go test ./internal/indicator -cover
 
 ## 9. 相关文档
 
-- [系统设计](../../docs/architecture/system-design.md)
-- [行情领域设计](../market/DESIGN.md)
-- [策略设计](../strategy/DESIGN.md)
+- [系统设计](../../architecture/system-design.md)
+- [行情领域设计](market.md)
+- [策略设计](strategy.md)
