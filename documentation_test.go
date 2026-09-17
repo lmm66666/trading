@@ -14,6 +14,7 @@ import (
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/text"
+	"gopkg.in/yaml.v3"
 )
 
 func TestMarkdownDestinations(t *testing.T) {
@@ -54,24 +55,23 @@ func TestDocumentationContract(t *testing.T) {
 		"docs/roadmap.md",
 		"docs/operations.md",
 		"docs/architecture/system-design.md",
-		"docs/architecture/domain-map.md",
-		"docs/templates/module-design.md",
-		"docs/templates/requirement.md",
-		"api/DESIGN.md",
-		"api/api.md",
-		"business/DESIGN.md",
-		"data/DESIGN.md",
-		"internal/market/DESIGN.md",
-		"internal/indicator/DESIGN.md",
-		"internal/strategy/DESIGN.md",
-		"internal/backtest/DESIGN.md",
-		"internal/application/DESIGN.md",
-		"internal/financialscreen/DESIGN.md",
-		"internal/port/DESIGN.md",
-		"internal/infrastructure/mysql/DESIGN.md",
-		"pkg/broker/DESIGN.md",
-		"web/DESIGN.md",
-		"cmd/migrate-strategy-kernel/DESIGN.md",
+		"docs/design/README.md",
+		"docs/standards/engineering.md",
+		"docs/design/api.md",
+		"docs/standards/http-api.md",
+		"docs/design/business.md",
+		"docs/design/data.md",
+		"docs/design/internal/market.md",
+		"docs/design/internal/indicator.md",
+		"docs/design/internal/strategy.md",
+		"docs/design/internal/backtest.md",
+		"docs/design/internal/application.md",
+		"docs/design/internal/financialscreen.md",
+		"docs/design/internal/port.md",
+		"docs/design/internal/infrastructure/mysql.md",
+		"docs/design/pkg/broker.md",
+		"docs/design/web.md",
+		"docs/design/cmd/migrate-strategy-kernel.md",
 	}
 	for _, name := range required {
 		info, err := os.Stat(name)
@@ -83,12 +83,12 @@ func TestDocumentationContract(t *testing.T) {
 			t.Errorf("required documentation %s must be a non-empty file", name)
 		}
 	}
-	for _, forbidden := range []string{"README.md", "docs/decisions"} {
+	for _, forbidden := range []string{"README.md", "docs/decisions", "docs/templates", "docs/requirements"} {
 		if _, err := os.Stat(forbidden); !os.IsNotExist(err) {
 			t.Errorf("forbidden documentation path %s must not exist", forbidden)
 		}
 	}
-	validateRequirementLayout(t)
+	validateChangeLayout(t)
 }
 
 func TestDocumentationLinks(t *testing.T) {
@@ -218,83 +218,89 @@ func markdownAnchor(heading string) string {
 	return result.String()
 }
 
-func validateRequirementStatuses(t *testing.T, directory string, archived bool) {
+func validateChangeLayout(t *testing.T) {
 	t.Helper()
-	entries, err := os.ReadDir(directory)
-	if os.IsNotExist(err) {
-		return
-	}
-	if err != nil {
-		t.Errorf("read requirement directory %s: %v", directory, err)
-		return
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "REQ-") || filepath.Ext(entry.Name()) != ".md" {
-			continue
-		}
-		body, err := os.ReadFile(filepath.Join(directory, entry.Name()))
-		if err != nil {
-			t.Errorf("read requirement %s: %v", entry.Name(), err)
-			continue
-		}
-		status := requirementStatus(string(body))
-		valid := map[string]bool{
-			"待评审": true,
-			"已批准": true,
-			"开发中": true,
-			"待合并": true,
-			"已完成": true,
-			"已取消": true,
-		}
-		if !valid[status] {
-			t.Errorf("requirement %s has unknown or missing status %q", entry.Name(), status)
-			continue
-		}
-		completed := status == "已完成" || status == "已取消"
-		if archived != completed {
-			t.Errorf("requirement %s has status %q inconsistent with directory %s", entry.Name(), status, directory)
-		}
-	}
-}
-
-var requirementFilenamePattern = regexp.MustCompile(`^(REQ-\d{4}-\d{3})-[a-z0-9]+(?:-[a-z0-9]+)*\.md$`)
-
-func validateRequirementLayout(t *testing.T) {
-	t.Helper()
-	seen := make(map[string]string)
-	for _, item := range []struct {
-		directory string
-		archived  bool
-	}{
-		{directory: "docs/requirements/active"},
-		{directory: "docs/requirements/archived", archived: true},
-	} {
-		entries, err := os.ReadDir(item.directory)
+	seen := map[string]string{}
+	for _, root := range []string{"docs/changes/active", "docs/changes/archive"} {
+		entries, err := os.ReadDir(root)
 		if os.IsNotExist(err) {
 			continue
 		}
 		if err != nil {
-			t.Errorf("read requirement directory %s: %v", item.directory, err)
-			continue
+			t.Fatal(err)
 		}
 		for _, entry := range entries {
-			if entry.IsDir() {
-				t.Errorf("requirement directory %s contains unexpected subdirectory %s", item.directory, entry.Name())
+			directory := filepath.Join(root, entry.Name())
+			if root == "docs/changes/archive" && entry.Name() == "legacy" {
+				validateLegacyChanges(t, directory)
 				continue
 			}
-			match := requirementFilenamePattern.FindStringSubmatch(entry.Name())
-			if match == nil {
-				t.Errorf("requirement directory %s contains invalid filename %s", item.directory, entry.Name())
+			if !entry.IsDir() {
+				t.Errorf("change must be a directory: %s", directory)
 				continue
 			}
-			path := filepath.Join(item.directory, entry.Name())
-			if previous, ok := seen[match[1]]; ok {
-				t.Errorf("requirement number %s is duplicated by %s and %s", match[1], previous, path)
-			} else {
-				seen[match[1]] = path
+			requirements := readDocumentMetadata(t, filepath.Join(directory, "requirements.md"))
+			design := readDocumentMetadata(t, filepath.Join(directory, "design.md"))
+			verification := readDocumentMetadata(t, filepath.Join(directory, "verification.md"))
+			id := requirements.ID
+			if id == "" {
+				t.Errorf("missing change id: %s", directory)
+			}
+			if previous, ok := seen[id]; ok {
+				t.Errorf("duplicate change id %s: %s and %s", id, previous, directory)
+			}
+			seen[id] = directory
+			valid := map[string]bool{"draft": true, "reviewed": true, "approved": true, "implementing": true, "verifying": true, "implemented": true, "rejected": true, "superseded": true}
+			if !valid[requirements.Status] {
+				t.Errorf("invalid change status in %s: %s", directory, requirements.Status)
+			}
+			if (root == "docs/changes/archive") != (requirements.Status == "implemented") {
+				t.Errorf("change status/location mismatch: %s", directory)
+			}
+			if design.Status != "" || verification.Status != "" {
+				t.Errorf("only requirements owns lifecycle: %s", directory)
+			}
+			results := map[string]bool{"pending": true, "passed": true, "failed": true, "blocked": true}
+			if !results[verification.Result] {
+				t.Errorf("invalid verification result: %s", directory)
+			}
+			if requirements.Status == "implemented" && verification.Result != "passed" {
+				t.Errorf("implemented change without passing evidence: %s", directory)
+			}
+			for _, doc := range []documentMetadata{requirements, design} {
+				if !map[string]bool{"draft": true, "in-review": true, "approved": true, "changes-requested": true}[doc.ApprovalStatus] {
+					t.Errorf("invalid approval status: %s", directory)
+				}
+				if doc.ApprovalStatus == "approved" && (doc.ApprovedBy == "" || doc.ApprovedAt == "" || doc.ApprovedRevision == "" || len(doc.ApprovedScope) == 0) {
+					t.Errorf("approved document lacks approval evidence: %s", directory)
+				}
+				if map[string]bool{"approved": true, "implementing": true, "verifying": true, "implemented": true}[requirements.Status] && doc.ApprovalStatus != "approved" {
+					t.Errorf("implementation without approved documents: %s", directory)
+				}
 			}
 		}
-		validateRequirementStatuses(t, item.directory, item.archived)
+	}
+}
+
+func validateLegacyChanges(t *testing.T, directory string) {
+	t.Helper()
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !regexp.MustCompile(`^REQ-\d{4}-\d{3}-[a-z0-9-]+\.md$`).MatchString(entry.Name()) {
+			t.Errorf("invalid historical record: %s", entry.Name())
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(directory, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		status := requirementStatus(string(body))
+		if status != "已完成" && status != "已取消" {
+			t.Errorf("nonterminal historical record: %s", entry.Name())
+		}
 	}
 }
 
@@ -323,4 +329,119 @@ func externalDocumentationTarget(target string) bool {
 	}
 	parsed, err := url.Parse(target)
 	return err == nil && parsed.Scheme != ""
+}
+
+// documentMetadata contains only fields checked by the repository gates.
+type documentMetadata struct {
+	ID               string   `yaml:"id"`
+	Status           string   `yaml:"status"`
+	Authority        string   `yaml:"authority"`
+	Owns             []string `yaml:"owns"`
+	Result           string   `yaml:"result"`
+	ApprovalStatus   string   `yaml:"approval_status"`
+	ApprovedBy       string   `yaml:"approved_by"`
+	ApprovedAt       string   `yaml:"approved_at"`
+	ApprovedRevision string   `yaml:"approved_revision"`
+	ApprovedScope    []string `yaml:"approved_scope"`
+}
+
+func readDocumentMetadata(t *testing.T, name string) documentMetadata {
+	t.Helper()
+	body, err := os.ReadFile(name)
+	if err != nil {
+		t.Errorf("read document %s: %v", name, err)
+		return documentMetadata{}
+	}
+	parts := strings.SplitN(string(body), "---", 3)
+	if len(parts) != 3 || strings.TrimSpace(parts[0]) != "" {
+		t.Errorf("missing frontmatter: %s", name)
+		return documentMetadata{}
+	}
+	var metadata documentMetadata
+	if err := yaml.Unmarshal([]byte(parts[1]), &metadata); err != nil {
+		t.Errorf("invalid frontmatter %s: %v", name, err)
+	}
+	return metadata
+}
+
+func TestDocumentationOwnership(t *testing.T) {
+	owners := map[string][]string{}
+	for _, root := range []string{"docs/design", "docs/architecture", "docs/standards"} {
+		err := filepath.WalkDir(root, func(name string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() || filepath.Ext(name) != ".md" {
+				return nil
+			}
+			metadata := readDocumentMetadata(t, name)
+			if metadata.Status != "approved" || metadata.Authority != "normative" {
+				t.Errorf("current design must be approved/normative: %s", name)
+			}
+			for _, claim := range metadata.Owns {
+				clean := filepath.ToSlash(filepath.Clean(claim))
+				if filepath.IsAbs(claim) || clean == ".." || strings.HasPrefix(clean, "../") || strings.ContainsAny(claim, "*?[]") || strings.TrimSuffix(claim, "/") != clean {
+					t.Errorf("invalid owns %q in %s", claim, name)
+					continue
+				}
+				info, err := os.Stat(clean)
+				if err != nil {
+					t.Errorf("missing owns %q in %s", claim, name)
+					continue
+				}
+				if info.IsDir() {
+					if !strings.HasSuffix(claim, "/") {
+						t.Errorf("directory owns needs trailing slash: %s", claim)
+						continue
+					}
+					entries, err := os.ReadDir(clean)
+					if err != nil {
+						return err
+					}
+					for _, item := range entries {
+						if !item.IsDir() {
+							file := filepath.ToSlash(filepath.Join(clean, item.Name()))
+							owners[file] = append(owners[file], name)
+						}
+					}
+				} else {
+					if strings.HasSuffix(claim, "/") {
+						t.Errorf("file owns cannot end in slash: %s", claim)
+					}
+					owners[clean] = append(owners[clean], name)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	for name, documents := range owners {
+		if len(documents) > 1 {
+			t.Errorf("overlapping owners for %s: %v", name, documents)
+		}
+	}
+	err := filepath.WalkDir(".", func(name string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		clean := filepath.ToSlash(name)
+		if entry.IsDir() && ignoredDocumentationDirectory(clean) {
+			return filepath.SkipDir
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		switch filepath.Ext(clean) {
+		case ".go", ".ts", ".tsx", ".js", ".jsx", ".sh", ".css", ".sql":
+			if len(owners[clean]) != 1 {
+				t.Errorf("source %s must have exactly one design owner, got %v", clean, owners[clean])
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
