@@ -31,7 +31,7 @@ Roadmap 表达方向和进入条件，不等同于已批准需求。大型事项
 - 持久化回测/扫描任务、租约、取消、重试、不可变快照和游标分页。
 - React 行情工作台、证券搜索、固定版本 K 线分页与指标交互。
 - 旧行情到新内核的可检查点、可重跑迁移命令。
-- 以设计文档为实现上游约束的文档治理、模块设计和需求归档流程，见 [REQ-2026-001](changes/archive/legacy/REQ-2026-001-document-governance.md)。
+- 以设计文档为实现上游约束的文档治理：集中包设计、唯一源码归属、版本化审批与按风险选择门禁，见 [文档驱动开发迁移](changes/archive/2026-09-17-document-driven-development/requirements.md)；首版历史见 [REQ-2026-001](changes/archive/legacy/REQ-2026-001-document-governance.md)。
 - 读取本地配置、在远端 MySQL 8.4.x/x86_64 上创建随机隔离数据库的真实验收门禁，见 [REQ-2026-002](changes/archive/legacy/REQ-2026-002-mysql8-cross-architecture.md)。
 
 ### 当前重点

@@ -1,6 +1,6 @@
 ---
 id: CHG-2026-09-17-document-driven-development
-status: implementing
+status: implemented
 authority: normative
 approval_status: approved
 approved_by: user
@@ -35,6 +35,7 @@ approved_scope:
 - DOC-003：新复杂变更使用 requirements.md、design.md、verification.md 三文件，审批版本、变更状态与检查结果分离；只归档已验收完成的变更。
 - DOC-004：机械维护、轻量缺陷、复杂变更三条路径明确；用户裁决门禁、80% 总覆盖率和 90% 核心领域覆盖率、远端隔离 MySQL 和 amd64 镜像门禁保持不弱化。
 - DOC-005：统一所有有效链接及文档契约测试，保留历史需求原始决策和验收，不伪造历史批准版本或补造测试证据。
+- DOC-007：默认本地门禁，按风险显式选择 --mysql/--image/--full，保留所选门禁失败语义与未选择提示；具体批准修订见下文。
 - DOC-006：可复用模板与通用流程由本机 skill 提供；仓库移除模板库。无业务代码、API 行为、数据库、策略或引擎语义变化。
 
 非目标：全仓业务重新设计、修改已发现但未裁决的业务差异、升级依赖、建立文档网站、外部发布或推送。
@@ -45,7 +46,7 @@ approved_scope:
 
 放弃仅保留旧目录更新流程：不能满足统一目录的选择。放弃从代码重新提取所有业务设计：会扩大范围，并可能把已知缺陷升级为规范。
 
-## 5. 可执行验收
+## 4. 可执行验收
 
 | 需求 | 验证 |
 |---|---|
@@ -54,7 +55,8 @@ approved_scope:
 | DOC-003 | 新状态与审批结构契约检查，历史记录按显式 legacy 规则校验 |
 | DOC-004 | 前后门禁对照；npm --prefix web run check、go test ./...、go vet ./...、bash scripts/verify.sh |
 | DOC-005 | 历史需求仅导航/迁移注记变化；独立 Agent 按需求→设计→测试→代码顺序评审 |
-| DOC-006 | Git diff 确认生产代码未变，旧模板及重复文档清理 |
+| DOC-006 | Git diff 确认业务生产代码未变，旧模板及重复文档清理 |
+| DOC-007 | TestVerificationSelection：默认、选项、组合、帮助、非法参数、失败传播；真实执行默认本地门禁 |
 
 
 ## 目标设计与验证

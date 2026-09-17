@@ -112,6 +112,6 @@ config.example.yaml             # 非敏感配置样例，归系统设计
 
 当前设计正文继承自 `8693e59` 的“当前有效”文档；本次只迁移位置、导航和归属，不把它们重新标成代码提取的草稿。历史批准人、时间、内容版本未结构化保存的字段保持 `null`；本次治理批准不替代历史业务批准。`baseline_revision` 表示迁移来源，不能解释为测试已执行或已覆盖全部业务。
 
-`owns` 和链接检查只验证文档可发现性，不能证明业务实现符合设计。新变更的实际检查与批准证据由 [当前变更](../changes/active/2026-09-17-document-driven-development/requirements.md) 记录；长期流程入口见 [AGENTS](../../AGENTS.md)。
+`owns` 和链接检查只验证文档可发现性，不能证明业务实现符合设计。新变更的实际检查与批准证据由 [本次迁移记录](../changes/archive/2026-09-17-document-driven-development/requirements.md) 记录；长期流程入口见 [AGENTS](../../AGENTS.md)。
 
 既有 `docs/superpowers/` 为迁移前实现计划和设计草稿，`docs/analysis/` 为研究材料，均不属于当前规范来源；本次保留历史内容，仅更新必要链接。后续不在项目中新增临时实施计划或通用流程模板。
