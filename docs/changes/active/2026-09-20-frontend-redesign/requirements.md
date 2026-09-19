@@ -5,8 +5,8 @@ authority: normative
 approval_status: approved
 approved_by: user
 approved_at: "2026-09-20"
-approved_revision: "27398ff:docs/changes/active/2026-09-20-frontend-redesign/requirements.md"
-approved_scope: [TWR-001, TWR-002, TWR-003, TWR-004, TWR-005, TWR-006, TWR-007, TWR-008, TWR-009, TWR-010]
+approved_revision: "827e235:docs/changes/active/2026-09-20-frontend-redesign/requirements.md"
+approved_scope: [TWR-001, TWR-002, TWR-003, TWR-004, TWR-005, TWR-006, TWR-007, TWR-008, TWR-009, TWR-010, TWR-011]
 ---
 
 # 前端改版：TradingView 风格工作台与自选清单
@@ -16,7 +16,7 @@ approved_scope: [TWR-001, TWR-002, TWR-003, TWR-004, TWR-005, TWR-006, TWR-007, 
 | 创建日期 | 2026-09-20 |
 | 适用范围 | `web`（整体布局、样式、搜索、新增自选面板）、后端新增自选能力（`port`、`application`、`infrastructure/mysql`、`api`）、`docs/design/` 与 `docs/standards/http-api.md` 同步 |
 | 基线 | main（27398ff）+ CHG-2026-09-20-strategy-frontend 合并后 |
-| 已确认意图 | 用户于 2026-09-20 会话裁决：TV 科技风格改版、左侧自选清单、搜索移至右上角、前后端整体设计；先完成 strategy-frontend 再实施本变更；自选显示最新价与涨跌幅；强调色采用 TV 蓝 #2962FF；主工作区 mock 回退改动已先行提交 main（27398ff） |
+| 已确认意图 | 用户于 2026-09-20 会话裁决：TV 科技风格改版、左侧自选清单、搜索移至右上角、前后端整体设计；先完成 strategy-frontend 再实施本变更；自选显示最新价与涨跌幅；强调色采用 TV 蓝 #2962FF；主工作区 mock 回退改动已先行提交 main（27398ff）；用户于 2026-09-20 后续会话追加：K 线纵向自动缩放、横向滑动缩放、可见 K 线数量按设备上下限、缩放伴随自动加载历史数据（TWR-011） |
 
 ## 1. 问题、目标与使用条件
 
@@ -34,6 +34,7 @@ approved_scope: [TWR-001, TWR-002, TWR-003, TWR-004, TWR-005, TWR-006, TWR-007, 
 - TWR-008 图表收藏：图表头部提供 ★ 收藏开关，状态与自选列表一致；切换后自选列表即时更新；失败提示且不破坏当前列表。
 - TWR-009 视觉规范：TV 蓝 `#2962FF` 为唯一强调色（选中/激活/聚焦）；红涨绿跌约定保留；数字使用等宽表格数字；紧凑密度；K 线、成交量与指标图配色同步新视觉；扫描与回测面板适配新布局与视觉，功能不变。
 - TWR-010 移动适配：小屏下搜索为顶栏图标触发的全屏浮层；自选为抽屉；图表、扫描、回测面板可用性不退化。
+- TWR-011 图表交互缩放与自动加载：价格轴（主图与各指标副图）始终自动缩放以适配可见 K 线与叠加指标，不提供手动纵向缩放；时间轴支持拖拽平移与滚轮/触控缩放；可见 K 线数量按设备设定上下限（桌面 15–400 根、移动 10–160 根，按容器宽度换算为 barSpacing 边界并随容器尺寸变化重算）；当可见范围左缘接近已加载数据左端（阈值 12 根）且仍有历史数据时自动请求更早一页（复用既有 before 游标、hasMore 与查询世代守卫），prepend 后视口保持稳定锚定；加载中防重复触发，失败提示并可重试。
 
 ## 3. 非目标
 
@@ -43,6 +44,7 @@ approved_scope: [TWR-001, TWR-002, TWR-003, TWR-004, TWR-005, TWR-006, TWR-007, 
 - 自选与顶栏搜索暂仅覆盖 A 股股票（`t_instruments` 活跃证券）；期货主力序列（如 `SHFE:AU.MAIN`）的入列与搜索留待后续变更评估。
 - 不做搜索结果行内加自选（v1 仅图表头部 ★）。
 - 不做明暗主题切换、绘图工具、自定义列。
+- 不做价格轴手动缩放/锁定、用户自选可见区间记忆与缩放状态持久化（URL 不携带缩放参数）。
 - 不修改既有后端接口、策略内核与 Worker 行为。
 
 ## 4. 方案比较与选择
@@ -65,6 +67,7 @@ approved_scope: [TWR-001, TWR-002, TWR-003, TWR-004, TWR-005, TWR-006, TWR-007, 
 | TWR-008 | Vitest：★ 状态反映列表、toggle 调 POST/DELETE、失败提示与列表保留 |
 | TWR-009 | Vitest + 人工走查：配色变量应用、图表配色同步、面板适配渲染 |
 | TWR-010 | 人工走查 + CSS 断言：断点下搜索浮层与自选抽屉可用 |
+| TWR-011 | Vitest：可见数量 clamp（上下限/容器宽度换算）、自动加载触发（阈值、hasMore、防重复）、prepend 视口平移；人工走查：纵向自动缩放、拖拽/滚轮/触控缩放 |
 | 门禁 | `npm --prefix web run check`；`go test ./... && go vet ./...`；`bash scripts/verify.sh --mysql`（新增表与 SQL，触发 MySQL 门禁） |
 
 ## 6. 风险

@@ -4,8 +4,8 @@ authority: normative
 approval_status: approved
 approved_by: user
 approved_at: "2026-09-20"
-approved_revision: "27398ff:docs/changes/active/2026-09-20-frontend-redesign/design.md"
-approved_scope: [TWR-001, TWR-002, TWR-003, TWR-004, TWR-005, TWR-006, TWR-007, TWR-008, TWR-009, TWR-010]
+approved_revision: "827e235:docs/changes/active/2026-09-20-frontend-redesign/design.md"
+approved_scope: [TWR-001, TWR-002, TWR-003, TWR-004, TWR-005, TWR-006, TWR-007, TWR-008, TWR-009, TWR-010, TWR-011]
 ---
 
 # 目标设计：TV 风格工作台与自选清单
@@ -69,6 +69,20 @@ removeWatchlistItem(instrument: string): Promise<WatchlistItem[]>      // DELETE
 - `ChartWorkspace` 头部：证券名 + 代码 + ★ 收藏开关（props：`watched`、`onToggleWatch`），行情数值排版改等宽数字；工具栏压缩至 44px。查询世代、分页、指标逻辑不变。
 - `FinancialChart`：`createChart` 配色改为新色板（背景/网格/文字/十字线/蜡烛红绿 `#ef5350`/`#26a69a`），蜡烛与成交量颜色规则（close≥open 红）不变；指标线色板保留。
 - 扫描/回测面板：容器与表单控件改用新 CSS 变量（面板底色、输入框、按钮、表格），布局适配主区新 padding，功能与测试断言不变。
+
+### 1.6a 图表交互缩放与自动加载（TWR-011）
+
+- 纵向自动缩放：主图与各指标副图价格轴保持 `autoScale`（现状），主图 `scaleMargins` 保留，叠加指标（SMA/EMA）参与主图自动缩放范围；不提供价格轴手动拖拽缩放或区间锁定。
+- 横向平移与缩放：`handleScroll`/`handleScale` 保持启用（鼠标拖拽、滚轮、触控），仅作用于时间轴；`fitContent` 仍为初始视图。
+- 可见 K 线数量上下限（按设备，随容器宽度换算为 `barSpacing` 边界）：
+  - 桌面：最少 15 根、最多 400 根；移动（容器 < 768px）：最少 10 根、最多 160 根。
+  - 换算：`maxBarSpacing = 容器宽 / 最少根数`（防止单根过粗）、`minBarSpacing = max(容器宽 / 最多根数, 3px)`；容器 `resize` 时（`autoSize` 已订阅尺寸）重算并应用到 `timeScale().applyOptions`。
+  - 超出边界的缩放由 lightweight-charts 按 barSpacing 边界自动钳制。
+- 历史数据自动加载（改造既有 `subscribeVisibleLogicalRangeChange` 钩子）：
+  - 触发：`visibleLogicalRange.from < 12`（可见左缘距已加载左端阈值 12 根，沿用现状）且 `hasMore` 且不在加载中（`loadingMore` 守卫，沿用现状）时调用 `loadMore`；请求沿用既有 `before` 游标、`limit` 与查询世代（世代失配即取消丢弃），单次飞行中不重复触发。
+  - prepend 后视口锚定：沿用现状逻辑——prepend 前记录 `getVisibleLogicalRange()`，新数据插入后 `setVisibleLogicalRange({from: from + prepended, to: to + prepended})`。
+  - 失败态：沿用图表区现有错误提示与重试入口；重试后不清空已加载数据。
+  - 移除"加载更早"按钮：自动加载替代手动按钮，图表区保持干净；`hasMore=false` 时不显示任何加载 UI。
 
 ### 1.7 视觉规范
 
@@ -137,14 +151,14 @@ type DailyQuoteReader interface {
 ## 4. 测试策略
 
 - Go：handler 测试（严格 JSON、400/404/409、幂等、响应结构）；service 测试（校验流、报价组装、null 语义）；dbtest 远端随机库集成（建表迁移、CRUD、窗口函数报价、非活跃过滤、上限）。不使用 SQL mock 验收。
-- 前端：`client.test.ts`（三端点 URL/method/body/编码）；`WatchlistPanel.test.tsx`（渲染/报价着色/点击/移除/高亮/三态/刷新）；`InstrumentSearch.test.tsx` 更新（紧凑形态、键盘/防抖/取消保留）；`App.test.tsx`（布局结构、★ toggle 流、tab 移位后路由语义不变）；`ChartWorkspace.test.tsx` 适配（★ props）。
+- 前端：`client.test.ts`（三端点 URL/method/body/编码）；`WatchlistPanel.test.tsx`（渲染/报价着色/点击/移除/高亮/三态/刷新）；`InstrumentSearch.test.tsx` 更新（紧凑形态、键盘/防抖/取消保留）；`App.test.tsx`（布局结构、★ toggle 流、tab 移位后路由语义不变）；`ChartWorkspace.test.tsx` 适配（★ props、自动加载触发/防重复）；`FinancialChart.test.tsx` 扩展（可见数量 barSpacing 边界换算、clamp 触发自动加载、prepend 视口平移）。
 
 ## 5. 实施顺序（每步可编译、测试全绿）
 
 1. 后端：model+迁移+端口+仓储+服务+handler+路由（含测试）。
 2. 前端基础：client watchlist 函数 + App 布局重构（topbar/tabs/搜索迁移）+ styles.css 重写（含测试更新）。
 3. WatchlistPanel + 图表 ★（含测试）。
-4. 图表配色/密度细化 + 扫描/回测面板适配 + 移动端断点（含测试与走查）。
+4. 图表配色/密度与交互细化（TWR-011 缩放边界、自动加载、移除加载按钮）+ 扫描/回测面板适配 + 移动端断点（含测试与走查）。
 5. 文档同步 + 变更记录验收 + 独立子 Agent 评审。
 
 ## 6. 回滚
