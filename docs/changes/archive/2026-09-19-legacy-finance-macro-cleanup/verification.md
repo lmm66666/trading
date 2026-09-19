@@ -1,6 +1,6 @@
 ---
 id: CHG-2026-09-19-legacy-finance-macro-cleanup-VERIFICATION
-result: pending
+result: passed
 authority: evidence
 ---
 
@@ -16,7 +16,7 @@ authority: evidence
 | LFC-002 | §1.1/§2.1 | market_refresh.go、router/handler 收缩 | market_refresh_test.go 8 个测试通过（202 触发/429/200 单证券/半身份 400/404/409/身份不匹配 404/身份校验 400/未配置 500） | passed |
 | LFC-003 | §2.2 | broker 旧文件、pkg/indicator 删除；测试 limiter stub | `go vet ./...` 无告警；market_ingestion_service_test.go 通过（limiter stub 语义不变） | passed |
 | LFC-004 | §2.3 | data/model 清单；runtimeModels 收缩 | 全仓 grep 无 financial_report/shibor/exchange_rate 引用；data_test.go `TestRuntimeModelsKeepOnlyLegacyMigrationInfoTable` 通过，mock 断言仅建 `t_stock_info` | passed |
-| LFC-005 | §2.4 | DROP SQL（服务停止窗口） | `financial_reports` 存在；`shibors`/`exchange_rates` 实际不存在，`DROP TABLE IF EXISTS` 覆盖；待停服窗口执行后以 information_schema 确认 | pending |
+| LFC-005 | §2.4 | DROP SQL（服务停止窗口） | 2026-09-19 无服务运行时执行 `DROP TABLE IF EXISTS financial_reports, shibors, exchange_rates`；`information_schema` 查询确认三表不存在（`shibors`/`exchange_rates` 原本就不存在）；随后本地启动服务触发 AutoMigrate（路由表与 slog 输出正常），再次查询 `information_schema` 三表计数为 0 未重建，旧迁移三表 `t_stock_info`/`t_stock_kline_daily`/`t_stock_kline_weekly` 完好 | passed |
 | LFC-006 | §2.1 | log→slog（main.go 3 处 + import 删除） | 全仓 grep 标准库 `log` 调用零残留 | passed |
 | LFC-007 | §3 | 文档同步与 owns 清单 | TestDocumentationContract/Links 通过；`npm --prefix web run check` 通过 | passed |
 | 门禁 | §4.5 | verify.sh | `bash scripts/verify.sh` 全过：go build/test/vet + web check + 总覆盖率 89.0%（阈值 80%），核心包 market 94.3%、indicator 91.3%、strategy 94.8%、backtest 90.4%（阈值 90%）；`--mysql` 不适用：无内核持久化语义变化，无新增 SQL 逻辑；`--image` 不适用：无镜像/部署变化 | passed |

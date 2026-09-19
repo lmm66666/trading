@@ -1,6 +1,6 @@
 ---
 id: CHG-2026-09-19-legacy-finance-macro-cleanup
-status: implementing
+status: implemented
 authority: normative
 approval_status: approved
 approved_by: user
