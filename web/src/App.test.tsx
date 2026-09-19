@@ -1,15 +1,54 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { addWatchlistItem, listWatchlist, removeWatchlistItem, type WatchlistItem } from './api/client'
 
+vi.mock('./api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./api/client')>()
+  return {
+    ...actual,
+    addWatchlistItem: vi.fn(),
+    listWatchlist: vi.fn(),
+    removeWatchlistItem: vi.fn(),
+  }
+})
 vi.mock('./features/search/InstrumentSearch', () => ({
   InstrumentSearch: ({ onSelect }: { onSelect: (item: unknown) => void }) => (
     <button onClick={() => onSelect({ instrument: 'SZSE:002415' })} type="button">选择海康威视</button>
   ),
 }))
 vi.mock('./features/chart/ChartWorkspace', () => ({
-  ChartWorkspace: ({ instrument, onStateChange }: { instrument: string; onStateChange: (timeframe: string, view: string) => void }) => (
-    <div><span>图表 {instrument}</span><button onClick={() => onStateChange('WEEK', 'RAW')} type="button">更新图表状态</button></div>
+  ChartWorkspace: ({ instrument, onStateChange, onToggleWatch, watched }: {
+    instrument: string
+    onStateChange: (timeframe: string, view: string) => void
+    onToggleWatch: () => void
+    watched: boolean
+  }) => (
+    <div>
+      <span>图表 {instrument}</span>
+      <button aria-pressed={watched} onClick={onToggleWatch} type="button">星标</button>
+      <button onClick={() => onStateChange('WEEK', 'RAW')} type="button">更新图表状态</button>
+    </div>
+  ),
+}))
+vi.mock('./features/watchlist/WatchlistPanel', () => ({
+  WatchlistPanel: ({ items, status, actionError, currentInstrument, onSelect, onToggle, onRefresh }: {
+    items: WatchlistItem[]
+    status: string
+    actionError: string | null
+    currentInstrument: string | null
+    onSelect: (item: WatchlistItem) => void
+    onToggle: (instrument: string) => void
+    onRefresh: () => void
+  }) => (
+    <div>
+      <span>自选面板 {status} {items.length} {currentInstrument ?? '无'}</span>
+      <span>自选错误 {actionError ?? '无'}</span>
+      {items.map((item) => <span key={item.instrument}>自选行 {item.instrument}</span>)}
+      <button onClick={onRefresh} type="button">刷新自选</button>
+      <button onClick={() => items.length > 0 && onToggle(items[0].instrument)} type="button">面板移除</button>
+      <button onClick={() => onSelect(items[0])} type="button">打开自选证券</button>
+    </div>
   ),
 }))
 vi.mock('./features/scan/ScanPanel', () => ({
@@ -38,10 +77,18 @@ vi.mock('./features/backtest/BacktestPanel', () => ({
   ),
 }))
 
+const watched: WatchlistItem = {
+  instrument: 'SSE:600000', code: '600000', name: '浦发银行', exchange: 'SSE', board: 'MAIN', lot_size: 100,
+  close: 12.34, change: 0.15, change_pct: 1.23,
+}
+
 describe('App', () => {
   beforeEach(() => {
     window.history.replaceState(null, '', '/')
     window.localStorage.clear()
+    vi.mocked(listWatchlist).mockReset().mockResolvedValue([])
+    vi.mocked(addWatchlistItem).mockReset()
+    vi.mocked(removeWatchlistItem).mockReset()
   })
 
   it('从空状态选股并同步 URL', () => {
@@ -121,5 +168,91 @@ describe('App', () => {
     expect(screen.getByText('图表 SSE:600000')).toBeVisible()
     expect(window.location.search).toContain('symbol=SSE%3A600000')
     expect(window.location.search).not.toContain('tab=scan')
+  })
+
+  it('挂载时拉取自选并渲染到面板', async () => {
+    vi.mocked(listWatchlist).mockResolvedValue([watched])
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('自选行 SSE:600000')).toBeVisible())
+    expect(screen.getByText(/自选面板 ready 1 无/)).toBeVisible()
+  })
+
+  it('自选加载失败呈现错误态', async () => {
+    vi.mocked(listWatchlist).mockRejectedValue(new Error('offline'))
+    render(<App />)
+    await waitFor(() => expect(screen.getByText(/自选面板 error/)).toBeVisible())
+  })
+
+  it('图表 ★ 添加自选后列表即时更新', async () => {
+    window.history.replaceState(null, '', '/?symbol=SSE%3A600000')
+    vi.mocked(addWatchlistItem).mockResolvedValue([watched])
+    render(<App />)
+    await waitFor(() => expect(screen.getByText(/自选面板 ready 0/)).toBeVisible())
+    expect(screen.getByRole('button', { name: '星标' })).toHaveAttribute('aria-pressed', 'false')
+
+    fireEvent.click(screen.getByRole('button', { name: '星标' }))
+
+    await waitFor(() => expect(addWatchlistItem).toHaveBeenCalledWith('SSE:600000'))
+    await waitFor(() => expect(screen.getByText('自选行 SSE:600000')).toBeVisible())
+    expect(screen.getByRole('button', { name: '星标' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('已在自选时 ★ 与面板移除均调用移除接口', async () => {
+    window.history.replaceState(null, '', '/?symbol=SSE:600000')
+    const other: WatchlistItem = {
+      instrument: 'SZSE:002415', code: '002415', name: '海康威视', exchange: 'SZSE', board: 'MAIN', lot_size: 100,
+      close: null, change: null, change_pct: null,
+    }
+    vi.mocked(listWatchlist).mockResolvedValue([watched, other])
+    vi.mocked(removeWatchlistItem).mockResolvedValue([other])
+    render(<App />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '星标' })).toHaveAttribute('aria-pressed', 'true'))
+
+    fireEvent.click(screen.getByRole('button', { name: '星标' }))
+
+    await waitFor(() => expect(removeWatchlistItem).toHaveBeenCalledWith('SSE:600000'))
+    await waitFor(() => expect(screen.getByRole('button', { name: '星标' })).toHaveAttribute('aria-pressed', 'false'))
+
+    fireEvent.click(screen.getByRole('button', { name: '面板移除' }))
+    await waitFor(() => expect(removeWatchlistItem).toHaveBeenCalledWith('SZSE:002415'))
+  })
+
+  it('更新自选失败时保留原列表并提示', async () => {
+    window.history.replaceState(null, '', '/?symbol=SSE:600000')
+    vi.mocked(listWatchlist).mockResolvedValue([watched])
+    vi.mocked(removeWatchlistItem).mockRejectedValue(new Error('自选服务不可用'))
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('自选行 SSE:600000')).toBeVisible())
+
+    fireEvent.click(screen.getByRole('button', { name: '面板移除' }))
+
+    await waitFor(() => expect(screen.getByText('自选错误 自选服务不可用')).toBeVisible())
+    expect(screen.getByText('自选行 SSE:600000')).toBeVisible()
+    expect(screen.getByText(/自选面板 ready 1/)).toBeVisible()
+  })
+
+  it('点击自选行切回图表视图', async () => {
+    vi.mocked(listWatchlist).mockResolvedValue([watched])
+    window.history.replaceState(null, '', '/?tab=scan')
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('自选行 SSE:600000')).toBeVisible())
+
+    fireEvent.click(screen.getByRole('button', { name: '打开自选证券' }))
+
+    expect(screen.getByText('图表 SSE:600000')).toBeVisible()
+    expect(window.location.search).toContain('symbol=SSE%3A600000')
+    expect(window.location.search).toContain('tab=chart')
+  })
+
+  it('刷新自选重新拉取列表', async () => {
+    vi.mocked(listWatchlist).mockResolvedValue([])
+    render(<App />)
+    await waitFor(() => expect(screen.getByText(/自选面板 ready 0/)).toBeVisible())
+
+    vi.mocked(listWatchlist).mockResolvedValue([watched])
+    fireEvent.click(screen.getByRole('button', { name: '刷新自选' }))
+
+    await waitFor(() => expect(screen.getByText('自选行 SSE:600000')).toBeVisible())
+    expect(listWatchlist).toHaveBeenCalledTimes(2)
   })
 })

@@ -1,10 +1,19 @@
-import { useState } from 'react'
-import type { InstrumentSummary, PriceView, Timeframe } from './api/client'
+import { useCallback, useEffect, useState } from 'react'
+import {
+  addWatchlistItem,
+  listWatchlist,
+  removeWatchlistItem,
+  type InstrumentSummary,
+  type PriceView,
+  type Timeframe,
+  type WatchlistItem,
+} from './api/client'
 import { BacktestPanel } from './features/backtest/BacktestPanel'
 import { ChartWorkspace } from './features/chart/ChartWorkspace'
 import { readWorkbenchState, writeWorkbenchState, type WorkbenchView } from './features/chart/chartData'
 import { ScanPanel } from './features/scan/ScanPanel'
 import { InstrumentSearch } from './features/search/InstrumentSearch'
+import { WatchlistPanel } from './features/watchlist/WatchlistPanel'
 
 export type RunKindStore = 'scan' | 'backtest'
 
@@ -47,6 +56,51 @@ export default function App() {
   const [backtestRunId, setBacktestRunId] = useState<string | null>(() => readStoredRunId('backtest'))
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [watchlistOpen, setWatchlistOpen] = useState(false)
+  const [watchlist, setWatchlist] = useState<{ items: WatchlistItem[]; status: 'loading' | 'ready' | 'error' }>({
+    items: [],
+    status: 'loading',
+  })
+  const [watchActionError, setWatchActionError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    listWatchlist()
+      .then((items) => {
+        if (active) setWatchlist({ items, status: 'ready' })
+      })
+      .catch(() => {
+        if (active) setWatchlist((current) => ({ items: current.items, status: 'error' }))
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const refreshWatchlist = useCallback(() => {
+    listWatchlist()
+      .then((items) => {
+        setWatchlist({ items, status: 'ready' })
+        setWatchActionError(null)
+      })
+      .catch((reason: unknown) => {
+        setWatchActionError(reason instanceof Error ? reason.message : '刷新自选失败')
+        setWatchlist((current) => (current.items.length > 0 ? current : { items: [], status: 'error' }))
+      })
+  }, [])
+
+  /** 在列表中则移除、不在则添加；成功以服务端返回的完整列表替换本地状态，失败保留原列表 */
+  const toggleWatch = useCallback((instrument: string) => {
+    const exists = watchlist.items.some((item) => item.instrument === instrument)
+    const request = exists ? removeWatchlistItem(instrument) : addWatchlistItem(instrument)
+    request
+      .then((items) => {
+        setWatchlist({ items, status: 'ready' })
+        setWatchActionError(null)
+      })
+      .catch((reason: unknown) => {
+        setWatchActionError(reason instanceof Error ? reason.message : '更新自选失败')
+      })
+  }, [watchlist.items])
 
   const syncState = (
     nextSymbol: string | null,
@@ -118,7 +172,17 @@ export default function App() {
         <button className="mobile-search-trigger" aria-label="打开股票搜索" onClick={() => setMobileSearchOpen(true)} type="button">⌕</button>
       </header>
       {watchlistOpen && <button className="sidebar-scrim" aria-label="关闭自选清单" onClick={() => setWatchlistOpen(false)} type="button" />}
-      <aside className={watchlistOpen ? 'watchlist-aside open' : 'watchlist-aside'} />
+      <aside className={watchlistOpen ? 'watchlist-aside open' : 'watchlist-aside'}>
+        <WatchlistPanel
+          actionError={watchActionError}
+          currentInstrument={symbol}
+          items={watchlist.items}
+          onRefresh={refreshWatchlist}
+          onSelect={(item) => selectSymbol(item.instrument, 'chart', item)}
+          onToggle={toggleWatch}
+          status={watchlist.status}
+        />
+      </aside>
       <main className="workspace">
         {view === 'chart' ? (
           symbol ? (
@@ -128,6 +192,8 @@ export default function App() {
               initialTimeframe={timeframe}
               key={symbol}
               onStateChange={changeChartState}
+              onToggleWatch={() => toggleWatch(symbol)}
+              watched={watchlist.items.some((item) => item.instrument === symbol)}
             />
           ) : (
             <section className="welcome-stage">

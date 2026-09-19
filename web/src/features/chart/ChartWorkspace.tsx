@@ -14,6 +14,9 @@ interface ChartWorkspaceProps {
   instrument: string
   initialTimeframe: Timeframe
   initialPriceView: PriceView
+  /** 当前证券是否已在自选清单 */
+  watched: boolean
+  onToggleWatch: () => void
   onStateChange: (timeframe: Timeframe, priceView: PriceView) => void
   query?: typeof queryChart
 }
@@ -22,6 +25,8 @@ export function ChartWorkspace({
   instrument,
   initialTimeframe,
   initialPriceView,
+  watched,
+  onToggleWatch,
   onStateChange,
   query = queryChart,
 }: ChartWorkspaceProps) {
@@ -130,6 +135,16 @@ export function ChartWorkspace({
             <h2>{result?.instrument.name ?? '正在读取证券信息'}</h2>
             <p>{instrument} · {timeframe === 'DAY' ? '日线' : '周线'} · {priceView === 'QFQ' ? '前复权' : '不复权'}</p>
           </div>
+          <button
+            aria-label={watched ? '移除自选' : '添加自选'}
+            aria-pressed={watched}
+            className={watched ? 'watch-toggle active' : 'watch-toggle'}
+            onClick={onToggleWatch}
+            title={watched ? '移除自选' : '添加自选'}
+            type="button"
+          >
+            {watched ? '★' : '☆'}
+          </button>
         </div>
         {quote && (
           <div className={quote.change >= 0 ? 'quote-up' : 'quote-down'} aria-label="最新行情">

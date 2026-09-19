@@ -31,7 +31,9 @@ describe('ChartWorkspace', () => {
         initialPriceView="QFQ"
         initialTimeframe="DAY"
         onStateChange={vi.fn()}
+        onToggleWatch={vi.fn()}
         query={query}
+        watched={false}
       />,
     )
 
@@ -46,6 +48,45 @@ describe('ChartWorkspace', () => {
     await waitFor(() => expect(query).toHaveBeenLastCalledWith(expect.objectContaining({ timeframe: 'WEEK' }), expect.any(AbortSignal)))
   })
 
+  it('图表头部 ★ 反映自选状态并回调切换', async () => {
+    const onToggleWatch = vi.fn()
+    const query = vi.fn().mockResolvedValue(response)
+    const { rerender } = render(
+      <ChartWorkspace
+        instrument="SZSE:002415"
+        initialPriceView="QFQ"
+        initialTimeframe="DAY"
+        onStateChange={vi.fn()}
+        onToggleWatch={onToggleWatch}
+        query={query}
+        watched={false}
+      />,
+    )
+
+    const star = await screen.findByRole('button', { name: '添加自选' })
+    expect(star).toHaveAttribute('aria-pressed', 'false')
+    expect(star).toHaveTextContent('☆')
+    fireEvent.click(star)
+    expect(onToggleWatch).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <ChartWorkspace
+        instrument="SZSE:002415"
+        initialPriceView="QFQ"
+        initialTimeframe="DAY"
+        onStateChange={vi.fn()}
+        onToggleWatch={onToggleWatch}
+        query={query}
+        watched
+      />,
+    )
+    const filled = screen.getByRole('button', { name: '移除自选' })
+    expect(filled).toHaveAttribute('aria-pressed', 'true')
+    expect(filled).toHaveTextContent('★')
+    fireEvent.click(filled)
+    expect(onToggleWatch).toHaveBeenCalledTimes(2)
+  })
+
   it('按固定数据版本向前翻页并合并行情', async () => {
     const first = { ...response, has_more: true, next_before: '2026-09-11T07:00:00Z' }
     const older = {
@@ -55,7 +96,17 @@ describe('ChartWorkspace', () => {
       next_before: null,
     }
     const query = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(older)
-    render(<ChartWorkspace instrument="SZSE:002415" initialPriceView="QFQ" initialTimeframe="DAY" onStateChange={vi.fn()} query={query} />)
+    render(
+      <ChartWorkspace
+        instrument="SZSE:002415"
+        initialPriceView="QFQ"
+        initialTimeframe="DAY"
+        onStateChange={vi.fn()}
+        onToggleWatch={vi.fn()}
+        query={query}
+        watched={false}
+      />,
+    )
 
     fireEvent.click(await screen.findByRole('button', { name: '加载更早行情' }))
     await waitFor(() => expect(query).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -67,7 +118,17 @@ describe('ChartWorkspace', () => {
   it('显示服务错误并同步复权方式', async () => {
     const onStateChange = vi.fn()
     const query = vi.fn().mockRejectedValue(new Error('行情版本不存在'))
-    render(<ChartWorkspace instrument="SZSE:002415" initialPriceView="QFQ" initialTimeframe="DAY" onStateChange={onStateChange} query={query} />)
+    render(
+      <ChartWorkspace
+        instrument="SZSE:002415"
+        initialPriceView="QFQ"
+        initialTimeframe="DAY"
+        onStateChange={onStateChange}
+        onToggleWatch={vi.fn()}
+        query={query}
+        watched={false}
+      />,
+    )
 
     expect(await screen.findByText('行情版本不存在')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: '不复权' }))
@@ -83,7 +144,17 @@ describe('ChartWorkspace', () => {
       if (input.before) return olderPromise
       return Promise.resolve(input.timeframe === 'WEEK' ? weekly : first)
     })
-    render(<ChartWorkspace instrument="SZSE:002415" initialPriceView="QFQ" initialTimeframe="DAY" onStateChange={vi.fn()} query={query} />)
+    render(
+      <ChartWorkspace
+        instrument="SZSE:002415"
+        initialPriceView="QFQ"
+        initialTimeframe="DAY"
+        onStateChange={vi.fn()}
+        onToggleWatch={vi.fn()}
+        query={query}
+        watched={false}
+      />,
+    )
 
     fireEvent.click(await screen.findByRole('button', { name: '加载更早行情' }))
     fireEvent.click(screen.getByRole('button', { name: '周线' }))
