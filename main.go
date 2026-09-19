@@ -147,6 +147,11 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 	if err != nil {
 		return kernelRuntime{}, err
 	}
+	watchlistStore := mysqlinfra.NewWatchlistStore(db)
+	watchlist, err := application.NewWatchlistService(watchlistStore, watchlistStore, marketData)
+	if err != nil {
+		return kernelRuntime{}, err
+	}
 	queue := mysqlinfra.NewJobQueue(db)
 	store := mysqlinfra.NewRunStore(db)
 	snapshots := mysqlinfra.NewSignalSnapshotStore(db)
@@ -207,6 +212,7 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 		MarketQueries:     application.NewMarketQueryService(marketData),
 		InstrumentCatalog: instrumentQueries,
 		ChartQueries:      chartQueries,
+		Watchlist:         watchlist,
 		MarketWorkers:     settings.ScanBatchSize,
 		SyncWaitTimeout:   settings.SyncWaitTimeout,
 		PollInterval:      settings.PollInterval,

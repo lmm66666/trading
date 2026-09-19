@@ -42,6 +42,11 @@ type InstrumentQueries interface {
 type ChartQueries interface {
 	Query(context.Context, application.ChartQuery) (application.ChartResult, error)
 }
+type Watchlist interface {
+	List(context.Context) ([]application.WatchlistItem, error)
+	Add(context.Context, market.InstrumentID) ([]application.WatchlistItem, error)
+	Remove(context.Context, market.InstrumentID) ([]application.WatchlistItem, error)
+}
 
 // KernelServices 显式注入持久化用例；旧接口不再回退到旧技术策略引擎。
 type KernelServices struct {
@@ -56,6 +61,7 @@ type KernelServices struct {
 	MarketQueries     MarketQueries
 	InstrumentCatalog InstrumentQueries
 	ChartQueries      ChartQueries
+	Watchlist         Watchlist
 	MarketWorkers     int
 	SyncWaitTimeout   time.Duration
 	PollInterval      time.Duration
@@ -66,6 +72,8 @@ func writeApplicationError(c *gin.Context, op string, err error) {
 	switch {
 	case errors.Is(err, port.ErrIdempotencyConflict):
 		respondError(c, 409, "IDEMPOTENCY_CONFLICT")
+	case errors.Is(err, application.ErrWatchlistFull):
+		respondError(c, 409, "WATCHLIST_FULL")
 	case errors.Is(err, port.ErrSnapshotNotReady):
 		respondError(c, 409, "SIGNAL_SNAPSHOT_NOT_READY")
 	case errors.Is(err, errRunNotReady):
