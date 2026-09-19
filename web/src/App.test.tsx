@@ -25,6 +25,18 @@ vi.mock('./features/scan/ScanPanel', () => ({
     </div>
   ),
 }))
+vi.mock('./features/backtest/BacktestPanel', () => ({
+  BacktestPanel: ({ runId, selectedSymbol, onRunIdChange }: {
+    runId: string | null
+    selectedSymbol: string | null
+    onRunIdChange: (runId: string | null) => void
+  }) => (
+    <div>
+      <span>回测面板 {selectedSymbol ?? '未选证券'} {runId ?? '无任务'}</span>
+      <button onClick={() => onRunIdChange('bt-new')} type="button">记录回测任务</button>
+    </div>
+  ),
+}))
 
 describe('App', () => {
   beforeEach(() => {
@@ -69,11 +81,20 @@ describe('App', () => {
     render(<App />)
     expect(screen.getByText('图表 SSE:600000')).toBeVisible()
     fireEvent.click(screen.getByRole('tab', { name: '回测' }))
-    expect(screen.getByText('回测功能建设中')).toBeVisible()
+    expect(screen.getByText(/回测面板 SSE:600000/)).toBeVisible()
     expect(window.location.search).toContain('symbol=SSE%3A600000')
     expect(window.location.search).toContain('tab=backtest')
     fireEvent.click(screen.getByRole('tab', { name: '图表' }))
     expect(screen.getByText('图表 SSE:600000')).toBeVisible()
+  })
+
+  it('回测任务 run_id 写入 localStorage', () => {
+    window.localStorage.clear()
+    window.history.replaceState(null, '', '/?tab=backtest')
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '记录回测任务' }))
+    expect(window.localStorage.getItem('wb.backtest_run_id')).toBe('bt-new')
+    expect(screen.getByText(/bt-new/)).toBeVisible()
   })
 
   it('从 localStorage 恢复最近任务标识', () => {

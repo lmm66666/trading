@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { InstrumentSummary, PriceView, Timeframe } from './api/client'
+import { BacktestPanel } from './features/backtest/BacktestPanel'
 import { ChartWorkspace } from './features/chart/ChartWorkspace'
 import { readWorkbenchState, writeWorkbenchState, type WorkbenchView } from './features/chart/chartData'
 import { ScanPanel } from './features/scan/ScanPanel'
@@ -41,6 +42,7 @@ export default function App() {
   const [timeframe, setTimeframe] = useState<Timeframe>(initial.timeframe)
   const [priceView, setPriceView] = useState<PriceView>(initial.priceView)
   const [view, setView] = useState<WorkbenchView>(initial.view)
+  const [instrumentInfo, setInstrumentInfo] = useState<InstrumentSummary | null>(null)
   const [scanRunId, setScanRunId] = useState<string | null>(() => readStoredRunId('scan'))
   const [backtestRunId, setBacktestRunId] = useState<string | null>(() => readStoredRunId('backtest'))
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
@@ -55,7 +57,12 @@ export default function App() {
   }
 
   const selectInstrument = (instrument: InstrumentSummary) => {
-    selectSymbol(instrument.instrument, view)
+    selectSymbol(instrument.instrument, view, instrument)
+  }
+
+  const changeBacktestRunId = (runId: string | null) => {
+    setBacktestRunId(runId)
+    storeRunId('backtest', runId)
   }
 
   const changeChartState = (nextTimeframe: Timeframe, nextPriceView: PriceView) => {
@@ -70,8 +77,9 @@ export default function App() {
   }
 
   /** 从扫描结果或证券搜索选中证券；扫描结果行点击时切回图表视图 */
-  const selectSymbol = (instrument: string, nextView: WorkbenchView) => {
+  const selectSymbol = (instrument: string, nextView: WorkbenchView, summary?: InstrumentSummary) => {
     setSymbol(instrument)
+    setInstrumentInfo(summary ?? null)
     setMobileSearchOpen(false)
     setView(nextView)
     writeWorkbenchState({ symbol: instrument, timeframe, priceView, view: nextView })
@@ -136,10 +144,12 @@ export default function App() {
         ) : view === 'scan' ? (
           <ScanPanel runId={scanRunId} onRunIdChange={changeScanRunId} onSelectInstrument={(instrument) => selectSymbol(instrument, 'chart')} />
         ) : (
-          <main className="panel-placeholder">
-            回测功能建设中
-            {backtestRunId ? <span className="placeholder-run-id">{backtestRunId}</span> : null}
-          </main>
+          <BacktestPanel
+            runId={backtestRunId}
+            onRunIdChange={changeBacktestRunId}
+            selectedSymbol={symbol}
+            defaultLotSize={instrumentInfo?.lot_size}
+          />
         )}
       </div>
       {mobileSearchOpen && <button className="sidebar-scrim" aria-label="关闭股票搜索" onClick={() => setMobileSearchOpen(false)} type="button" />}
