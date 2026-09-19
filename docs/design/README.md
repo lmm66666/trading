@@ -129,6 +129,9 @@ web/
   src/features/search/          # 证券搜索交互
   src/features/chart/           # 行情图表与分页状态
   src/features/indicators/      # 指标参数交互
+  src/features/strategy/        # 策略表单、任务轮询与状态条
+  src/features/scan/            # 扫描任务表单与入选名单
+  src/features/backtest/        # 回测表单、摘要、权益曲线与订单成交
   src/test/                     # 前端测试公共配置
   src/                          # App、启动与样式
   vite.config.ts                # 构建和测试配置，归 web

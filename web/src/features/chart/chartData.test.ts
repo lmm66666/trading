@@ -49,17 +49,29 @@ describe('chart data state', () => {
       symbol: 'SZSE:002415',
       timeframe: 'WEEK',
       priceView: 'RAW',
+      view: 'chart',
     })
     expect(readWorkbenchState('?symbol=002415&timeframe=MONTH&view=HFQ')).toEqual({
       symbol: null,
       timeframe: 'DAY',
       priceView: 'QFQ',
+      view: 'chart',
     })
   })
 
+  it('whitelists the tab parameter and falls back to chart', () => {
+    expect(readWorkbenchState('?tab=scan').view).toBe('scan')
+    expect(readWorkbenchState('?tab=backtest').view).toBe('backtest')
+    expect(readWorkbenchState('?tab=chart').view).toBe('chart')
+    expect(readWorkbenchState('?tab=OPTIMIZER').view).toBe('chart')
+    expect(readWorkbenchState('?').view).toBe('chart')
+  })
+
   it('writes canonical state to the URL', () => {
-    writeWorkbenchState({ symbol: 'SSE:600000', timeframe: 'WEEK', priceView: 'RAW' })
-    expect(window.location.search).toBe('?symbol=SSE%3A600000&timeframe=WEEK&view=RAW')
+    writeWorkbenchState({ symbol: 'SSE:600000', timeframe: 'WEEK', priceView: 'RAW', view: 'chart' })
+    expect(window.location.search).toBe('?symbol=SSE%3A600000&timeframe=WEEK&view=RAW&tab=chart')
+    writeWorkbenchState({ symbol: null, timeframe: 'DAY', priceView: 'QFQ', view: 'scan' })
+    expect(window.location.search).toBe('?timeframe=DAY&view=QFQ&tab=scan')
   })
 
   it('merges paginated indicator points while preserving current values', () => {

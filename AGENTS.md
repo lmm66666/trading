@@ -6,7 +6,7 @@
 
 ## 文档驱动开发
 
-使用本机 `$document-driven-development` skill 的 Change、Bootstrap 或 Audit 模式；通用流程和模板保存在 skill，项目不复制模板库。若 skill 不可用，先报告缺失；仍可进行只读分析，不自行绕过本文件门禁。
+使用本机 document-driven-development skill（`~/.codex/skills/document-driven-development/SKILL.md`，位置以全局 `~/.codex/AGENTS.md` 为准）的 Change、Bootstrap 或 Audit 模式；通用流程和模板保存在 skill，项目不复制模板库。若 skill 不可用，先报告缺失；仍可进行只读分析，不自行绕过本文件门禁。
 
 本项目唯一文档导航是 [功能目录与源码地图](docs/design/README.md)：
 

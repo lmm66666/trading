@@ -17,7 +17,12 @@ export interface WorkbenchState {
   symbol: string | null
   timeframe: Timeframe
   priceView: PriceView
+  view: WorkbenchView
 }
+
+export type WorkbenchView = 'chart' | 'scan' | 'backtest'
+
+const WORKBENCH_VIEWS: readonly WorkbenchView[] = ['chart', 'scan', 'backtest']
 
 export function readWorkbenchState(search: string): WorkbenchState {
   const params = new URLSearchParams(search)
@@ -25,7 +30,9 @@ export function readWorkbenchState(search: string): WorkbenchState {
   const symbol = /^(SSE|SZSE|BSE):[A-Z0-9]{1,32}$/.test(candidate) ? candidate : null
   const timeframe = params.get('timeframe') === 'WEEK' ? 'WEEK' : 'DAY'
   const priceView = params.get('view') === 'RAW' ? 'RAW' : 'QFQ'
-  return { symbol, timeframe, priceView }
+  const tab = params.get('tab')
+  const view = WORKBENCH_VIEWS.includes(tab as WorkbenchView) ? (tab as WorkbenchView) : 'chart'
+  return { symbol, timeframe, priceView, view }
 }
 
 export function writeWorkbenchState(state: WorkbenchState): void {
@@ -33,6 +40,7 @@ export function writeWorkbenchState(state: WorkbenchState): void {
   if (state.symbol) params.set('symbol', state.symbol)
   params.set('timeframe', state.timeframe)
   params.set('view', state.priceView)
+  params.set('tab', state.view)
   window.history.replaceState(null, '', `${window.location.pathname}?${params}`)
 }
 

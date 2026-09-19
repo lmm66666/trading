@@ -321,7 +321,7 @@ func requirementStatus(body string) string {
 
 func ignoredDocumentationDirectory(name string) bool {
 	switch name {
-	case ".git", ".idea", ".worktrees", ".superpowers", "docs/analysis", "docs/superpowers", "web/node_modules", "web/dist", "web/coverage":
+	case ".git", ".idea", ".worktrees", ".superpowers", "docs/superpowers", "web/node_modules", "web/dist", "web/coverage":
 		return true
 	default:
 		return false
