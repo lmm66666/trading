@@ -2,7 +2,7 @@
 
 ## 项目与当前阶段
 
-本项目是 Go 编写的 A 股与大宗商品期货行情、财报、指标、策略扫描与回测平台。当前阶段为版本化策略内核与行情工作台稳定化；方向和进入条件见 [Roadmap](docs/roadmap.md)。系统运行规则见 [系统设计](docs/architecture/system-design.md)，操作流程见 [运行手册](docs/operations.md)。根目录不创建 `README.md`。
+本项目是 Go 编写的 A 股与大宗商品期货行情、指标、策略扫描与回测平台。当前阶段为版本化策略内核与行情工作台稳定化；方向和进入条件见 [Roadmap](docs/roadmap.md)。系统运行规则见 [系统设计](docs/architecture/system-design.md)，操作流程见 [运行手册](docs/operations.md)。根目录不创建 `README.md`。
 
 ## 文档驱动开发
 

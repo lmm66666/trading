@@ -19,15 +19,17 @@ related: []
 | 我想知道什么 | 先读什么 | 需要深入时 |
 |---|---|---|
 | 系统整体怎样工作，数据经过哪里 | [系统设计](../architecture/system-design.md) | [运行手册](../operations.md)、[Roadmap](../roadmap.md) |
+| 行情从哪里来，复权、周线和版本怎样处理 | [行情采集与版本](workflows/market-data.md) | [行情领域](internal/market.md)、[来源适配](pkg/broker.md)、[MySQL](internal/infrastructure/mysql.md) |
 | 扫描为什么选中或漏掉一只证券 | [策略扫描流程](workflows/strategy-scan.md) | [应用层](internal/application.md)、[HTTP 契约](../standards/http-api.md)、[MySQL](internal/infrastructure/mysql.md) |
 | 日线 B1 到底怎么判断 | [日线 B1 规则与例子](strategies/daily-b1.md) | [指标](internal/indicator.md)、[公共策略契约](internal/strategy.md) |
-| 行情从哪里来，复权和版本怎样处理 | [系统设计的采集流程](../architecture/system-design.md)、[行情领域](internal/market.md) | [来源适配](pkg/broker.md)、[MySQL](internal/infrastructure/mysql.md) |
-| 回测什么时候成交、如何计算费用和收益 | [回测设计](internal/backtest.md) | [应用层](internal/application.md)、[HTTP 契约](../standards/http-api.md) |
-| 图表与指标如何查询和分页 | [前端设计](web.md)、[API 设计](api.md) | [指标设计](internal/indicator.md)、[HTTP 契约](../standards/http-api.md) |
+| 周线 B1 到底怎么判断 | [周线 B1 规则与例子](strategies/weekly-b1.md) | 同上 |
+| 底部倍量回撤到底怎么判断 | [底部倍量回撤规则与例子](strategies/bottom-surge-pullback.md) | 同上 |
+| 回测什么时候成交、如何计算费用和收益 | [回测流程](workflows/backtesting.md) | [回测设计](internal/backtest.md)、[应用层](internal/application.md)、[HTTP 契约](../standards/http-api.md) |
+| 图表与指标如何查询和分页 | [图表查询](workflows/chart-query.md) | [前端设计](web.md)、[API 设计](api.md)、[指标设计](internal/indicator.md) |
 
-**第一条推荐阅读路线：** [扫描结果的含义](workflows/strategy-scan.md#完整走一遍) → [B1 判断规则](strategies/daily-b1.md#如何判断信号) → [扫描的数据与表](workflows/strategy-scan.md#接口和表之间怎样关联)。不需要先理解 Go 包结构。
+**第一条推荐阅读路线：** [行情怎样进入系统](workflows/market-data.md#完整走一遍) → [扫描结果的含义](workflows/strategy-scan.md#完整走一遍) → [B1 判断规则](strategies/daily-b1.md#如何判断信号)。不需要先理解 Go 包结构。
 
-当前只完成扫描和日线 B1 的业务阅读层；其他链接指向既有技术设计，尚未按新方式改写。周线 B1、底部倍量回撤的业务说明将在后续批次展开。财报／宏观与旧兼容栈的去留以各自变更决定为准，本批不提前把未合并的清理结果写成事实。
+业务阅读层已覆盖采集、扫描、回测、图表四条链路与三个内置策略。旧行情到版本化内核的一次性迁移（`cmd/migrate-strategy-kernel`）仍只有技术设计，因其属于过渡工具而非长期业务能力。
 
 ## 当前有哪些值得判断的问题
 
@@ -36,6 +38,9 @@ related: []
 | B1 是否应同一轮只发一次信号 | 当前可连续发信号；均量也包含当天 | [策略待判断事项](strategies/daily-b1.md#验证依据与待判断事项) |
 | 扫描是否要求所有证券数据足够新鲜 | 当前只检查最后一根在请求范围内；各证券信号时间可能不同 | [扫描时间窗口](workflows/strategy-scan.md#时间窗口与预热) |
 | 预热能否建立策略状态 | 应用层契约措辞与扫描实现存在差异，尚未裁决 | 同上 |
+| 公司行动是否接回数据来源 | 当前刷新不采集；回测的分红送股路径空转 | [行情采集待确认事项](workflows/market-data.md#证据与待确认事项) |
+| A 股增量窗口是否够发现旧修订 | 当前只重叠最近 20 根；更早修订需期货式全量才能发现 | 同上 |
+| A 股涨跌停与停牌数据是否补充 | 新浪日线不带这些标记；撮合的相应拒绝条件实际不触发 | [回测待确认事项](workflows/backtesting.md#证据与待确认事项) |
 
 这些是业务选择和证据边界，不是本次整理已经修复的问题。决定修改时，以同一输入展示改前／改后结果，再更新所属规则与验证。
 

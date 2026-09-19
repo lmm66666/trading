@@ -12,6 +12,8 @@ related: []
 
 # API 模块设计
 
+想按业务问题阅读，先进入 [项目导航](README.md)；图表与手动刷新的业务流程见 [图表查询](workflows/chart-query.md) 与 [行情采集与版本](workflows/market-data.md)。本文保留传输校验与响应映射契约。
+
 | 属性 | 内容 |
 |---|---|
 | 状态 | 当前有效 |
