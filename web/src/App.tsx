@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { InstrumentSummary, PriceView, Timeframe } from './api/client'
 import { ChartWorkspace } from './features/chart/ChartWorkspace'
 import { readWorkbenchState, writeWorkbenchState, type WorkbenchView } from './features/chart/chartData'
+import { ScanPanel } from './features/scan/ScanPanel'
 import { InstrumentSearch } from './features/search/InstrumentSearch'
 
 export type RunKindStore = 'scan' | 'backtest'
@@ -54,9 +55,7 @@ export default function App() {
   }
 
   const selectInstrument = (instrument: InstrumentSummary) => {
-    setSymbol(instrument.instrument)
-    setMobileSearchOpen(false)
-    syncState(instrument.instrument, timeframe, priceView, view)
+    selectSymbol(instrument.instrument, view)
   }
 
   const changeChartState = (nextTimeframe: Timeframe, nextPriceView: PriceView) => {
@@ -68,6 +67,19 @@ export default function App() {
   const switchView = (nextView: WorkbenchView) => {
     setView(nextView)
     syncState(symbol, timeframe, priceView, nextView)
+  }
+
+  /** 从扫描结果或证券搜索选中证券；扫描结果行点击时切回图表视图 */
+  const selectSymbol = (instrument: string, nextView: WorkbenchView) => {
+    setSymbol(instrument)
+    setMobileSearchOpen(false)
+    setView(nextView)
+    writeWorkbenchState({ symbol: instrument, timeframe, priceView, view: nextView })
+  }
+
+  const changeScanRunId = (runId: string | null) => {
+    setScanRunId(runId)
+    storeRunId('scan', runId)
   }
 
   return (
@@ -121,11 +133,12 @@ export default function App() {
               </footer>
             </main>
           )
+        ) : view === 'scan' ? (
+          <ScanPanel runId={scanRunId} onRunIdChange={changeScanRunId} onSelectInstrument={(instrument) => selectSymbol(instrument, 'chart')} />
         ) : (
           <main className="panel-placeholder">
-            {view === 'scan' ? '扫描功能建设中' : '回测功能建设中'}
-            {view === 'scan' && scanRunId ? <span className="placeholder-run-id">{scanRunId}</span> : null}
-            {view === 'backtest' && backtestRunId ? <span className="placeholder-run-id">{backtestRunId}</span> : null}
+            回测功能建设中
+            {backtestRunId ? <span className="placeholder-run-id">{backtestRunId}</span> : null}
           </main>
         )}
       </div>

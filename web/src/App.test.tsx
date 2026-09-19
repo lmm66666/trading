@@ -12,6 +12,19 @@ vi.mock('./features/chart/ChartWorkspace', () => ({
     <div><span>图表 {instrument}</span><button onClick={() => onStateChange('WEEK', 'RAW')} type="button">更新图表状态</button></div>
   ),
 }))
+vi.mock('./features/scan/ScanPanel', () => ({
+  ScanPanel: ({ runId, onRunIdChange, onSelectInstrument }: {
+    runId: string | null
+    onRunIdChange: (runId: string | null) => void
+    onSelectInstrument: (instrument: string) => void
+  }) => (
+    <div>
+      <span>扫描面板 {runId ?? '无任务'}</span>
+      <button onClick={() => onRunIdChange('r-new')} type="button">记录新任务</button>
+      <button onClick={() => onSelectInstrument('SSE:600000')} type="button">打开入选证券</button>
+    </div>
+  ),
+}))
 
 describe('App', () => {
   beforeEach(() => {
@@ -43,7 +56,7 @@ describe('App', () => {
   it('按 tab 参数切换视图，非法值回落图表', () => {
     window.history.replaceState(null, '', '/?tab=scan')
     const { unmount } = render(<App />)
-    expect(screen.getByText('扫描功能建设中')).toBeVisible()
+    expect(screen.getByText('扫描面板 无任务')).toBeVisible()
     unmount()
 
     window.history.replaceState(null, '', '/?tab=OPTIMIZER')
@@ -67,6 +80,18 @@ describe('App', () => {
     window.localStorage.setItem('wb.scan_run_id', 'scan-run-1')
     window.history.replaceState(null, '', '/?tab=scan')
     render(<App />)
-    expect(screen.getByText('scan-run-1')).toBeVisible()
+    expect(screen.getByText('扫描面板 scan-run-1')).toBeVisible()
+  })
+
+  it('新任务 run_id 写入 localStorage，点击入选证券切回图表', () => {
+    window.history.replaceState(null, '', '/?tab=scan')
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '记录新任务' }))
+    expect(window.localStorage.getItem('wb.scan_run_id')).toBe('r-new')
+    expect(screen.getByText('扫描面板 r-new')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '打开入选证券' }))
+    expect(screen.getByText('图表 SSE:600000')).toBeVisible()
+    expect(window.location.search).toContain('symbol=SSE%3A600000')
+    expect(window.location.search).not.toContain('tab=scan')
   })
 })
