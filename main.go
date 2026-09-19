@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -19,7 +18,6 @@ import (
 	"gorm.io/gorm"
 
 	"trading/api"
-	"trading/business"
 	"trading/config"
 	"trading/data"
 	"trading/internal/application"
@@ -71,7 +69,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, *configPath); err != nil {
-		log.Print("application stopped with an internal error")
+		slog.Error("application stopped with an internal error")
 		os.Exit(1)
 	}
 }
@@ -98,26 +96,15 @@ func run(ctx context.Context, configPath string) error {
 	if err != nil {
 		return err
 	}
-
-	b := broker.NewSinaBroker()
-	financialSvc := business.NewFinancialReportService(b, d.FinancialReport())
-
-	financialScheduler := business.NewFinancialScheduler(financialSvc, d.FinancialReport())
-	financialScheduler.Start(ctx)
-	defer financialScheduler.Stop()
-
-	signalSvc := business.NewSignalService(d.FinancialReport())
-	querySvc := business.NewQueryService(d.FinancialReport())
-	macroSvc := business.NewMacroService(broker.NewEastMoneyBroker(), broker.NewSinaBroker())
-	r := api.NewRouter(financialSvc, financialScheduler, signalSvc, querySvc, macroSvc, kernel.services)
+	r := api.NewRouter(kernel.services)
 	if err := api.AttachWebUI(r, "web/dist"); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		log.Printf("Web UI is not built; API-only mode: %v", err)
+		slog.Warn("Web UI is not built; API-only mode", "err", err)
 	}
 
-	log.Println("Server starting on :8080")
+	slog.Info("Server starting on :8080")
 	server := &http.Server{Addr: ":8080", Handler: r, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	err = serve(ctx, server, func(ctx context.Context) error {
 		runners := []func(context.Context) error{

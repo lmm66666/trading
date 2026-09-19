@@ -1,27 +1,15 @@
 package api
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-
-	"trading/business"
 )
 
-// StockHandler 股票数据 HTTP 处理器
+// StockHandler 内核 HTTP 处理器
 type StockHandler struct {
-	financialSvc       business.FinancialReportService
-	financialScheduler business.FinancialScheduler
-	signalSvc          business.SignalService
-	querySvc           business.QueryService
-	macroSvc           business.MacroService
-	kernel             KernelServices
-}
-
-// NewStockHandler 创建 StockHandler
-func NewStockHandler(financialSvc business.FinancialReportService, financialScheduler business.FinancialScheduler, signalSvc business.SignalService, querySvc business.QueryService, macroSvc business.MacroService) *StockHandler {
-	return &StockHandler{financialSvc: financialSvc, financialScheduler: financialScheduler, signalSvc: signalSvc, querySvc: querySvc, macroSvc: macroSvc}
+	kernel KernelServices
 }
 
 // response 统一 JSON 响应结构
@@ -42,7 +30,7 @@ func respondError(c *gin.Context, status int, message string) {
 // respondInternalError 记录详细错误到服务端日志，向客户端返回脱敏的通用 500 响应，
 // 避免泄漏数据库结构、SQL 语句、内部文件路径等敏感信息。
 func respondInternalError(c *gin.Context, op string, err error) {
-	log.Printf("[api] %s failed: method=%s path=%s err=%v", op, c.Request.Method, c.Request.URL.Path, err)
+	slog.Error("api request failed", "op", op, "method", c.Request.Method, "path", c.Request.URL.Path, "err", err)
 	c.JSON(http.StatusInternalServerError, response{
 		Code:    http.StatusInternalServerError,
 		Message: "internal server error",

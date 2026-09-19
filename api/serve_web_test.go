@@ -19,7 +19,7 @@ func TestAttachWebUI(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "assets", "app.js"), []byte("app"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	router := NewRouter(nil, nil, nil, nil, nil)
+	router := NewRouter(KernelServices{})
 	if err := AttachWebUI(router, dir); err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestAttachWebUI(t *testing.T) {
 }
 
 func TestAttachWebUIRequiresBuildOutput(t *testing.T) {
-	if err := AttachWebUI(NewRouter(nil, nil, nil, nil, nil), t.TempDir()); err == nil {
+	if err := AttachWebUI(NewRouter(KernelServices{}), t.TempDir()); err == nil {
 		t.Fatal("expected missing index error")
 	}
 }

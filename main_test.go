@@ -29,7 +29,7 @@ func TestKernelCompositionKeepsDurableIdempotencyReader(t *testing.T) {
 	require.NotNil(t, kernel.workers)
 	require.NotNil(t, kernel.marketScheduler)
 	require.Nil(t, kernel.futuresScheduler)
-	router := api.NewRouter(nil, nil, nil, nil, nil, kernel.services)
+	router := api.NewRouter(kernel.services)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, httptest.NewRequest("GET", "/api/v1/strategies", nil))
 	require.Equal(t, 200, w.Code)
