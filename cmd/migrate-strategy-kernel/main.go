@@ -15,14 +15,14 @@ import (
 	"syscall"
 	"time"
 
+	"trading/config"
+	kernel "trading/internal/infrastructure/mysql"
+
 	sqldriver "github.com/go-sql-driver/mysql"
 	"gopkg.in/yaml.v3"
 	driver "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"trading/config"
-	kernel "trading/internal/infrastructure/mysql"
-	"trading/pkg/broker"
 )
 
 type migrationRunner func(context.Context, string, kernel.MigrationOptions) (kernel.MigrationReport, error)
@@ -102,7 +102,7 @@ func executeWithDatabase(ctx context.Context, path string, opts kernel.Migration
 			return kernel.MigrationReport{}, errors.New("无法初始化内核表")
 		}
 	}
-	return kernel.NewLegacyMigrator(db, broker.NewEastmoneyMarketSource()).Run(ctx, opts)
+	return kernel.NewLegacyMigrator(db).Run(ctx, opts)
 }
 
 func openDatabase(cfg config.DB) (*gorm.DB, error) {

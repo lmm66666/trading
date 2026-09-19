@@ -2,13 +2,14 @@ package mysql
 
 import (
 	"context"
-	"errors"
-	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/stretchr/testify/require"
-	"gorm.io/gorm/schema"
+	"math"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm/schema"
 	"trading/internal/market"
 	"trading/internal/port"
 	"trading/model"
@@ -33,122 +34,86 @@ func TestLegacyCodeMapping(t *testing.T) {
 	}
 }
 
-type migrationSource struct {
-	bars      map[market.Timeframe][]market.Bar
-	factors   []market.AdjustmentFactor
-	err       error
-	actions   []market.CorporateAction
-	actionErr error
-}
-
-func (s migrationSource) FetchBars(_ context.Context, _ market.InstrumentID, tf market.Timeframe, _, _ time.Time) ([]market.Bar, []market.AdjustmentFactor, error) {
-	return s.bars[tf], s.factors, s.err
-}
-
-func (s migrationSource) FetchCorporateActions(context.Context, market.InstrumentID) ([]market.CorporateAction, error) {
-	return s.actions, s.actionErr
-}
-
-func legacyFixture(t *testing.T) (legacyInstrument, migrationSource) {
+func legacyFixture(t *testing.T) legacyInstrument {
 	t.Helper()
 	id := market.InstrumentID{Exchange: market.SSE, Code: "600000"}
-	at := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
 	old := model.StockKline{Code: id.Code, Date: "2024-01-02", Open: 10, High: 11, Low: 9, Close: 10, Volume: 100}
-	b := market.Bar{Instrument: id, Timeframe: market.Day, OpenTime: at, CloseTime: at, Open: 100000, High: 110000, Low: 90000, Close: 100000, Volume: 100, Amount: 10000000}
-	return legacyInstrument{ID: id, Name: "浦发", Bars: map[market.Timeframe][]model.StockKline{market.Day: {old}}}, migrationSource{bars: map[market.Timeframe][]market.Bar{market.Day: {b}}, factors: []market.AdjustmentFactor{{EffectiveTime: at, Numerator: 1, Denominator: 1}}}
+	return legacyInstrument{ID: id, Name: "浦发", Bars: map[market.Timeframe][]model.StockKline{market.Day: {old}}}
 }
 
-func TestLegacyBackfillRequiresExactDatesAndAdjustmentCoverage(t *testing.T) {
-	item, source := legacyFixture(t)
-	batch, err := backfillLegacy(context.Background(), source, item)
+func TestLegacyBackfillConvertsRowsDirectly(t *testing.T) {
+	item := legacyFixture(t)
+	weekly := item.Bars[market.Day][0]
+	weekly.Date = "2024-01-08"
+	item.Bars[market.Week] = []model.StockKline{weekly}
+
+	batch, err := backfillLegacy(item)
+
 	require.NoError(t, err)
-	require.Len(t, batch.Bars[market.Day], 1)
-	require.Len(t, batch.Factors, 1)
+	require.Equal(t, legacyMigrationSource, batch.Source)
+	require.Equal(t, item.ID, batch.Instrument)
+	require.Empty(t, batch.Factors)
+	require.Empty(t, batch.Actions)
+	day := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+	week := time.Date(2024, 1, 8, 0, 0, 0, 0, time.UTC)
+	require.Equal(t, []market.Bar{{
+		Instrument: item.ID, Timeframe: market.Day, OpenTime: day, CloseTime: day,
+		Open: 100000, High: 110000, Low: 90000, Close: 100000, Volume: 100, Trading: market.Tradable,
+	}}, batch.Bars[market.Day])
+	require.Equal(t, []market.Bar{{
+		Instrument: item.ID, Timeframe: market.Week, OpenTime: week, CloseTime: week,
+		Open: 100000, High: 110000, Low: 90000, Close: 100000, Volume: 100, Trading: market.Tradable,
+	}}, batch.Bars[market.Week])
+	require.NotEmpty(t, batch.Digest)
+}
+
+func TestLegacyBackfillRejectsInvalidLegacyRows(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		mutate func(*migrationSource)
+		mutate func(*legacyInstrument)
+		want   error
 	}{
-		{"source error", func(s *migrationSource) { s.err = errors.New("offline") }},
-		{"actions error", func(s *migrationSource) { s.actionErr = errors.New("offline") }},
-		{"missing bars", func(s *migrationSource) { s.bars = nil }},
-		{"missing factors", func(s *migrationSource) { s.factors = nil }},
-		{"future factor", func(s *migrationSource) { s.factors[0].EffectiveTime = s.factors[0].EffectiveTime.AddDate(0, 0, 1) }},
-		{"different date", func(s *migrationSource) {
-			s.bars[market.Day][0].CloseTime = s.bars[market.Day][0].CloseTime.AddDate(0, 0, 1)
-		}},
-		{"bad OHLC", func(s *migrationSource) { s.bars[market.Day][0].Low = 120000 }},
+		{"duplicate date", func(item *legacyInstrument) {
+			item.Bars[market.Day] = append(item.Bars[market.Day], item.Bars[market.Day][0])
+		}, market.ErrDuplicateBar},
+		{"inverted OHLC", func(item *legacyInstrument) { item.Bars[market.Day][0].Low = 12 }, market.ErrInvalidOHLC},
+		{"corrupt zero price", func(item *legacyInstrument) { item.Bars[market.Day][0].Open = 0 }, market.ErrInvalidOHLC},
+		{"negative volume", func(item *legacyInstrument) { item.Bars[market.Day][0].Volume = -1 }, market.ErrNegativeVolume},
+		{"bad date", func(item *legacyInstrument) { item.Bars[market.Day][0].Date = "bad" }, nil},
+		{"unknown code", func(item *legacyInstrument) { item.Bars[market.Day][0].Code = "123456" }, ErrUnknownExchange},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			item, s := legacyFixture(t)
-			tc.mutate(&s)
-			_, err := backfillLegacy(context.Background(), s, item)
-			require.Error(t, err)
+			item := legacyFixture(t)
+			tc.mutate(&item)
+			_, err := backfillLegacy(item)
+			if tc.want == nil {
+				require.Error(t, err)
+			} else {
+				require.ErrorIs(t, err, tc.want)
+			}
 		})
 	}
-	_, err = backfillLegacy(context.Background(), nil, item)
-	require.Error(t, err)
+	item := legacyFixture(t)
+	item.Bars = nil
+	_, err := backfillLegacy(item)
+	require.ErrorIs(t, err, ErrMigrationIncomplete)
 }
 
-func TestLegacyBackfillUsesAuthoritativeOHLCForCorruptLegacyRows(t *testing.T) {
-	item, source := legacyFixture(t)
-	item.Bars[market.Day][0].Open = 0
-	item.Bars[market.Day][0].High = 0
-	item.Bars[market.Day][0].Low = 0
-	item.Bars[market.Day][0].Volume = 0
-
-	batch, err := backfillLegacy(context.Background(), source, item)
-
+func TestLegacyPriceScalesDecimalToFixedPoint(t *testing.T) {
+	value, err := legacyPrice(12.3456)
 	require.NoError(t, err)
-	require.Equal(t, source.bars[market.Day], batch.Bars[market.Day])
-}
-
-func TestLegacyBackfillMatchesAuthoritativeBarsByTradingDate(t *testing.T) {
-	item, source := legacyFixture(t)
-	tradingDate := source.bars[market.Day][0].CloseTime
-	source.bars[market.Day][0].OpenTime = tradingDate.Add(90 * time.Minute)
-	source.bars[market.Day][0].CloseTime = tradingDate.Add(7 * time.Hour)
-	source.factors[0].EffectiveTime = source.bars[market.Day][0].CloseTime
-
-	batch, err := backfillLegacy(context.Background(), source, item)
-
-	require.NoError(t, err)
-	require.Equal(t, source.bars[market.Day], batch.Bars[market.Day])
+	require.Equal(t, market.Price(123456), value)
+	for _, invalid := range []float64{math.NaN(), math.Inf(1), math.Inf(-1), 1e300, -1e300} {
+		_, err := legacyPrice(invalid)
+		require.ErrorIs(t, err, port.ErrInvalidPortValue)
+	}
 }
 
 func TestMigrationOptionsRejectInvalidBatchBeforeDBAccess(t *testing.T) {
 	for _, n := range []int{0, -1, 10001} {
-		_, err := NewLegacyMigrator(nil, nil).Run(context.Background(), MigrationOptions{BatchSize: n})
+		_, err := NewLegacyMigrator(nil).Run(context.Background(), MigrationOptions{BatchSize: n})
 		require.Error(t, err)
 	}
-}
-
-var _ port.MarketSource = migrationSource{}
-
-func TestLegacyBackfillRejectsCrossTimeframeFactorConflict(t *testing.T) {
-	item, source := legacyFixture(t)
-	weekly := item.Bars[market.Day][0]
-	weekly.Date = "2024-01-03"
-	item.Bars[market.Week] = []model.StockKline{weekly}
-	b := source.bars[market.Day][0]
-	b.Timeframe = market.Week
-	b.OpenTime = b.OpenTime.AddDate(0, 0, 1)
-	b.CloseTime = b.OpenTime
-	s := timeframeMigrationSource{day: source, week: migrationSource{bars: map[market.Timeframe][]market.Bar{market.Week: {b}}, factors: []market.AdjustmentFactor{{EffectiveTime: b.OpenTime.AddDate(0, 0, -2), Numerator: 1, Denominator: 2}}}}
-	_, err := backfillLegacy(context.Background(), s, item)
-	require.ErrorIs(t, err, ErrMigrationIncomplete)
-}
-
-type timeframeMigrationSource struct{ day, week migrationSource }
-
-func (s timeframeMigrationSource) FetchBars(ctx context.Context, id market.InstrumentID, tf market.Timeframe, from, to time.Time) ([]market.Bar, []market.AdjustmentFactor, error) {
-	if tf == market.Week {
-		return s.week.FetchBars(ctx, id, tf, from, to)
-	}
-	return s.day.FetchBars(ctx, id, tf, from, to)
-}
-
-func (s timeframeMigrationSource) FetchCorporateActions(ctx context.Context, id market.InstrumentID) ([]market.CorporateAction, error) {
-	return s.day.FetchCorporateActions(ctx, id)
 }
 
 func expectLegacySchema(mock sqlmock.Sqlmock) {
@@ -160,20 +125,6 @@ func expectLegacySchema(mock sqlmock.Sqlmock) {
 
 func migrationVersionRows(version uint64, status string) *sqlmock.Rows {
 	return sqlmock.NewRows([]string{"version", "source", "status", "quality"}).AddRow(version, legacyMigrationSource, status, status)
-}
-
-func TestLegacyBackfillRejectsDuplicateDatesAndEmptyHistory(t *testing.T) {
-	item, source := legacyFixture(t)
-	item.Bars[market.Day] = append(item.Bars[market.Day], item.Bars[market.Day][0])
-	_, err := backfillLegacy(context.Background(), source, item)
-	require.ErrorIs(t, err, market.ErrDuplicateBar)
-	item.Bars = nil
-	_, err = backfillLegacy(context.Background(), source, item)
-	require.ErrorIs(t, err, ErrMigrationIncomplete)
-	item, source = legacyFixture(t)
-	item.Bars[market.Day][0].Date = "bad"
-	_, err = backfillLegacy(context.Background(), source, item)
-	require.Error(t, err)
 }
 
 func TestLegacyCheckpointSchemaHasUTCMicrosecondAuditFields(t *testing.T) {

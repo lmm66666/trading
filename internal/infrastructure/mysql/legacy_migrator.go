@@ -8,13 +8,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
 	"trading/internal/market"
 	"trading/internal/port"
 	"trading/model"
+
+	"gorm.io/gorm"
 )
 
 var (
@@ -83,12 +85,11 @@ type MigrationReport struct {
 	BacktestEnabled      bool
 }
 type LegacyMigrator struct {
-	db     *gorm.DB
-	source port.MarketSource
+	db *gorm.DB
 }
 
-func NewLegacyMigrator(db *gorm.DB, source port.MarketSource) *LegacyMigrator {
-	return &LegacyMigrator{db: db, source: source}
+func NewLegacyMigrator(db *gorm.DB) *LegacyMigrator {
+	return &LegacyMigrator{db: db}
 }
 
 // 迁移连接持有 MySQL 命名锁，进程死亡自动释放。真实 INCOMPLETE
@@ -212,7 +213,7 @@ func (m *LegacyMigrator) migratePrepared(db *gorm.DB, opts MigrationOptions, pre
 				err = ErrLegacyChanged
 			}
 		} else {
-			batch, err = backfillLegacy(db.Statement.Context, m.source, item)
+			batch, err = backfillLegacy(item)
 		}
 		if err != nil {
 			report.Failures = append(report.Failures, MigrationFailure{Instrument: id, Category: legacyFailureCategory(err)})
@@ -287,115 +288,79 @@ func legacyDate(old model.StockKline) (time.Time, error) {
 	return time.ParseInLocation("2006-01-02", old.Date, time.UTC)
 }
 
-// Legacy prices have no reliable adjustment provenance. The source supplies the
-// authoritative raw OHLCV; legacy rows define the exact dates that must survive.
-func backfillLegacy(ctx context.Context, source port.MarketSource, item legacyInstrument) (port.MarketWriteBatch, error) {
+// backfillLegacy converts legacy rows directly into kernel bars. Prices scale
+// to the kernel fixed point, each trading date becomes an all-day UTC session
+// matching the production daily convention, and no external source is
+// consulted. Canonicalization sorts and validates the converted batch.
+func backfillLegacy(item legacyInstrument) (port.MarketWriteBatch, error) {
 	batch := port.MarketWriteBatch{Source: legacyMigrationSource, Instrument: item.ID, Bars: map[market.Timeframe][]market.Bar{}}
-	if source == nil {
-		return batch, ErrMigrationIncomplete
-	}
-	merged := map[time.Time]market.AdjustmentFactor{}
-	byTimeframe := map[market.Timeframe]map[time.Time]market.AdjustmentFactor{}
 	for _, tf := range []market.Timeframe{market.Day, market.Week} {
 		old := item.Bars[tf]
 		if len(old) == 0 {
 			continue
 		}
-		dates := map[time.Time]bool{}
-		var from, to time.Time
+		bars := make([]market.Bar, 0, len(old))
 		for _, row := range old {
-			closeTime, err := legacyDate(row)
+			at, err := legacyDate(row)
 			if err != nil {
 				return batch, err
 			}
-			if dates[closeTime] {
-				return batch, market.ErrDuplicateBar
+			open, err := legacyPrice(row.Open)
+			if err != nil {
+				return batch, err
 			}
-			dates[closeTime] = true
-			if from.IsZero() || closeTime.Before(from) {
-				from = closeTime
+			high, err := legacyPrice(row.High)
+			if err != nil {
+				return batch, err
 			}
-			if closeTime.After(to) {
-				to = closeTime
+			low, err := legacyPrice(row.Low)
+			if err != nil {
+				return batch, err
 			}
+			closePrice, err := legacyPrice(row.Close)
+			if err != nil {
+				return batch, err
+			}
+			bars = append(bars, market.Bar{
+				Instrument: item.ID,
+				Timeframe:  tf,
+				OpenTime:   at,
+				CloseTime:  at,
+				Open:       open,
+				High:       high,
+				Low:        low,
+				Close:      closePrice,
+				Volume:     row.Volume,
+				Trading:    market.Tradable,
+			})
 		}
-		bars, factors, err := source.FetchBars(ctx, item.ID, tf, from, to)
+		dataset, err := market.NewDataset(item.ID, tf, 0, bars)
 		if err != nil {
 			return batch, err
 		}
-		if len(bars) != len(dates) {
-			return batch, ErrMigrationIncomplete
-		}
-		for _, bar := range bars {
-			if !dates[legacyDateOnly(bar.CloseTime)] {
-				return batch, ErrMigrationIncomplete
-			}
-		}
-		own := map[time.Time]market.AdjustmentFactor{}
-		for _, factor := range factors {
-			if factor.Numerator <= 0 || factor.Denominator <= 0 {
-				return batch, ErrMigrationIncomplete
-			}
-			if _, duplicate := own[factor.EffectiveTime]; duplicate {
-				return batch, ErrMigrationIncomplete
-			}
-			a, b := factor.Numerator, factor.Denominator
-			for b != 0 {
-				a, b = b, a%b
-			}
-			factor.Numerator /= a
-			factor.Denominator /= a
-			factor.Version = 0
-			if previous, ok := merged[factor.EffectiveTime]; ok && !sameLegacyFactor(previous, factor) {
-				return batch, ErrMigrationIncomplete
-			}
-			own[factor.EffectiveTime] = factor
-			merged[factor.EffectiveTime] = factor
-		}
-		byTimeframe[tf] = own
-		batch.Bars[tf] = bars
+		batch.Bars[tf] = dataset.Bars()
 	}
 	if len(batch.Bars) == 0 {
 		return batch, ErrMigrationIncomplete
 	}
-	actions, err := source.FetchCorporateActions(ctx, item.ID)
+	batch, _, err := canonicalBatch(batch)
 	if err != nil {
 		return batch, err
-	}
-	batch.Actions = actions
-	for _, factor := range merged {
-		batch.Factors = append(batch.Factors, factor)
-	}
-	// Canonicalization sorts the merged factors exactly once. Validate coverage
-	// and cross-timeframe consistency with linear cursors, never per-Bar copies.
-	batch, _, err = canonicalBatch(batch)
-	if err != nil {
-		return batch, err
-	}
-	for tf, bars := range batch.Bars {
-		cursor := 0
-		var active, own market.AdjustmentFactor
-		for _, bar := range bars {
-			for cursor < len(batch.Factors) && !batch.Factors[cursor].EffectiveTime.After(bar.CloseTime) {
-				active = batch.Factors[cursor]
-				if factor, ok := byTimeframe[tf][active.EffectiveTime]; ok {
-					own = factor
-				}
-				cursor++
-			}
-			if own.Numerator <= 0 || !sameLegacyFactor(active, own) {
-				return batch, ErrMigrationIncomplete
-			}
-		}
 	}
 	return batch, nil
 }
 
-func legacyDateOnly(value time.Time) time.Time {
-	value = value.UTC()
-	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, time.UTC)
-}
-
-func sameLegacyFactor(a, b market.AdjustmentFactor) bool {
-	return a.Numerator == b.Numerator && a.Denominator == b.Denominator
+// legacyPrice scales a legacy decimal price to the kernel fixed point. Only
+// non-finite and out-of-range values are rejected here; structurally invalid
+// OHLC is rejected by dataset validation with a precise error.
+func legacyPrice(value float64) (market.Price, error) {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, fmt.Errorf("%w: non-finite legacy price", port.ErrInvalidPortValue)
+	}
+	const int64Boundary = 1 << 63 // exactly representable as float64
+	scaled := math.Round(value * float64(market.ValueScale))
+	if scaled >= int64Boundary || scaled < -int64Boundary {
+		return 0, fmt.Errorf("%w: legacy price exceeds fixed-point range", port.ErrInvalidPortValue)
+	}
+	return market.Price(scaled), nil
 }
