@@ -1,6 +1,6 @@
 ---
 id: CHG-2026-09-19-legacy-table-migration
-status: implementing
+status: implemented
 authority: normative
 approval_status: approved
 approved_by: user
