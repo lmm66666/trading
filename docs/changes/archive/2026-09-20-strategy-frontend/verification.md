@@ -32,3 +32,7 @@ result: passed
 
 - 本变更不涉及持久化、策略内核、镜像或 Go 代码语义：`--mysql`、`--image`、`--full` 不触发；远端 MySQL 与镜像构建记录为 not-required，未执行，不计为通过。
 - 设计与后端契约的两处差异（参数对象映射、快照行无 name）按用户 2026-09-20 裁决"按契约适配"，已登记于 design.md 第 7 节。
+
+## 独立评审（2026-09-20，合并前）
+
+独立子 Agent 对 `main...HEAD` 全量 diff 评审：架构分层、竞态与清理、遗留与简化、测试质量通过。发现并已修复（commit `1c69915`，修复后 `npm --prefix web run check` 复验 69/69 全绿）：结果表加载按钮类名与图表 `.load-more` 冲突（改名 `table-load-more`）；`minimum_commission` 缺 1e9 上限且缩放未走 `toScaled`（已补上限与换算）；续页响应在 run id 切换后可能拼入旧任务结果（已加 `runIdRef` 守卫）。登记为已知不阻塞事项：分页请求未传 AbortSignal（仅丢弃迟到响应）、回测表单 instrument 不跟随侧栏切换、非安全整数展示层防御未实现（设计自身标注不阻塞）。
