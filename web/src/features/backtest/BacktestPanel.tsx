@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { createBacktestRun, type RunStatus } from '../../api/client'
+import { createBacktestRun, toScaled, type RunStatus } from '../../api/client'
 import { EquityChart } from './EquityChart'
 import { OrdersTradesTables } from './OrdersTradesTables'
 import { InstrumentSearch } from '../search/InstrumentSearch'
@@ -90,8 +90,8 @@ export function BacktestPanel({ runId, onRunIdChange, selectedSymbol, defaultLot
       }
     }
     const minCommissionYuan = Number(minimumCommission)
-    if (!Number.isFinite(minCommissionYuan) || minCommissionYuan < 0) {
-      setFormError('最低佣金不能为负数')
+    if (!Number.isFinite(minCommissionYuan) || minCommissionYuan < 0 || minCommissionYuan > 1e9) {
+      setFormError('最低佣金需在 0–10 亿元之间')
       return
     }
     const parsedLotSize = Number(lotSize)
@@ -119,10 +119,10 @@ export function BacktestPanel({ runId, onRunIdChange, selectedSymbol, defaultLot
         end: toRFC3339(end),
         parameters: Object.keys(selection.parameters).length > 0 ? selection.parameters : undefined,
         config: {
-          initial_cash: Math.round(initialCashYuan * 10000),
+          initial_cash: toScaled(initialCashYuan),
           cash_fraction_bps: cashFraction,
           commission_bps: Number(commissionBps),
-          minimum_commission: Math.round(minCommissionYuan * 10000),
+          minimum_commission: toScaled(minCommissionYuan),
           stamp_duty_bps: Number(stampDutyBps),
           transfer_fee_bps: Number(transferFeeBps),
           slippage_bps: Number(slippageBps),
@@ -237,6 +237,7 @@ export function BacktestPanel({ runId, onRunIdChange, selectedSymbol, defaultLot
                 <input
                   type="number"
                   min={0}
+                  max={1e9}
                   value={minimumCommission}
                   onChange={(event) => setMinimumCommission(event.target.value)}
                 />

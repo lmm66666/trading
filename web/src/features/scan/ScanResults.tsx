@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   fetchSnapshotPage,
   type SnapshotFailure,
@@ -27,6 +27,8 @@ export function ScanResults({ run, onSelectInstrument }: ScanResultsProps) {
   const [nextSequence, setNextSequence] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const runIdRef = useRef(run.run_id)
+  runIdRef.current = run.run_id
 
   useEffect(() => {
     let cancelled = false
@@ -74,6 +76,8 @@ export function ScanResults({ run, onSelectInstrument }: ScanResultsProps) {
         after_sequence: nextSequence,
         limit: PAGE_LIMIT,
       })
+      // 续页响应返回时若任务已切换，丢弃以免拼入新任务结果
+      if (runIdRef.current !== run.run_id) return
       setRows((previous) => [...previous, ...page.rows])
       setFailures(page.failures)
       setNextSequence(page.next_sequence ?? null)
@@ -127,7 +131,7 @@ export function ScanResults({ run, onSelectInstrument }: ScanResultsProps) {
         </tbody>
       </table>
       {nextSequence !== null && (
-        <button className="load-more" onClick={loadMore} disabled={loading} type="button">
+        <button className="table-load-more" onClick={loadMore} disabled={loading} type="button">
           {loading ? '加载中…' : '加载更多'}
         </button>
       )}

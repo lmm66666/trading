@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   fetchRunPage,
   fromScaled,
@@ -26,6 +26,8 @@ function useRunResource<T>(runId: string, resource: RunResource) {
   const [nextSequence, setNextSequence] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const runIdRef = useRef(runId)
+  runIdRef.current = runId
 
   useEffect(() => {
     let cancelled = false
@@ -56,6 +58,8 @@ function useRunResource<T>(runId: string, resource: RunResource) {
     setError(null)
     try {
       const page = await fetchRunPage<T>('backtest', runId, resource, nextSequence, PAGE_LIMIT)
+      // 续页响应返回时若任务已切换，丢弃以免拼入新任务结果
+      if (runIdRef.current !== runId) return
       setItems((previous) => [...previous, ...page.items])
       setNextSequence(page.next_sequence ?? null)
     } catch (cause) {
@@ -92,7 +96,7 @@ function ResourceTable<T>({ title, resource, runId, head, rowsOf }: ResourceTabl
         </table>
       )}
       {nextSequence !== null && (
-        <button className="load-more" onClick={loadMore} disabled={loading} type="button">
+        <button className="table-load-more" onClick={loadMore} disabled={loading} type="button">
           {loading ? '加载中…' : '加载更多'}
         </button>
       )}

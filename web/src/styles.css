@@ -184,8 +184,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid #d9a744; outline-
 .results-table th, .results-table td, .failures th, .failures td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
 .results-table th, .failures th { color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: .08em; }
 .instrument-link { padding: 0; color: var(--accent); background: transparent; border: 0; cursor: pointer; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-.load-more { margin-top: 12px; padding: 7px 18px; color: #cbd3df; background: transparent; border: 1px solid #303a49; border-radius: 5px; cursor: pointer; font-size: 11px; }
-.load-more:disabled { opacity: .5; cursor: default; }
+.table-load-more { margin-top: 12px; padding: 7px 18px; color: #cbd3df; background: transparent; border: 1px solid #303a49; border-radius: 5px; cursor: pointer; font-size: 11px; }
+.table-load-more:disabled { opacity: .5; cursor: default; }
 .failures { margin-top: 14px; }
 .failures summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .failures table { margin-top: 10px; }
