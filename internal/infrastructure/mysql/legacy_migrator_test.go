@@ -7,12 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/stretchr/testify/require"
-	"gorm.io/gorm/schema"
 	"trading/internal/market"
 	"trading/internal/port"
 	"trading/model"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm/schema"
 )
 
 func TestLegacyCodeMapping(t *testing.T) {
@@ -22,7 +23,7 @@ func TestLegacyCodeMapping(t *testing.T) {
 	}{
 		{"600000", market.SSE}, {"601000", market.SSE}, {"603000", market.SSE}, {"605000", market.SSE}, {"688000", market.SSE}, {"689000", market.SSE},
 		{"000001", market.SZSE}, {"001001", market.SZSE}, {"002001", market.SZSE}, {"003001", market.SZSE}, {"300001", market.SZSE}, {"301001", market.SZSE},
-		{"400001", market.BSE}, {"800001", market.BSE}, {"920001", market.BSE},
+		{"400001", market.BSE}, {"800001", market.BSE}, {"302001", market.BSE}, {"920001", market.BSE},
 	} {
 		id, err := MapLegacyInstrument(tc.code)
 		require.NoError(t, err)

@@ -72,7 +72,7 @@ go run ./cmd/migrate-strategy-kernel -config config.yaml -dry-run=false -batch-s
 
 ### 4.4 身份解析
 
-六位股票代码只按显式前缀规则映射 SSE、SZSE、BSE；未知代码进入拒绝清单。迁移不根据旧数据推断上市状态和交易单位，迁移后必须补齐证券主数据再激活。
+六位股票代码只按显式前缀规则映射 SSE、SZSE、BSE（BSE 含 302/920 新旧段）；未知代码进入拒绝清单。迁移不根据旧数据推断上市状态和交易单位，迁移后必须补齐证券主数据再激活。
 
 ## 5. 失败、恢复和输出
 

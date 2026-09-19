@@ -42,7 +42,7 @@ func MapLegacyInstrument(code string) (market.InstrumentID, error) {
 	}
 	var exchange market.Exchange
 	matches := 0
-	for ex, prefixes := range map[market.Exchange][]string{market.SSE: {"600", "601", "603", "605", "688", "689"}, market.SZSE: {"000", "001", "002", "003", "300", "301"}, market.BSE: {"4", "8", "920"}} {
+	for ex, prefixes := range map[market.Exchange][]string{market.SSE: {"600", "601", "603", "605", "688", "689"}, market.SZSE: {"000", "001", "002", "003", "300", "301"}, market.BSE: {"4", "8", "302", "920"}} {
 		for _, p := range prefixes {
 			if strings.HasPrefix(code, p) {
 				exchange = ex
