@@ -96,6 +96,19 @@ func TestParseSinaQFQInvertsDecimalFactorsAndSortsDates(t *testing.T) {
 	}, factors)
 }
 
+func TestParseSinaQFQAcceptsTrailingBlockComment(t *testing.T) {
+	body := []byte(`var sh600000qfq={"total":1,"data":[
+		{"d":"2026-07-16","f":"1.0000000000000000"}
+	]};
+	/*vp7RmfDndcW0BFvsHcN3G2 */`)
+
+	factors, err := ParseSinaQFQ(body)
+	require.NoError(t, err)
+	require.Equal(t, []market.AdjustmentFactor{
+		{EffectiveTime: time.Date(2026, 7, 16, 0, 0, 0, 0, time.UTC), Numerator: 1, Denominator: 1},
+	}, factors)
+}
+
 func TestParseSinaQFQRejectsMalformedPayloads(t *testing.T) {
 	inputs := [][]byte{
 		[]byte(`{"total":0,"data":[]}`),
@@ -104,6 +117,7 @@ func TestParseSinaQFQRejectsMalformedPayloads(t *testing.T) {
 		[]byte(`var xqfq={"total":1,"data":[{"d":"2026-01-01","f":"0"}]}`),
 		[]byte(`var xqfq={"total":1,"data":[{"d":"2026-01-01","f":"not-a-number"}]}`),
 		[]byte(`var xqfq={"total":1,"data":[{"d":"2026-01-01","f":"1"}]} trailing`),
+		[]byte(`var xqfq={"total":1,"data":[{"d":"2026-01-01","f":"1"}]};/*c*/ trailing`),
 	}
 	for _, input := range inputs {
 		_, err := ParseSinaQFQ(input)

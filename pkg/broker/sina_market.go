@@ -305,15 +305,16 @@ func ParseSinaQFQ(body []byte) ([]market.AdjustmentFactor, error) {
 		return nil, fmt.Errorf("%w: invalid qfq variable", ErrMalformedResponse)
 	}
 	payload := strings.TrimSpace(text[equals+1:])
-	payload = strings.TrimSuffix(payload, ";")
+	payload = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(payload), ";"))
 	decoder := json.NewDecoder(strings.NewReader(payload))
-	decoder.DisallowUnknownFields()
 	var envelope sinaQFQEnvelope
 	if err := decoder.Decode(&envelope); err != nil {
 		return nil, fmt.Errorf("%w: invalid qfq response", ErrMalformedResponse)
 	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+	rest := strings.TrimSpace(payload[decoder.InputOffset():])
+	rest = strings.TrimSpace(strings.TrimPrefix(rest, ";"))
+	// 新浪在 JSON 后附加单个 JS 块注释（base64 指纹）；除此之外的尾随值均视为多值拒绝。
+	if rest != "" && !trailingSinaComment(rest) {
 		return nil, fmt.Errorf("%w: multiple qfq values", ErrMalformedResponse)
 	}
 	if envelope.Total != len(envelope.Data) {
@@ -355,4 +356,13 @@ func ParseSinaQFQ(body []byte) ([]market.AdjustmentFactor, error) {
 func utcDate(value time.Time) time.Time {
 	value = value.UTC()
 	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+// trailingSinaComment 报告 rest 是否为恰好一个闭合的 JS 块注释且其后无剩余内容。
+func trailingSinaComment(rest string) bool {
+	if !strings.HasPrefix(rest, "/*") {
+		return false
+	}
+	end := strings.Index(rest, "*/")
+	return end >= 0 && strings.TrimSpace(rest[end+2:]) == ""
 }
