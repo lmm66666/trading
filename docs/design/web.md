@@ -6,7 +6,7 @@ approval_provenance: inherited-current-design
 approved_by: null
 approved_at: null
 approved_revision: null
-owns: ["web/", "web/src/", "web/src/api/", "web/src/features/chart/", "web/src/features/indicators/", "web/src/features/search/", "web/src/test/"]
+owns: ["web/", "web/src/", "web/src/api/", "web/src/features/chart/", "web/src/features/indicators/", "web/src/features/search/", "web/src/features/strategy/", "web/src/features/scan/", "web/src/features/backtest/", "web/src/test/"]
 related: []
 ---
 
@@ -18,22 +18,25 @@ related: []
 |---|---|
 | 状态 | 当前有效 |
 | 适用范围 | `web` |
-| 最后更新 | 2026-09-14 |
+| 最后更新 | 2026-09-20 |
 
 ## 1. 职责与非职责
 
-本模块是 React 行情工作台，负责证券搜索、日/周和 RAW/QFQ 切换、K 线与成交量展示、指标选择、固定版本向前分页、URL 状态和用户可理解的加载/错误反馈。
+本模块是 React 行情工作台，负责证券搜索、日/周和 RAW/QFQ 切换、K 线与成交量展示、指标选择、固定版本向前分页、URL 状态和用户可理解的加载/错误反馈；并提供策略扫描与回测两个视图：策略目录选择与参数输入、扫描/回测任务的创建与轮询跟踪、扫描入选名单与失败明细分页、回测摘要/权益曲线/订单成交展示。
 
-前端不计算服务端技术指标、不推断证券交易所、不选择不同页的最新行情版本，也不实现策略、扫描和回测业务。
+前端不计算服务端技术指标或策略信号、不推断证券交易所、不选择不同页的最新行情版本、不保存历史任务列表（每类视图仅恢复最近一个任务标识）。
 
 ## 2. 组件和边界
 
-- `App` 管理已选证券、周期、复权视图和移动搜索开关，并同步 URL。
+- `App` 管理已选证券、周期、复权视图、视图切换（图表/扫描/回测，URL `tab` 白名单）和移动搜索开关，并同步 URL；持有扫描/回测任务标识（localStorage `wb.scan_run_id`、`wb.backtest_run_id`）。
 - `InstrumentSearch` 对输入做 220ms 防抖，支持键盘导航，取消过期请求并返回完整证券身份。
 - `ChartWorkspace` 管理查询世代、固定版本分页、指标列表和页面状态。
 - `FinancialChart` 把 Bar 和指标 Series 映射到主图/副图。
 - `IndicatorManager` 只管理服务端支持的参数预设，不在浏览器重新计算指标。
-- `api/client` 定义前端契约 DTO、统一解析响应 Envelope 并转成人类可读错误。
+- `features/strategy` 提供共享的策略表单（目录驱动的参数输入与 min/max/integer 校验）、任务轮询 hook（2 秒固定间隔、终态停止、连续 3 次网络错误停止）和任务状态条（状态徽标、取消入口）。
+- `features/scan` 提供扫描表单（时间窗口、交易所范围、active_only、limit）与入选名单/失败明细分页（游标 `after_sequence`）。
+- `features/backtest` 提供回测表单（执行假设 config、元→缩放整数换算）与结果区（summary 指标卡、权益曲线、订单/成交分页表）。
+- `api/client` 定义前端契约 DTO、统一解析响应 Envelope 并转成人类可读错误；集中承载金额缩放换算（×10000）纯函数。
 
 后端契约见 [API 文档](../standards/http-api.md)。
 
@@ -46,6 +49,9 @@ related: []
 - Bar 按 close_time 去重并升序；指标按稳定 key 合并，点按 time 去重并升序。
 - 已取消或旧世代响应不得修改 UI，即使网络层稍后完成。
 - loading、ready、error 和“空行情”是不同状态；分页失败保留已经展示的数据并显示提示。
+- 任务轮询到达终态（含 PARTIAL_SUCCEEDED）即停止；连续 3 次网络错误停止轮询；面板卸载即停，任务在后端继续。
+- 扫描结果定位使用终态响应的 `snapshot_id` 与任务回显的策略/版本，不用“仅按策略查 latest”的模糊路径；结果分页固定首响应的快照 key 续读。
+- 金额与价格在 UI 输入以“元”表达，提交前集中换算为缩放 10000 的整数；展示时反向换算；大整数边界由表单校验（初始资金 ≤1e9 元）保证 Number 精度。
 
 ## 4. 主要流程
 
@@ -82,7 +88,7 @@ related: []
 
 ## 8. 测试与验收证据
 
-Vitest 与 Testing Library 覆盖 URL 状态、搜索防抖/键盘/取消、查询世代、版本固定分页、合并去重、指标管理、图表交互和错误状态。
+Vitest 与 Testing Library 覆盖 URL 状态、搜索防抖/键盘/取消、查询世代、版本固定分页、合并去重、指标管理、图表交互和错误状态；以及策略目录渲染与参数校验、任务提交体与幂等键、轮询节奏/终态停止/取消、扫描快照游标分页与失败明细、回测换算与摘要渲染、权益曲线连续拉取、订单/成交分页。
 
 ```bash
 npm --prefix web run check

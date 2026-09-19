@@ -107,6 +107,272 @@ function withMockFallback<T>(promise: Promise<T>, fallback: () => T): Promise<T>
   })
 }
 
+// ---- 金额缩放换算：后端 Price/Money 均为缩放 10000 的整数 ----
+
+const MONEY_SCALE = 10000
+
+/** 元 → 缩放整数（四舍五入到分位边界，避免浮点误差累积） */
+export function toScaled(yuan: number): number {
+  return Math.round(yuan * MONEY_SCALE)
+}
+
+/** 缩放整数 → 元 */
+export function fromScaled(scaled: number): number {
+  return scaled / MONEY_SCALE
+}
+
+// ---- 策略目录 ----
+
+export interface StrategyParamSpec {
+  default: number
+  min: number
+  max: number
+  integer: boolean
+}
+
+export interface StrategyDefinition {
+  strategy: string
+  version: string
+  primary_timeframe: string
+  warmup_bars: number
+  default_hold_bars: number
+  /** 服务端返回参数对象映射：{ 参数名: 规格 } */
+  parameters: Record<string, StrategyParamSpec>
+  features: string[]
+  auxiliary: string[]
+}
+
+export interface StrategyParam {
+  name: string
+  default: number
+  min: number
+  max: number
+  integer: boolean
+}
+
+/** 把服务端的参数映射转换为按名称排序的参数数组，供表单渲染 */
+export function strategyParamList(definition: StrategyDefinition): StrategyParam[] {
+  return Object.entries(definition.parameters)
+    .map(([name, spec]) => ({ name, ...spec }))
+    .sort((left, right) => left.name.localeCompare(right.name))
+}
+
+// ---- 持久化策略任务（扫描与回测）----
+
+export type RunKind = 'scan' | 'backtest'
+export type RunResource = 'orders' | 'trades' | 'equity'
+
+export type RunStatusValue =
+  | 'PENDING'
+  | 'RUNNING'
+  | 'SUCCEEDED'
+  | 'PARTIAL_SUCCEEDED'
+  | 'FAILED'
+  | 'CANCELLED'
+
+export interface RunReference {
+  run_id: string
+  status: string
+}
+
+export interface BacktestSummary {
+  total_return: number | null
+  annualized_return: number | null
+  maximum_drawdown: number | null
+  closed_trades: number
+  win_rate: number | null
+  profit_factor: number | null
+  average_holding_bars: number
+  has_open_position: boolean
+}
+
+export interface RunStatus {
+  run_id: string
+  status: RunStatusValue
+  kind: RunKind
+  strategy: string
+  strategy_version: string
+  data_version: number
+  engine_version: string
+  attempts: number
+  cancel_requested_at: string | null
+  /** 扫描终态 SUCCEEDED/PARTIAL_SUCCEEDED 时返回，用于精确定位快照 */
+  snapshot_id?: string
+  /** 回测 SUCCEEDED 时返回 */
+  summary?: BacktestSummary
+}
+
+export interface ScanRunInput {
+  strategy: string
+  strategy_version: string
+  idempotency_key: string
+  from: string
+  as_of: string
+  parameters?: Record<string, number>
+  scope: { exchanges: string[]; active_only: boolean; limit: number }
+}
+
+export interface BacktestConfigInput {
+  initial_cash: number
+  cash_fraction_bps: number
+  commission_bps: number
+  minimum_commission: number
+  stamp_duty_bps: number
+  transfer_fee_bps: number
+  slippage_bps: number
+  lot_size: number
+  hold_bars: number
+}
+
+export interface BacktestRunInput {
+  instrument: string
+  strategy: string
+  strategy_version: string
+  idempotency_key: string
+  start: string
+  end: string
+  parameters?: Record<string, number>
+  config: BacktestConfigInput
+}
+
+export function listStrategies(): Promise<StrategyDefinition[]> {
+  return request<StrategyDefinition[]>('/api/v1/strategies')
+}
+
+export function getRun(kind: RunKind, runId: string): Promise<RunStatus> {
+  return request<RunStatus>(`/api/v1/${kind}-runs/${encodeURIComponent(runId)}`)
+}
+
+export function cancelRun(kind: RunKind, runId: string): Promise<void> {
+  return request<void>(`/api/v1/${kind}-runs/${encodeURIComponent(runId)}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  })
+}
+
+function postTask<T>(url: string, input: unknown): Promise<T> {
+  return request<T>(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+export function createScanRun(input: ScanRunInput): Promise<RunReference> {
+  return postTask<RunReference>('/api/v1/scan-runs', input)
+}
+
+export function createBacktestRun(input: BacktestRunInput): Promise<RunReference> {
+  return postTask<RunReference>('/api/v1/backtest-runs', input)
+}
+
+// ---- 快照与结果分页 ----
+
+export interface Page<T> {
+  items: T[]
+  next_sequence?: number
+}
+
+export interface SnapshotPageQuery {
+  strategy: string
+  strategy_version?: string
+  parameters_hash?: string
+  snapshot_id?: string
+  after_sequence?: number
+  limit?: number
+}
+
+export interface SnapshotKey {
+  snapshot_id: string
+  strategy_id: string
+  strategy_version: string
+  parameters_hash: string
+  as_of: string
+}
+
+export interface SnapshotRow {
+  instrument: string
+  signal_time: string
+  reason: string
+  values?: Record<string, number>
+}
+
+export interface SnapshotFailure {
+  instrument: string
+  code: string
+  message: string
+  retryable: boolean
+}
+
+export interface SnapshotPage {
+  snapshot_id: string
+  run_id: string
+  key: SnapshotKey
+  data_version: number
+  rows: SnapshotRow[]
+  failures: SnapshotFailure[]
+  next_sequence?: number
+}
+
+export function fetchSnapshotPage(query: SnapshotPageQuery): Promise<SnapshotPage> {
+  const params = new URLSearchParams({ strategy: query.strategy })
+  if (query.strategy_version) params.set('strategy_version', query.strategy_version)
+  if (query.parameters_hash) params.set('parameters_hash', query.parameters_hash)
+  if (query.snapshot_id) params.set('snapshot_id', query.snapshot_id)
+  if (query.after_sequence !== undefined && query.after_sequence > 0) {
+    params.set('after_sequence', String(query.after_sequence))
+  }
+  params.set('limit', String(query.limit ?? 100))
+  return request<SnapshotPage>(`/api/v1/signal-snapshots/latest?${params}`)
+}
+
+export function fetchRunPage<T>(
+  kind: RunKind,
+  runId: string,
+  resource: RunResource,
+  after?: number,
+  limit?: number,
+): Promise<Page<T>> {
+  const params = new URLSearchParams({ limit: String(limit ?? 100) })
+  if (after !== undefined && after > 0) params.set('after_sequence', String(after))
+  return request<Page<T>>(`/api/v1/${kind}-runs/${encodeURIComponent(runId)}/${resource}?${params}`)
+}
+
+// ---- 回测结果行 ----
+
+export interface BacktestOrder {
+  id: string
+  instrument: string
+  side: number
+  quantity: number
+  created_at: string
+  reason: string
+  attempted_at: string
+  final_reason: number
+}
+
+export interface BacktestFill {
+  id: string
+  order_id: string
+  instrument: string
+  side: number
+  time: string
+  price: number
+  quantity: number
+  gross: number
+  commission: number
+  stamp_duty: number
+  transfer_fee: number
+}
+
+export interface EquityPoint {
+  time: string
+  equity: number
+  cash: number
+  position_value: number
+}
+
 export function searchInstruments(query: string, signal?: AbortSignal): Promise<InstrumentSummary[]> {
   const params = new URLSearchParams({ q: query.trim(), limit: '20' })
   return withMockFallback(
