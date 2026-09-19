@@ -2,28 +2,22 @@ package data
 
 import (
 	"errors"
+	"testing"
+	"time"
+	"trading/config"
+	"trading/model"
+
 	"github.com/DATA-DOG/go-sqlmock"
 	driver "github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/require"
 	mysqlgorm "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"testing"
-	"time"
-	"trading/config"
-	"trading/model"
 )
 
-func TestRuntimeModelsExcludeLegacyTechnicalKlines(t *testing.T) {
+func TestRuntimeModelsKeepOnlyLegacyMigrationInfoTable(t *testing.T) {
 	models := runtimeModels()
-	require.Contains(t, models, any(&model.FinancialReport{}))
-	require.Contains(t, models, any(&model.StockInfo{}))
-	for _, schema := range models {
-		switch schema.(type) {
-		case *model.StockKlineDaily, *model.StockKlineWeekly:
-			t.Fatalf("legacy technical table remains in runtime migration: %T", schema)
-		}
-	}
+	require.Equal(t, []any{&model.StockInfo{}}, models)
 }
 
 func TestMySQLDSNUsesUTCForKernelDatetimeRoundTrips(t *testing.T) {
@@ -50,7 +44,7 @@ func TestInitializationClosesConnectionOnRuntimeMigrationFailure(t *testing.T) {
 	mock.ExpectQuery("SELECT SCHEMA_NAME").WillReturnRows(sqlmock.NewRows([]string{"schema_name"}).AddRow("test"))
 	mock.ExpectQuery("SELECT count.*information_schema.tables").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	failure := errors.New("runtime migration unavailable")
-	mock.ExpectExec("CREATE TABLE `financial_reports`").WillReturnError(failure)
+	mock.ExpectExec("CREATE TABLE `t_stock_info`").WillReturnError(failure)
 	mock.ExpectClose()
 	got, err := initializeData(config.DB{}, db, migrateSchema)
 	require.Nil(t, got)
