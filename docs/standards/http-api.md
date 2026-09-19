@@ -125,7 +125,7 @@ Task12 延后的游标输出在此补齐：不可变快照行以1开始连续编
 
 `GET /api/v1/watchlist` 返回按添加时间升序的自选证券。每项包含完整身份（`instrument,code,name,exchange,board,lot_size`）与最新日线报价 `close,change,change_pct`：价格以元为单位，`change_pct` 为百分数原值；无可用数据时相应字段为 `null`。仅返回当前活跃证券，非活跃条目保留在表中但不显示。
 
-`POST /api/v1/watchlist` 请求体 `{"instrument":"SSE:600000"}`；身份非法 400，未知或非活跃证券 404，已存在视为幂等成功，上限 100 只、超出 409。`DELETE /api/v1/watchlist/:instrument` 完整身份按 URL 编码传递（如 `SSE%3A600000`），条目不存在视为幂等成功。两个变更接口成功后返回更新后的完整列表。
+`POST /api/v1/watchlist` 请求体 `{"instrument":"SSE:600000"}`；身份非法 400，未知或非活跃证券 404，已存在视为幂等成功，上限 100 只、超出 409（message 为 `WATCHLIST_FULL`）。`DELETE /api/v1/watchlist/:instrument` 完整身份按 URL 编码传递（如 `SSE%3A600000`），条目不存在视为幂等成功。两个变更接口成功后返回更新后的完整列表。
 
 ```bash
 curl http://localhost:8080/api/v1/watchlist
