@@ -2,9 +2,15 @@
 id: CHG-2026-09-19-legacy-table-migration-DESIGN
 authority: normative
 approval_status: approved
+approved_by: user
+approved_at: "2026-09-19"
+approved_revision: "de5a212:docs/changes/active/2026-09-19-legacy-table-migration/design.md"
+approved_scope: [LTM-001, LTM-002, LTM-003, LTM-004, LTM-005]
 ---
 
 # 目标设计：迁移数据源收敛为旧表直迁
+
+> 批准证据：用户 2026-09-19 会话裁决"行，那就按照计划执行吧"，批准按本设计（含 3 commit 实施顺序）执行。
 
 ## 1. 合并后状态
 

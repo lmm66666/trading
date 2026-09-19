@@ -105,7 +105,7 @@ func (s *SinaMarketSource) get(ctx context.Context, endpoint string) ([]byte, er
 	var last error
 	for attempt := 0; attempt < 3; attempt++ {
 		if err := s.limiter.Wait(ctx); err != nil {
-			return nil, classifyEastmoneyRequestError(err)
+			return nil, classifyUpstreamRequestError(err)
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
@@ -116,7 +116,7 @@ func (s *SinaMarketSource) get(ctx context.Context, endpoint string) ([]byte, er
 		req.Header.Set("User-Agent", "trading/1.0")
 		resp, err := s.client.Do(req)
 		if err != nil {
-			last = classifyEastmoneyRequestError(err)
+			last = classifyUpstreamRequestError(err)
 			if ctx.Err() != nil || !retryableSinaError(last) || attempt == 2 {
 				return nil, last
 			}
@@ -126,7 +126,7 @@ func (s *SinaMarketSource) get(ctx context.Context, endpoint string) ([]byte, er
 		_ = resp.Body.Close()
 		retryable := retryableSinaStatus(resp.StatusCode)
 		if readErr != nil {
-			last = classifyEastmoneyRequestError(readErr)
+			last = classifyUpstreamRequestError(readErr)
 			retryable = retryableSinaError(last)
 		} else if len(body) > sinaResponseLimit {
 			return nil, fmt.Errorf("%w: body exceeds limit", ErrMalformedResponse)
@@ -139,7 +139,7 @@ func (s *SinaMarketSource) get(ctx context.Context, endpoint string) ([]byte, er
 			return nil, last
 		}
 		if err := waitForSinaRetry(ctx, last); err != nil {
-			return nil, classifyEastmoneyRequestError(err)
+			return nil, classifyUpstreamRequestError(err)
 		}
 	}
 	return nil, last
@@ -242,19 +242,19 @@ func ParseSinaDaily(body []byte, id market.InstrumentID, from, to time.Time) ([]
 		if at.After(to) {
 			return nil, fmt.Errorf("%w: daily response after requested range", ErrIncompleteData)
 		}
-		open, err := parseEastmoneyScaled(strings.TrimSpace(row.Open), market.ValueScale)
+		open, err := parseScaledPrice(strings.TrimSpace(row.Open), market.ValueScale)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid open", ErrMalformedResponse)
 		}
-		high, err := parseEastmoneyScaled(strings.TrimSpace(row.High), market.ValueScale)
+		high, err := parseScaledPrice(strings.TrimSpace(row.High), market.ValueScale)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid high", ErrMalformedResponse)
 		}
-		low, err := parseEastmoneyScaled(strings.TrimSpace(row.Low), market.ValueScale)
+		low, err := parseScaledPrice(strings.TrimSpace(row.Low), market.ValueScale)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid low", ErrMalformedResponse)
 		}
-		closePrice, err := parseEastmoneyScaled(strings.TrimSpace(row.Close), market.ValueScale)
+		closePrice, err := parseScaledPrice(strings.TrimSpace(row.Close), market.ValueScale)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid close", ErrMalformedResponse)
 		}

@@ -17,7 +17,6 @@ import (
 var (
 	_ port.MarketData          = (*fakeMarketData)(nil)
 	_ port.MarketDataWriter    = (*fakeMarketDataWriter)(nil)
-	_ port.MarketSource        = (*fakeMarketSource)(nil)
 	_ port.RunStore            = (*fakeRunStore)(nil)
 	_ port.JobQueue            = (*fakeJobQueue)(nil)
 	_ port.SignalSnapshotStore = (*fakeSnapshotStore)(nil)
@@ -376,16 +375,6 @@ type fakeMarketDataWriter struct{}
 
 func (*fakeMarketDataWriter) Publish(context.Context, port.MarketWriteBatch) (market.DataVersion, error) {
 	return 0, nil
-}
-
-type fakeMarketSource struct{}
-
-func (*fakeMarketSource) FetchBars(context.Context, market.InstrumentID, market.Timeframe, time.Time, time.Time) ([]market.Bar, []market.AdjustmentFactor, error) {
-	return nil, nil, nil
-}
-
-func (*fakeMarketSource) FetchCorporateActions(context.Context, market.InstrumentID) ([]market.CorporateAction, error) {
-	return nil, nil
 }
 
 type fakeRunStore struct{}

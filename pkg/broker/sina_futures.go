@@ -158,19 +158,19 @@ func ParseSinaFuturesDaily(body []byte, id market.InstrumentID, from, to time.Ti
 		if tradeDate.Before(fromDate) {
 			continue
 		}
-		open, err := parseEastmoneyScaled(strings.TrimSpace(row.Open), market.ValueScale)
+		open, err := parseScaledPrice(strings.TrimSpace(row.Open), market.ValueScale)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid futures open", ErrMalformedResponse)
 		}
-		high, err := parseEastmoneyScaled(strings.TrimSpace(row.High), market.ValueScale)
+		high, err := parseScaledPrice(strings.TrimSpace(row.High), market.ValueScale)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid futures high", ErrMalformedResponse)
 		}
-		low, err := parseEastmoneyScaled(strings.TrimSpace(row.Low), market.ValueScale)
+		low, err := parseScaledPrice(strings.TrimSpace(row.Low), market.ValueScale)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid futures low", ErrMalformedResponse)
 		}
-		closePrice, err := parseEastmoneyScaled(strings.TrimSpace(row.Close), market.ValueScale)
+		closePrice, err := parseScaledPrice(strings.TrimSpace(row.Close), market.ValueScale)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid futures close", ErrMalformedResponse)
 		}
@@ -179,7 +179,7 @@ func ParseSinaFuturesDaily(body []byte, id market.InstrumentID, from, to time.Ti
 			return nil, fmt.Errorf("%w: invalid futures volume", ErrMalformedResponse)
 		}
 		openInterest, oiErr := strconv.ParseInt(strings.TrimSpace(row.OpenInterest), 10, 64)
-		settlement, settlementErr := parseEastmoneyScaled(strings.TrimSpace(row.Settlement), market.ValueScale)
+		settlement, settlementErr := parseScaledPrice(strings.TrimSpace(row.Settlement), market.ValueScale)
 		if oiErr != nil || openInterest < 0 || settlementErr != nil || settlement < 0 {
 			return nil, fmt.Errorf("%w: invalid futures metadata", ErrMalformedResponse)
 		}
