@@ -6,7 +6,7 @@ approval_provenance: inherited-current-design
 approved_by: null
 approved_at: null
 approved_revision: null
-owns: ["pkg/broker/", "pkg/broker/testdata/", "pkg/indicator/limiter.go", "pkg/indicator/limiter_test.go"]
+owns: ["pkg/broker/", "pkg/broker/testdata/"]
 related: []
 ---
 
@@ -15,21 +15,20 @@ related: []
 | 属性 | 内容 |
 |---|---|
 | 状态 | 当前有效 |
-| 适用范围 | `pkg/broker`、共享 `pkg/indicator.Limiter` |
-| 最后更新 | 2026-09-14 |
+| 适用范围 | `pkg/broker` |
+| 最后更新 | 2026-09-19 |
 
 ## 1. 职责与非职责
 
-本模块把新浪和东方财富等外部 HTTP 响应转换为经过边界校验的行情、复权因子、公司行动、财报和宏观数据。新行情内核通过 `internal/port` 接口消费适配器；旧财报业务继续使用兼容 Broker 能力。
+本模块把新浪和东方财富等外部 HTTP 响应转换为经过边界校验的行情、复权因子和公司行动数据。新行情内核通过 `internal/port` 接口消费适配器；旧库迁移命令使用东财适配器回填历史。
 
-Broker 不选择生产行情版本、不写数据库、不聚合生产周线或决定策略信号。新行情与迁移适配器必须把来源错误和不完整数据显式返回；旧 `SinaBroker` 的宽松解析例外见第 5 节。
+Broker 不选择生产行情版本、不写数据库、不聚合生产周线或决定策略信号。行情与迁移适配器必须把来源错误和不完整数据显式返回。
 
 ## 2. 数据源与能力
 
 - `SinaMarketSource`：A 股日线与前复权因子，支持 SSE、SZSE、BSE 完整身份。
 - `SinaFuturesSource`：固定期货 `.MAIN` 主力连续日线；向领域提供 1:1 因子。
-- `EastmoneyMarketSource`：原始/QFQ K 线和公司行动，主要服务旧迁移回填与兼容能力。
-- 其他新浪/东方财富入口：财报、汇率、SHIBOR 和旧业务查询。
+- `EastmoneyMarketSource`：原始/QFQ K 线和公司行动，主要服务旧库迁移回填。
 
 生产行情来源选择和刷新窗口由应用层定义。
 
@@ -71,27 +70,19 @@ Broker 不选择生产行情版本、不写数据库、不聚合生产周线或�
 - 新新浪行情来源传输最多进行有界重试，只重试超时、429 和 5xx，并尊重合法 `Retry-After`；取消不重试。
 - 新行情与迁移来源若不能证明响应完整，就返回错误而不是部分 Bar/Action。
 
-### 5.1 旧兼容 `SinaBroker`
-
-`SinaBroker` 服务财报、宏观、旧实时行情等兼容调用，保留独立 HTTP 行为：15 秒客户端超时、最多 3 次线性退避重试；传输错误、读体错误和 5xx 会重试，4xx（包括 429）直接失败，不解释 `Retry-After`。它不接入新行情来源的共享 `rate.Limiter`，当前读体也没有硬上限。
-
-旧实时行情批量解析会跳过字段不足或无法识别的记录并返回其余结果；股票数值解析失败时沿用零值，缺失日期使用本机当前日期。除单证券查询最终找不到代码外，这些情况不会转换为批次级错误，因此调用方可能收到部分批次或含零值的记录。
-
-这些规则是现状兼容边界，不是新适配器范式。统一限频、错误分类和响应上限可能改变旧调用的失败及重试语义，必须通过大型需求推进；新代码不得复制该例外。
-
 ## 6. 安全与性能约束
 
 - 新适配器的 URL 基址必须能解析为合法 scheme/host，但附加部分按端点处理：新浪期货和因子基址拒绝 query/fragment；东方财富拒绝 fragment、保留既有 query 并以请求参数覆盖同名键；新浪日线保留既有 query 并覆盖自身参数，当前不显式拒绝 fragment。
-- 新行情来源的日线长度、响应体、公司行动页数和页大小都有硬上限；旧 `SinaBroker` 的无上限读体属于已记录兼容边界。
+- 新行情来源的日线长度、响应体、公司行动页数和页大小都有硬上限。
 - 错误与日志只保留来源、状态码、内容类型、长度和稳定分类，不记录完整响应、Cookie、Token 或 URL 凭据。
 - HTTP 调用不得发生在数据库事务内。
 
 ## 7. 测试与验收证据
 
-Fixture、受控 `RoundTripper` 与测试服务器覆盖新行情适配器的严格解析、日期/数值边界、分页完整性、错误分类、限频、重试、取消、响应上限、期货白名单和已知上游异常。限频断言记录请求进入 Transport 的时间，避免本地网络调度和首个响应耗时造成伪失败。旧兼容 Broker 按本节单独验证其既有重试与错误行为。
+Fixture、受控 `RoundTripper` 与测试服务器覆盖新行情适配器的严格解析、日期/数值边界、分页完整性、错误分类、限频、重试、取消、响应上限、期货白名单和已知上游异常。限频断言记录请求进入 Transport 的时间，避免本地网络调度和首个响应耗时造成伪失败。
 
 ```bash
-go test ./pkg/broker ./pkg/indicator -cover
+go test ./pkg/broker -cover
 ```
 
 ## 8. 相关文档
