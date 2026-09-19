@@ -1,6 +1,6 @@
 ---
 id: CHG-2026-09-20-strategy-frontend
-status: draft
+status: verifying
 authority: normative
 approval_status: approved
 approved_by: user
