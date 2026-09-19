@@ -6,26 +6,24 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
 	"trading/internal/market"
 	"trading/internal/port"
 	"trading/model"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/require"
 )
 
-func longLegacyFixture(n int) (legacyInstrument, migrationSource) {
+func longLegacyFixture(n int) legacyInstrument {
 	id := market.InstrumentID{Exchange: market.SSE, Code: "600000"}
 	item := legacyInstrument{ID: id, Bars: map[market.Timeframe][]model.StockKline{}}
-	source := migrationSource{bars: map[market.Timeframe][]market.Bar{}}
 	for i := 0; i < n; i++ {
 		at := time.Date(2000, 1, 1+i, 0, 0, 0, 0, time.UTC)
 		item.Bars[market.Day] = append(item.Bars[market.Day], model.StockKline{Code: id.Code, Date: at.Format("2006-01-02"), Open: 10, High: 11, Low: 9, Close: 10, Volume: 100})
-		source.bars[market.Day] = append(source.bars[market.Day], market.Bar{Instrument: id, Timeframe: market.Day, OpenTime: at, CloseTime: at, Open: 100000, High: 110000, Low: 90000, Close: 100000, Volume: 100})
-		source.factors = append(source.factors, market.AdjustmentFactor{EffectiveTime: at, Numerator: int64(i + 1), Denominator: 1})
 	}
-	return item, source
+	return item
 }
 
 func targetStateRows(t *testing.T, state legacyTargetCursor) *sqlmock.Rows {
@@ -64,8 +62,8 @@ func legacyStoredBars(bars []market.Bar, start int) *sqlmock.Rows {
 
 func TestLegacyTargetFailureResumesAfterCommittedBoundedBatch(t *testing.T) {
 	repo, mock := mockRepository(t)
-	item, source := longLegacyFixture(3)
-	batch, err := backfillLegacy(context.Background(), source, item)
+	item := longLegacyFixture(3)
+	batch, err := backfillLegacy(item)
 	require.NoError(t, err)
 	state := legacyTargetCursor{InstrumentID: 41, Digest: batch.Digest}
 	mock.ExpectQuery("SELECT .*t_legacy_kernel_migration").WillReturnRows(targetStateRows(t, state))
@@ -106,7 +104,7 @@ func TestLegacyTargetFailureResumesAfterCommittedBoundedBatch(t *testing.T) {
 	mock.ExpectQuery("SELECT .*t_adjustment_factors.*LIMIT").WillReturnRows(emptyRows())
 	mock.ExpectQuery("SELECT .*t_corporate_actions.*LIMIT").WillReturnRows(emptyRows())
 	mock.ExpectBegin()
-	expectTargetCheckpoint(mock, item.ID, [4]int{3, 0, 3}, true)
+	expectTargetCheckpoint(mock, item.ID, [4]int{3, 0, 0}, true)
 	mock.ExpectExec("INSERT INTO `t_legacy_kernel_migration`").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	require.NoError(t, writeLegacyInstrument(repo.db, 1, item, batch, 1))
@@ -169,9 +167,9 @@ func expectSourceScan(mock sqlmock.Sqlmock, dry bool) {
 func expectPutState(mock sqlmock.Sqlmock) {
 	mock.ExpectExec("INSERT INTO `t_legacy_kernel_migration`").WillReturnResult(sqlmock.NewResult(0, 1))
 }
-func expectLoadOneInstrument(t *testing.T, mock sqlmock.Sqlmock, dry bool) {
+func expectLoadOneInstrument(t *testing.T, mock sqlmock.Sqlmock, dry bool, daily model.StockKline) {
 	t.Helper()
-	item, _ := legacyFixture(t)
+	item := legacyFixture(t)
 	for index, stage := range legacyStages {
 		if dry {
 			q := mock.ExpectQuery("SELECT .*t_stock_")
@@ -179,7 +177,7 @@ func expectLoadOneInstrument(t *testing.T, mock sqlmock.Sqlmock, dry bool) {
 			case 0:
 				q.WillReturnRows(oneSourceInfo())
 			case 1:
-				q.WillReturnRows(oneSourceDaily())
+				q.WillReturnRows(sqlmock.NewRows([]string{"id", "code", "date", "open", "high", "low", "close", "volume"}).AddRow(9, daily.Code, daily.Date, daily.Open, daily.High, daily.Low, daily.Close, daily.Volume))
 			case 2:
 				q.WillReturnRows(emptyRows())
 			}
@@ -187,7 +185,7 @@ func expectLoadOneInstrument(t *testing.T, mock sqlmock.Sqlmock, dry bool) {
 		}
 		rows := sqlmock.NewRows([]string{"legacy_id", "payload"})
 		if index < 2 {
-			var value any = item.Bars[market.Day][0]
+			var value any = daily
 			if index == 0 {
 				value = model.StockInfo{Code: item.ID.Code, Name: item.Name}
 			}
@@ -222,13 +220,13 @@ func expectMigrationRelease(mock sqlmock.Sqlmock) {
 
 func TestLegacyStreamingRunCompletesAfterVerifiedTargetBatches(t *testing.T) {
 	repo, mock := mockRepository(t)
-	item, source := legacyFixture(t)
-	batch, err := backfillLegacy(context.Background(), source, item)
+	item := legacyFixture(t)
+	batch, err := backfillLegacy(item)
 	require.NoError(t, err)
 	expectMigrationStart(mock)
 	expectSourceScan(mock, false)
 	expectPutState(mock)
-	expectLoadOneInstrument(t, mock, false)
+	expectLoadOneInstrument(t, mock, false, item.Bars[market.Day][0])
 	mock.ExpectQuery("SELECT .*t_legacy_kernel_migration").WillReturnRows(emptyRows())
 	expectPutState(mock)
 	mock.ExpectQuery("SELECT .*t_legacy_kernel_migration").WillReturnRows(emptyRows())
@@ -241,15 +239,11 @@ func TestLegacyStreamingRunCompletesAfterVerifiedTargetBatches(t *testing.T) {
 	expectOneLegacyBar(mock, batch.Bars[market.Day][0]).WillReturnResult(sqlmock.NewResult(1, 1))
 	expectTargetCheckpoint(mock, item.ID, [4]int{1}, false)
 	mock.ExpectCommit()
-	mock.ExpectBegin()
-	mock.ExpectExec("INSERT INTO `t_adjustment_factors`").WillReturnResult(sqlmock.NewResult(1, 1))
-	expectTargetCheckpoint(mock, item.ID, [4]int{1, 0, 1}, false)
-	mock.ExpectCommit()
 	mock.ExpectQuery("SELECT .*t_market_bars.*LIMIT").WillReturnRows(legacyStoredBars(batch.Bars[market.Day], 1))
-	mock.ExpectQuery("SELECT .*t_adjustment_factors.*LIMIT").WillReturnRows(sqlmock.NewRows([]string{"id", "effective_time", "numerator", "denominator"}).AddRow(1, batch.Factors[0].EffectiveTime, 1, 1))
+	mock.ExpectQuery("SELECT .*t_adjustment_factors.*LIMIT").WillReturnRows(emptyRows())
 	mock.ExpectQuery("SELECT .*t_corporate_actions.*LIMIT").WillReturnRows(emptyRows())
 	mock.ExpectBegin()
-	expectTargetCheckpoint(mock, item.ID, [4]int{1, 0, 1}, true)
+	expectTargetCheckpoint(mock, item.ID, [4]int{1, 0, 0}, true)
 	expectPutState(mock)
 	mock.ExpectCommit()
 	expectPutState(mock)
@@ -260,7 +254,7 @@ func TestLegacyStreamingRunCompletesAfterVerifiedTargetBatches(t *testing.T) {
 	expectPutState(mock)
 	mock.ExpectCommit()
 	expectMigrationRelease(mock)
-	report, err := NewLegacyMigrator(repo.db, source).Run(context.Background(), MigrationOptions{BatchSize: 100})
+	report, err := NewLegacyMigrator(repo.db).Run(context.Background(), MigrationOptions{BatchSize: 100})
 	require.NoError(t, err)
 	require.Equal(t, port.DataComplete, report.Quality)
 	require.True(t, report.BacktestEnabled)
@@ -274,13 +268,14 @@ func TestLegacyDryRunFailureReportsInstrumentAndStableCategory(t *testing.T) {
 	for _, failed := range []bool{false, true} {
 		t.Run(fmt.Sprint(failed), func(t *testing.T) {
 			repo, mock := mockRepository(t)
-			_, source := legacyFixture(t)
+			item := legacyFixture(t)
+			daily := item.Bars[market.Day][0]
 			if failed {
-				source.err = errors.New("account:password@tcp(secret)/db")
+				daily.Date = "corrupt-date"
 			}
 			expectSourceScan(mock, true)
-			expectLoadOneInstrument(t, mock, true)
-			report, err := NewLegacyMigrator(repo.db, source).Run(context.Background(), MigrationOptions{DryRun: true, BatchSize: 100})
+			expectLoadOneInstrument(t, mock, true, daily)
+			report, err := NewLegacyMigrator(repo.db).Run(context.Background(), MigrationOptions{DryRun: true, BatchSize: 100})
 			require.False(t, report.BacktestEnabled)
 			require.Zero(t, report.Version)
 			if failed {
@@ -288,7 +283,7 @@ func TestLegacyDryRunFailureReportsInstrumentAndStableCategory(t *testing.T) {
 				require.Equal(t, []MigrationFailure{{Instrument: market.InstrumentID{Exchange: market.SSE, Code: "600000"}, Category: "SOURCE_UNAVAILABLE"}}, report.Failures)
 				encoded, err := json.Marshal(report)
 				require.NoError(t, err)
-				require.NotContains(t, string(encoded), "password")
+				require.NotContains(t, string(encoded), "corrupt-date")
 				require.Equal(t, port.DataIncomplete, report.Quality)
 			} else {
 				require.NoError(t, err)
@@ -303,7 +298,7 @@ func TestLegacyRunRejectsExistingMarketVersionBeforeSchemaOrSourceRead(t *testin
 	mock.ExpectQuery("SELECT GET_LOCK").WillReturnRows(sqlmock.NewRows([]string{"lock"}).AddRow(1))
 	mock.ExpectQuery("SELECT .*t_market_data_versions").WillReturnRows(versionRows(1))
 	expectMigrationRelease(mock)
-	report, err := NewLegacyMigrator(repo.db, nil).Run(context.Background(), MigrationOptions{BatchSize: 100})
+	report, err := NewLegacyMigrator(repo.db).Run(context.Background(), MigrationOptions{BatchSize: 100})
 	require.ErrorIs(t, err, ErrLegacyTargetNotEmpty)
 	require.Equal(t, port.DataIncomplete, report.Quality)
 	require.False(t, report.BacktestEnabled)
@@ -317,7 +312,7 @@ func TestLegacyRunReturnsSameCompletedReportWithoutSourceOrTargetWrites(t *testi
 	mock.ExpectQuery("SELECT .*t_market_data_versions").WillReturnRows(migrationVersionRows(1, versionComplete))
 	mock.ExpectQuery("SELECT .*t_legacy_kernel_migration").WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(payload))
 	expectMigrationRelease(mock)
-	got, err := NewLegacyMigrator(repo.db, nil).Run(context.Background(), MigrationOptions{BatchSize: 100})
+	got, err := NewLegacyMigrator(repo.db).Run(context.Background(), MigrationOptions{BatchSize: 100})
 	require.NoError(t, err)
 	require.Equal(t, want, got)
 }
@@ -383,15 +378,16 @@ func TestLegacySourceCountsDailyWeeklyAndRejectsUnknownCodes(t *testing.T) {
 
 func TestLegacyPreparedFailurePersistsSafePerInstrumentDiagnostic(t *testing.T) {
 	repo, mock := mockRepository(t)
-	_, source := legacyFixture(t)
-	source.actionErr = errors.New("private password in upstream URL")
+	item := legacyFixture(t)
+	daily := item.Bars[market.Day][0]
+	daily.Date = "corrupt-date"
 	expectSourceScan(mock, false)
 	expectPutState(mock)
-	expectLoadOneInstrument(t, mock, false)
+	expectLoadOneInstrument(t, mock, false, daily)
 	mock.ExpectQuery("SELECT .*t_legacy_kernel_migration").WillReturnRows(emptyRows())
 	expectPutState(mock)
 	expectPutState(mock)
-	report, err := NewLegacyMigrator(repo.db, source).migratePrepared(repo.db, MigrationOptions{BatchSize: 100}, MigrationReport{Version: 1})
+	report, err := NewLegacyMigrator(repo.db).migratePrepared(repo.db, MigrationOptions{BatchSize: 100}, MigrationReport{Version: 1})
 	require.ErrorIs(t, err, ErrMigrationIncomplete)
 	require.Equal(t, port.DataIncomplete, report.Quality)
 	require.False(t, report.BacktestEnabled)
@@ -399,17 +395,16 @@ func TestLegacyPreparedFailurePersistsSafePerInstrumentDiagnostic(t *testing.T) 
 	require.Equal(t, "600000", report.Failures[0].Instrument.Code)
 }
 
-func TestLegacyCachedVerifiedTargetNeedsNoProviderOrMarketRewrites(t *testing.T) {
+func TestLegacyCachedVerifiedTargetNeedsNoMarketRewrites(t *testing.T) {
 	repo, mock := mockRepository(t)
-	item, source := legacyFixture(t)
-	batch, err := backfillLegacy(context.Background(), source, item)
+	item := legacyFixture(t)
+	batch, err := backfillLegacy(item)
 	require.NoError(t, err)
 	payload, err := json.Marshal(batch)
 	require.NoError(t, err)
-	source.err = errors.New("source offline")
 	expectSourceScan(mock, false)
 	expectPutState(mock)
-	expectLoadOneInstrument(t, mock, false)
+	expectLoadOneInstrument(t, mock, false, item.Bars[market.Day][0])
 	mock.ExpectQuery("SELECT .*t_legacy_kernel_migration").WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(payload))
 	mock.ExpectQuery("SELECT .*t_legacy_kernel_migration").WillReturnRows(targetStateRows(t, legacyTargetCursor{InstrumentID: 41, Digest: batch.Digest, Verified: true}))
 	expectPutState(mock)
@@ -419,7 +414,7 @@ func TestLegacyCachedVerifiedTargetNeedsNoProviderOrMarketRewrites(t *testing.T)
 	mock.ExpectExec("UPDATE `t_market_data_versions`").WillReturnResult(sqlmock.NewResult(0, 1))
 	expectPutState(mock)
 	mock.ExpectCommit()
-	report, err := NewLegacyMigrator(repo.db, source).migratePrepared(repo.db, MigrationOptions{BatchSize: 100}, MigrationReport{Version: 1})
+	report, err := NewLegacyMigrator(repo.db).migratePrepared(repo.db, MigrationOptions{BatchSize: 100}, MigrationReport{Version: 1})
 	require.NoError(t, err)
 	require.Equal(t, port.DataComplete, report.Quality)
 }
@@ -438,7 +433,7 @@ func TestLegacyRunHandlesBusyLockAndReleaseFailureConservatively(t *testing.T) {
 			} else {
 				mock.ExpectQuery("SELECT RELEASE_LOCK").WillReturnRows(sqlmock.NewRows([]string{"lock"}).AddRow(0))
 			}
-			report, err := NewLegacyMigrator(repo.db, nil).Run(context.Background(), MigrationOptions{BatchSize: 100})
+			report, err := NewLegacyMigrator(repo.db).Run(context.Background(), MigrationOptions{BatchSize: 100})
 			require.ErrorIs(t, err, ErrLegacyMigrationBusy)
 			require.Equal(t, port.DataIncomplete, report.Quality)
 			require.False(t, report.BacktestEnabled)
@@ -479,7 +474,7 @@ func TestLegacyApplyRejectsSingleConnectionPoolBeforeTakingLock(t *testing.T) {
 	pool, err := repo.db.DB()
 	require.NoError(t, err)
 	pool.SetMaxOpenConns(1)
-	_, err = NewLegacyMigrator(repo.db, nil).Run(context.Background(), MigrationOptions{BatchSize: 100})
+	_, err = NewLegacyMigrator(repo.db).Run(context.Background(), MigrationOptions{BatchSize: 100})
 	require.ErrorIs(t, err, port.ErrInvalidPortValue)
 }
 
@@ -488,7 +483,7 @@ func TestLegacyAmbiguousLockAcquisitionStillReleasesDedicatedConnection(t *testi
 	sentinel := errors.New("response lost after acquisition")
 	mock.ExpectQuery("SELECT GET_LOCK").WillReturnError(sentinel)
 	expectMigrationRelease(mock)
-	_, err := NewLegacyMigrator(repo.db, nil).Run(context.Background(), MigrationOptions{BatchSize: 100})
+	_, err := NewLegacyMigrator(repo.db).Run(context.Background(), MigrationOptions{BatchSize: 100})
 	require.ErrorIs(t, err, sentinel)
 }
 
@@ -579,8 +574,8 @@ func TestLegacyFinalSwitchRejectsMissingProofOrFailedUpdate(t *testing.T) {
 
 func testLegacyBatchWithActions(t *testing.T) port.MarketWriteBatch {
 	t.Helper()
-	item, source := legacyFixture(t)
-	batch, err := backfillLegacy(context.Background(), source, item)
+	item := legacyFixture(t)
+	batch, err := backfillLegacy(item)
 	require.NoError(t, err)
 	weekly := batch.Bars[market.Day][0]
 	weekly.Timeframe = market.Week
@@ -638,8 +633,8 @@ func TestLegacyTargetVerifiesWeeklyAndActionsAndRejectsCorruption(t *testing.T) 
 }
 
 func TestLegacyTargetRejectsInvalidOrUncommittedCursor(t *testing.T) {
-	item, source := legacyFixture(t)
-	batch, err := backfillLegacy(context.Background(), source, item)
+	item := legacyFixture(t)
+	batch, err := backfillLegacy(item)
 	require.NoError(t, err)
 	for _, state := range []legacyTargetCursor{{InstrumentID: 41, Digest: "different"}, {InstrumentID: 41, Digest: batch.Digest, Positions: [4]int{-1}}, {InstrumentID: 41, Digest: batch.Digest, Positions: [4]int{2}}} {
 		repo, mock := mockRepository(t)
@@ -660,7 +655,7 @@ func TestLegacyFrozenSourceReplayKeepsDigestAndDoesNotWrite(t *testing.T) {
 	expectSourceScan(mock, true)
 	_, first, err := streamLegacySource(repo.db, repo.db, MigrationOptions{DryRun: true, BatchSize: 100}, 1, false)
 	require.NoError(t, err)
-	item, _ := legacyFixture(t)
+	item := legacyFixture(t)
 	info := model.StockInfo{Code: item.ID.Code, Name: item.Name}
 	info.ID = 4
 	day := item.Bars[market.Day][0]
@@ -704,14 +699,14 @@ func TestLegacyPreparedStorageFailuresKeepInstrumentAndDisableBacktest(t *testin
 	for _, stage := range []string{"load", "cache-read", "cache-write", "target"} {
 		t.Run(stage, func(t *testing.T) {
 			repo, mock := mockRepository(t)
-			item, source := legacyFixture(t)
+			item := legacyFixture(t)
 			sentinel := errors.New("private driver credentials")
 			expectSourceScan(mock, false)
 			expectPutState(mock)
 			if stage == "load" {
 				mock.ExpectQuery("SELECT .*t_legacy_kernel_migration").WillReturnError(sentinel)
 			} else {
-				expectLoadOneInstrument(t, mock, false)
+				expectLoadOneInstrument(t, mock, false, item.Bars[market.Day][0])
 				q := mock.ExpectQuery("SELECT .*t_legacy_kernel_migration")
 				if stage == "cache-read" {
 					q.WillReturnError(sentinel)
@@ -726,7 +721,7 @@ func TestLegacyPreparedStorageFailuresKeepInstrumentAndDisableBacktest(t *testin
 				}
 			}
 			expectPutState(mock)
-			report, err := NewLegacyMigrator(repo.db, source).migratePrepared(repo.db, MigrationOptions{BatchSize: 100}, MigrationReport{Version: 1})
+			report, err := NewLegacyMigrator(repo.db).migratePrepared(repo.db, MigrationOptions{BatchSize: 100}, MigrationReport{Version: 1})
 			require.ErrorIs(t, err, sentinel)
 			require.Equal(t, port.DataIncomplete, report.Quality)
 			require.False(t, report.BacktestEnabled)
@@ -737,8 +732,8 @@ func TestLegacyPreparedStorageFailuresKeepInstrumentAndDisableBacktest(t *testin
 
 func TestLegacyCachedForeignSourceIsRejectedWithoutTargetWrites(t *testing.T) {
 	repo, mock := mockRepository(t)
-	item, source := legacyFixture(t)
-	batch, err := backfillLegacy(context.Background(), source, item)
+	item := legacyFixture(t)
+	batch, err := backfillLegacy(item)
 	require.NoError(t, err)
 	batch.Source = "foreign-source"
 	batch.Digest = ""
@@ -748,11 +743,11 @@ func TestLegacyCachedForeignSourceIsRejectedWithoutTargetWrites(t *testing.T) {
 	require.NoError(t, err)
 	expectSourceScan(mock, false)
 	expectPutState(mock)
-	expectLoadOneInstrument(t, mock, false)
+	expectLoadOneInstrument(t, mock, false, item.Bars[market.Day][0])
 	mock.ExpectQuery("SELECT .*t_legacy_kernel_migration").WillReturnRows(sqlmock.NewRows([]string{"payload"}).AddRow(payload))
 	expectPutState(mock)
 	expectPutState(mock)
-	report, err := NewLegacyMigrator(repo.db, source).migratePrepared(repo.db, MigrationOptions{BatchSize: 100}, MigrationReport{Version: 1})
+	report, err := NewLegacyMigrator(repo.db).migratePrepared(repo.db, MigrationOptions{BatchSize: 100}, MigrationReport{Version: 1})
 	require.ErrorIs(t, err, ErrMigrationIncomplete)
 	require.Equal(t, "INVALID_DATA", report.Failures[0].Category)
 	require.False(t, report.BacktestEnabled)
@@ -793,10 +788,10 @@ func TestLegacyFailedFinalCommitCannotReturnCompleteReport(t *testing.T) {
 }
 func TestLegacyLongHistoryAllocationsScaleLinearly(t *testing.T) {
 	measure := func(n int) int64 {
-		item, source := longLegacyFixture(n)
+		item := longLegacyFixture(n)
 		result := testing.Benchmark(func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_, err := backfillLegacy(context.Background(), source, item)
+				_, err := backfillLegacy(item)
 				if err != nil {
 					b.Fatal(err)
 				}

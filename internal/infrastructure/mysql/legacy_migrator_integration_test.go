@@ -21,7 +21,7 @@ func TestLegacyMigrationMySQLRestartAndIncompleteVisibility(t *testing.T) {
 			db := dbtest.OpenIsolatedMySQL(t, target)
 			require.NoError(t, Migrate(db))
 			require.NoError(t, db.AutoMigrate(&model.StockInfo{}, &model.StockKlineDaily{}, &model.StockKlineWeekly{}))
-			item, source := longLegacyFixture(3)
+			item := longLegacyFixture(3)
 			info := model.StockInfo{Code: item.ID.Code, Name: item.Name}
 			require.NoError(t, db.Create(&info).Error)
 			for _, bar := range item.Bars[market.Day] {
@@ -30,10 +30,19 @@ func TestLegacyMigrationMySQLRestartAndIncompleteVisibility(t *testing.T) {
 			}
 			ctx := context.Background()
 			opts := MigrationOptions{BatchSize: 1}
-			broken := source
-			broken.actionErr = errors.New("provider outage")
-			incomplete, err := NewLegacyMigrator(db, broken).Run(ctx, opts)
-			require.ErrorIs(t, err, ErrMigrationIncomplete)
+			attempts := 0
+			failAt := 1
+			require.NoError(t, db.Callback().Create().Before("gorm:create").Register("fail_target_batch", func(tx *gorm.DB) {
+				if tx.Statement.Table == "t_market_bars" {
+					attempts++
+					if attempts == failAt {
+						tx.AddError(errors.New("target batch unavailable"))
+					}
+				}
+			}))
+			// 第一次运行：首批目标写入失败，INCOMPLETE 版本可见且无行情行。
+			incomplete, err := NewLegacyMigrator(db).Run(ctx, opts)
+			require.Error(t, err)
 			require.Equal(t, port.DataIncomplete, incomplete.Quality)
 			require.False(t, incomplete.BacktestEnabled)
 			var stored DataVersionModel
@@ -47,16 +56,9 @@ func TestLegacyMigrationMySQLRestartAndIncompleteVisibility(t *testing.T) {
 			var count int64
 			require.NoError(t, db.Model(&MarketBarModel{}).Count(&count).Error)
 			require.Zero(t, count)
-			attempts := 0
-			require.NoError(t, db.Callback().Create().Before("gorm:create").Register("fail_second_legacy_batch", func(tx *gorm.DB) {
-				if tx.Statement.Table == "t_market_bars" {
-					attempts++
-					if attempts == 2 {
-						tx.AddError(errors.New("target batch unavailable"))
-					}
-				}
-			}))
-			partial, err := NewLegacyMigrator(db, source).Run(ctx, opts)
+			// 第二次运行：回填缓存命中，第一根成功、第二根失败，检查点保留已提交批次。
+			failAt = 3
+			partial, err := NewLegacyMigrator(db).Run(ctx, opts)
 			require.Error(t, err)
 			require.Equal(t, port.DataIncomplete, partial.Quality)
 			require.False(t, partial.BacktestEnabled)
@@ -71,13 +73,13 @@ func TestLegacyMigrationMySQLRestartAndIncompleteVisibility(t *testing.T) {
 			require.Error(t, err)
 			_, err = repo.Publish(ctx, testBatch(100000))
 			require.ErrorIs(t, err, ErrLegacyMigrationBusy)
-			require.NoError(t, db.Callback().Create().Remove("fail_second_legacy_batch"))
-			// 回填缓存已提交，恢复不依赖可用的 provider，也不重做第一批。
-			first, err := NewLegacyMigrator(db, broken).Run(ctx, opts)
+			// 回填缓存已提交，恢复只从失败批次之后继续，不重写已提交行。
+			require.NoError(t, db.Callback().Create().Remove("fail_target_batch"))
+			first, err := NewLegacyMigrator(db).Run(ctx, opts)
 			require.NoError(t, err)
 			require.Equal(t, incomplete.Version, first.Version)
 			require.True(t, first.BacktestEnabled)
-			second, err := NewLegacyMigrator(db, broken).Run(ctx, opts)
+			second, err := NewLegacyMigrator(db).Run(ctx, opts)
 			require.NoError(t, err)
 			require.Equal(t, first, second)
 			dataset, _, _, err := repo.Dataset(ctx, item.ID, market.Day, first.DailyDates.From, first.DailyDates.To, first.Version)

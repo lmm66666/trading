@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"trading/internal/market"
+
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
 	driver "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"trading/internal/market"
-	"trading/internal/port"
 )
 
 // 检查实际生成 SQL 的绑定数，不依赖实现中的 schema 计数或分块函数。
@@ -50,16 +50,18 @@ func TestLegacyLargeTargetBatchSplitsAtomicallyAndRetriesWholeFailedBatch(t *tes
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db, mock, counts := mockLegacyParameterBudget(t, tc.table, tc.columns)
-			item, source := longLegacyFixture(10000)
-			batch := port.MarketWriteBatch{Instrument: item.ID, Digest: "fixture", Bars: map[market.Timeframe][]market.Bar{}}
+			item := longLegacyFixture(10000)
+			batch, err := backfillLegacy(item)
+			require.NoError(t, err)
 			switch tc.kind {
-			case 0:
-				batch.Bars[market.Day] = source.bars[market.Day]
 			case 1:
-				batch.Bars[market.Week] = source.bars[market.Day]
+				batch.Bars[market.Week] = batch.Bars[market.Day]
+				delete(batch.Bars, market.Day)
 			case 2:
-				batch.Factors = source.factors
+				batch.Bars = map[market.Timeframe][]market.Bar{}
+				batch.Factors = make([]market.AdjustmentFactor, 10000)
 			case 3:
+				batch.Bars = map[market.Timeframe][]market.Bar{}
 				batch.Actions = make([]market.CorporateAction, 10000)
 			}
 			state := legacyTargetCursor{InstrumentID: 41, Digest: batch.Digest}
