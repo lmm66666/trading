@@ -6,7 +6,7 @@ approval_provenance: inherited-current-design
 approved_by: null
 approved_at: null
 approved_revision: null
-owns: ["web/", "web/src/", "web/src/api/", "web/src/features/chart/", "web/src/features/indicators/", "web/src/features/search/", "web/src/features/strategy/", "web/src/features/scan/", "web/src/features/backtest/", "web/src/test/"]
+owns: ["web/", "web/src/", "web/src/api/", "web/src/features/chart/", "web/src/features/indicators/", "web/src/features/search/", "web/src/features/strategy/", "web/src/features/scan/", "web/src/features/backtest/", "web/src/features/watchlist/", "web/src/test/"]
 related: []
 ---
 
@@ -22,16 +22,17 @@ related: []
 
 ## 1. 职责与非职责
 
-本模块是 React 行情工作台，负责证券搜索、日/周和 RAW/QFQ 切换、K 线与成交量展示、指标选择、固定版本向前分页、URL 状态和用户可理解的加载/错误反馈；并提供策略扫描与回测两个视图：策略目录选择与参数输入、扫描/回测任务的创建与轮询跟踪、扫描入选名单与失败明细分页、回测摘要/权益曲线/订单成交展示。
+本模块是 React 行情工作台，采用 TV 风格三段布局（顶栏：品牌、图表/扫描/回测 tabs、右上角搜索；左侧自选面板；主工作区），负责证券搜索、日/周和 RAW/QFQ 切换、K 线与成交量展示、指标选择、固定版本向前分页、图表缩放边界与历史自动加载、服务端自选清单管理、URL 状态和用户可理解的加载/错误反馈；并提供策略扫描与回测两个视图：策略目录选择与参数输入、扫描/回测任务的创建与轮询跟踪、扫描入选名单与失败明细分页、回测摘要/权益曲线/订单成交展示。
 
 前端不计算服务端技术指标或策略信号、不推断证券交易所、不选择不同页的最新行情版本、不保存历史任务列表（每类视图仅恢复最近一个任务标识）。
 
 ## 2. 组件和边界
 
-- `App` 管理已选证券、周期、复权视图、视图切换（图表/扫描/回测，URL `tab` 白名单）和移动搜索开关，并同步 URL；持有扫描/回测任务标识（localStorage `wb.scan_run_id`、`wb.backtest_run_id`）。
-- `InstrumentSearch` 对输入做 220ms 防抖，支持键盘导航，取消过期请求并返回完整证券身份。
-- `ChartWorkspace` 管理查询世代、固定版本分页、指标列表和页面状态。
-- `FinancialChart` 把 Bar 和指标 Series 映射到主图/副图。
+- `App` 采用两行网格布局（顶栏 48px 跨双列 + 自选面板 280px + 主工作区 1fr），管理已选证券、周期、复权视图、视图切换（图表/扫描/回测，URL `tab` 白名单）、移动端搜索浮层与自选抽屉开关，并同步 URL；持有扫描/回测任务标识（localStorage `wb.scan_run_id`、`wb.backtest_run_id`）与自选状态（挂载时 `listWatchlist`；`toggleWatch` 在列→移除、不在→添加，成功以服务端返回的完整列表替换，失败保留原列表并提示）。
+- `InstrumentSearch` 是嵌入顶栏右上角的紧凑 combobox（移动端由 CSS 切换为全屏浮层；回测面板内嵌第二个实例用于选择回测标的），对输入做 220ms 防抖，支持键盘导航，取消过期请求并返回完整证券身份；`/` 全局快捷键聚焦顶栏搜索（输入态除外），Escape 收起，选中后清空输入。
+- `WatchlistPanel` 展示自选行（名称/代码 + 最新价与涨跌幅，红涨绿跌，null 显示 —）、当前证券高亮、悬停移除、手动刷新与空/载/错三态；行点击进入图表视图。
+- `ChartWorkspace` 管理查询世代、固定版本分页、指标列表和页面状态；图表头部提供 ★ 收藏开关（`watched`/`onToggleWatch`，与自选列表一致）。
+- `FinancialChart` 把 Bar 和指标 Series 映射到主图/副图；按容器宽度换算可见 K 线数量上下限（桌面 15–400 根、容器 <768px 移动 10–160 根）为 `barSpacing` 边界并随容器尺寸重算，可见范围左缘接近已加载数据左端（阈值 12 根）且仍有历史时自动请求更早一页。
 - `IndicatorManager` 只管理服务端支持的参数预设，不在浏览器重新计算指标。
 - `features/strategy` 提供共享的策略表单（目录驱动的参数输入与 min/max/integer 校验）、任务轮询 hook（2 秒固定间隔、终态停止、连续 3 次网络错误停止）和任务状态条（状态徽标、取消入口）。
 - `features/scan` 提供扫描表单（时间窗口、交易所范围、active_only、limit）与入选名单/失败明细分页（游标 `after_sequence`）。
@@ -47,6 +48,9 @@ related: []
 - 首次图表请求使用服务端解析的正 `data_version`；加载更早数据必须传回同一版本和 `next_before`。
 - 旧页只有证券、周期、价格视图和版本都与当前结果一致时才允许合并。
 - Bar 按 close_time 去重并升序；指标按稳定 key 合并，点按 time 去重并升序。
+- 自选三接口不做 dev mock 回退（无后端时显示错误态）；变更成功以服务端返回的完整列表替换本地状态，失败保留原列表；报价仅在加载与手动刷新时读取，不做实时推送。
+- 价格轴（主图与各指标副图）始终自动缩放以适配可见 K 线与叠加指标；可见 K 线数量按设备上下限换算为 `barSpacing` 边界（`maxBarSpacing = 容器宽 / 最少根数`，`minBarSpacing = max(容器宽 / 最多根数, 3px)`），超出边界的缩放由图表库自动钳制，容器尺寸变化时重算。
+- 历史自动加载复用 `before` 游标、`has_more` 与查询世代守卫；加载中不重复触发，失败保留已展示数据并可重试。
 - 已取消或旧世代响应不得修改 UI，即使网络层稍后完成。
 - loading、ready、error 和“空行情”是不同状态；分页失败保留已经展示的数据并显示提示。
 - 任务轮询到达终态（含 PARTIAL_SUCCEEDED）即停止；连续 3 次网络错误停止轮询；面板卸载即停，任务在后端继续。
@@ -59,18 +63,18 @@ related: []
 搜索并选择完整证券身份
   → 请求固定版本图表页
   → 展示 K 线、成交量和指标
-  → 接近历史边界或点击加载
-  → 使用同 data_version + next_before 请求旧页
-  → 去重合并
+  → 缩放或平移使可见左缘接近已加载历史左端
+  → 自动使用同 data_version + next_before 请求旧页
+  → 去重合并并保持视口锚定
 ```
 
 指标变更会重新发起完整首屏查询，避免把不同指标集合的分页结果混合。
 
 ## 5. 交互和可访问性
 
-- 搜索输入使用 combobox/listbox 语义，支持上下键、Enter 和 Escape。
-- 周期和价格视图按钮暴露 `aria-pressed`，弹层和关闭按钮提供明确标签。
-- 移动端搜索使用侧栏、遮罩和可操作关闭入口。
+- 搜索输入使用 combobox/listbox 语义，支持上下键、Enter 和 Escape；`/` 全局快捷键聚焦搜索框（输入态除外）。
+- 周期和价格视图按钮暴露 `aria-pressed`，弹层和关闭按钮提供明确标签；图表头部 ★ 收藏开关暴露 `aria-pressed`。
+- 移动端（<768px）搜索为顶栏图标触发的全屏浮层，自选面板为抽屉 + 遮罩并保留可操作关闭入口；图表、扫描、回测面板可用性不退化。
 - 红涨绿跌是当前产品约定；文字和数值同时表达变化，不只依赖颜色。
 
 ## 6. 失败与安全语义
@@ -88,7 +92,7 @@ related: []
 
 ## 8. 测试与验收证据
 
-Vitest 与 Testing Library 覆盖 URL 状态、搜索防抖/键盘/取消、查询世代、版本固定分页、合并去重、指标管理、图表交互和错误状态；以及策略目录渲染与参数校验、任务提交体与幂等键、轮询节奏/终态停止/取消、扫描快照游标分页与失败明细、回测换算与摘要渲染、权益曲线连续拉取、订单/成交分页。
+Vitest 与 Testing Library 覆盖 URL 状态、搜索防抖/键盘/取消/`/` 快捷键、查询世代、版本固定分页、自动加载触发与防重复、barSpacing 边界换算、合并去重、指标管理、图表交互、自选面板三态与 ★ 切换流、错误状态；以及策略目录渲染与参数校验、任务提交体与幂等键、轮询节奏/终态停止/取消、扫描快照游标分页与失败明细、回测换算与摘要渲染、权益曲线连续拉取、订单/成交分页。
 
 ```bash
 npm --prefix web run check

@@ -14,6 +14,9 @@ interface ChartWorkspaceProps {
   instrument: string
   initialTimeframe: Timeframe
   initialPriceView: PriceView
+  /** 当前证券是否已在自选清单 */
+  watched: boolean
+  onToggleWatch: () => void
   onStateChange: (timeframe: Timeframe, priceView: PriceView) => void
   query?: typeof queryChart
 }
@@ -22,6 +25,8 @@ export function ChartWorkspace({
   instrument,
   initialTimeframe,
   initialPriceView,
+  watched,
+  onToggleWatch,
   onStateChange,
   query = queryChart,
 }: ChartWorkspaceProps) {
@@ -130,6 +135,16 @@ export function ChartWorkspace({
             <h2>{result?.instrument.name ?? '正在读取证券信息'}</h2>
             <p>{instrument} · {timeframe === 'DAY' ? '日线' : '周线'} · {priceView === 'QFQ' ? '前复权' : '不复权'}</p>
           </div>
+          <button
+            aria-label={watched ? '移除自选' : '添加自选'}
+            aria-pressed={watched}
+            className={watched ? 'watch-toggle active' : 'watch-toggle'}
+            onClick={onToggleWatch}
+            title={watched ? '移除自选' : '添加自选'}
+            type="button"
+          >
+            {watched ? '★' : '☆'}
+          </button>
         </div>
         {quote && (
           <div className={quote.change >= 0 ? 'quote-up' : 'quote-down'} aria-label="最新行情">
@@ -163,14 +178,7 @@ export function ChartWorkspace({
           <div className="chart-error"><strong>暂无行情数据</strong><span>该证券在当前周期没有可展示的 K 线。</span></div>
         )}
         {status === 'ready' && result && result.bars.length > 0 && (
-          <>
-            <FinancialChart bars={result.bars} onLoadMore={loadMore} series={result.series} />
-            {result.has_more && (
-              <button className="load-more" disabled={loadingMore} onClick={loadMore} type="button">
-                {loadingMore ? '正在加载…' : '加载更早行情'}
-              </button>
-            )}
-          </>
+          <FinancialChart bars={result.bars} onLoadMore={loadMore} series={result.series} />
         )}
         {error && status === 'ready' && <div className="chart-toast">{error}</div>}
       </section>

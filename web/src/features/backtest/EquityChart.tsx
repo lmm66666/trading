@@ -28,16 +28,16 @@ export function EquityChart({ runId }: EquityChartProps) {
     const chart = createChart(container, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: '#0c1017' },
-        textColor: '#8d98aa',
+        background: { type: ColorType.Solid, color: '#0b0e14' },
+        textColor: '#8792a6',
       },
-      grid: { vertLines: { color: '#18202b' }, horzLines: { color: '#18202b' } },
-      rightPriceScale: { borderColor: '#273142' },
-      timeScale: { borderColor: '#273142', timeVisible: false },
+      grid: { vertLines: { color: '#161c28' }, horzLines: { color: '#161c28' } },
+      rightPriceScale: { borderColor: '#1d2432' },
+      timeScale: { borderColor: '#1d2432', timeVisible: false },
       localization: { locale: 'zh-CN' },
     })
     const equity = chart.addSeries(LineSeries, {
-      color: '#f2b84b', lineWidth: 2, priceLineVisible: false, lastValueVisible: true,
+      color: '#2962ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: true,
     })
 
     let active = true

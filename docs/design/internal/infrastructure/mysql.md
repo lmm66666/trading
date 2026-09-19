@@ -20,14 +20,14 @@ related: []
 
 ## 1. 职责与非职责
 
-本模块实现版本化行情、证券目录、持久化任务与租约、回测结果、扫描快照、Outbox 和旧行情迁移所需的 MySQL 端口。它负责数据库事务、并发仲裁、索引和 GORM/SQL 映射，不定义策略、指标或撮合业务规则。
+本模块实现版本化行情、证券目录、自选清单、持久化任务与租约、回测结果、扫描快照、Outbox 和旧行情迁移所需的 MySQL 端口。它负责数据库事务、并发仲裁、索引和 GORM/SQL 映射，不定义策略、指标或撮合业务规则。
 
 本模块不定义策略、指标、撮合、任务重试策略或 HTTP 行为。应用和领域模块不得依赖本模块；生产由组合根把适配器注入 `internal/port` 定义的边界。
 
 ## 2. 对外能力与使用者
 
 - 组合根使用迁移与构造函数初始化数据库。
-- 应用层通过 port 使用版本化行情、证券目录、任务队列、运行结果、扫描快照和 Outbox。
+- 应用层通过 port 使用版本化行情、证券目录、自选清单、任务队列、运行结果、扫描快照和 Outbox。
 - 旧行情迁移命令使用专用读取、暂存、检查点和最终切换能力。
 - `data` 包通过现有兼容初始化桥接复用本模块连接；该依赖不应扩展到新领域代码。
 
@@ -51,7 +51,7 @@ related: []
 
 ### 5.1 初始化、行情发布与读取
 
-`Migrate` 按依赖顺序创建 13 张内核表，检查关键索引，并幂等建立版本 0 锁行。版本 0 的状态为 `INTERNAL_LOCK`、来源为 `__kernel_version_lock__`，只用于序列化发布，永远不能作为已完成数据版本读取。正常启动仅迁移证券主数据和新内核表；旧技术 K 线表只供迁移或回滚读取，不创建、不变更。
+`Migrate` 按依赖顺序创建 14 张内核表，检查关键索引，并幂等建立版本 0 锁行。版本 0 的状态为 `INTERNAL_LOCK`、来源为 `__kernel_version_lock__`，只用于序列化发布，永远不能作为已完成数据版本读取。正常启动仅迁移证券主数据和新内核表；旧技术 K 线表只供迁移或回滚读取，不创建、不变更。
 
 `Publish` 是增量 upsert：未提供的 Bar、因子或事件表示本次未观测，不表示删除；当前端口没有权威快照或删除语义。批次先复制、排序、校验并计算 SHA-256；提供的 Digest 必须匹配 `MarketBatchDigest`。输入版本号不参与摘要，发布版本由仓储分配。仅该证券最近一条 COMPLETE 发布可命中摘要幂等，重新提交较老内容会形成新版本。
 
@@ -89,11 +89,17 @@ Outbox 的 Payload 是端口定义的不透明字节，用 JSON base64 字符串
 
 事务只重试已经回滚的 MySQL 1213/1205 锁冲突，最多3次、退避遵守 context；commit 返回错误时不重放、不报告成功或有效租约。真实并发、过期重领、取消、结果分批回滚和提交可见性必须通过 MySQL 8.4 集成门禁。
 
-### 5.3 兼容查询
+### 5.3 自选清单与报价查询
+
+`t_watchlist` 是单用户自选表：`BaseModel` + `Exchange`+`Code` 组合唯一索引 `uq_watchlist`，无用户列；排序即插入顺序（id 升序），上限 100 由应用层校验。`WatchlistStore` 实现对应 port：`List` JOIN `t_instruments`（exchange+code 相等且 active）返回完整身份与行 ID，非活跃条目不返回但保留在表中；`Add` 使用 `clause.OnConflict{DoNothing}` 幂等写入；`Remove` 对不存在条目也成功；`Count` 供上限检查。
+
+`LatestDailyQuotes` 用单条窗口函数 SQL 批量读取：每只证券取最新两根当前日线 bar（`timeframe='DAY' AND valid_to_version IS NULL`，`ROW_NUMBER() OVER (PARTITION BY instrument_id ORDER BY close_time DESC)`，rn≤2），价格按 `ValueScale`（10000）换算为元，`change=close-prev_close`、`change_pct=change/prev_close*100`；不足两根 bar 时相应字段为 null。空集合跳过查询，不按证券循环。
+
+### 5.4 兼容查询
 
 HTTP 兼容查询使用两个只读扩展：`MarketDataRepository.ResolveCode` 验证六位数字后只读 active 证券，最多返回两个匹配，由 API 区分无匹配/唯一/歧义；不推断交易所。`SignalSnapshotStore.LatestPublishedKey` 只读 SUCCEEDED/PARTIAL_SUCCEEDED，按 AsOf、DataVersion、自增 ID 倒序定位，返回完整 SnapshotID/版本/参数 hash。版本可省略供旧接口跨版本选最新，非空 SnapshotID 精确匹配。后续行读取仍使用严格 SnapshotKey.Validate 与 SnapshotID 绑定，不放宽原 Latest 的分页约束。
 
-### 5.4 旧行情迁移命令
+### 5.5 旧行情迁移命令
 
 先在备份副本演练，正式运行时暂停旧行情采集和扫描：
 

@@ -14,11 +14,14 @@ export function InstrumentSearch({ onSelect, search = searchInstruments }: Instr
   const [items, setItems] = useState<InstrumentSummary[]>([])
   const [activeIndex, setActiveIndex] = useState(-1)
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
+  const [collapsed, setCollapsed] = useState(false)
   const requestRef = useRef(0)
+  const inputRef = useRef<HTMLInputElement>(null)
   const listID = useId()
 
   useEffect(() => {
     const value = query.trim()
+    setCollapsed(false)
     if (!value) {
       setItems([])
       setActiveIndex(-1)
@@ -49,8 +52,21 @@ export function InstrumentSearch({ onSelect, search = searchInstruments }: Instr
     }
   }, [query, search])
 
+  // 全局 “/” 快捷键：不在输入态时聚焦搜索框
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return
+      const target = event.target instanceof Element ? event.target : null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      event.preventDefault()
+      inputRef.current?.focus()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   const select = (item: InstrumentSummary) => {
-    setQuery(`${item.code} ${item.name}`)
+    setQuery('')
     setItems([])
     setActiveIndex(-1)
     onSelect(item)
@@ -69,62 +85,57 @@ export function InstrumentSearch({ onSelect, search = searchInstruments }: Instr
     } else if (event.key === 'Escape') {
       setItems([])
       setActiveIndex(-1)
+      setCollapsed(true)
     }
   }
 
+  const dropdownOpen = query.trim() !== '' && !collapsed
+
   return (
     <section className="instrument-search" aria-label="股票搜索区">
-      <div className="search-heading">
-        <div>
-          <span className="eyebrow">MARKET</span>
-          <h1>行情工作台</h1>
-        </div>
-        <span className="market-badge">A 股</span>
-      </div>
       <div className="search-box">
         <span className="search-icon" aria-hidden="true">⌕</span>
         <input
+          ref={inputRef}
           aria-label="搜索股票"
           aria-autocomplete="list"
           aria-controls={listID}
-          aria-expanded={items.length > 0}
+          aria-expanded={dropdownOpen}
           aria-activedescendant={activeIndex >= 0 ? `${listID}-${activeIndex}` : undefined}
           autoComplete="off"
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="代码 / 股票名称"
+          placeholder="代码 / 名称"
           role="combobox"
           value={query}
         />
         {status === 'loading' && <span className="search-spinner" aria-label="正在搜索" />}
+        <kbd className="search-kbd" aria-hidden="true">/</kbd>
       </div>
-      <div className="search-results" id={listID} role="listbox" aria-label="搜索结果">
-        {!query.trim() && <p className="search-empty">输入代码或名称开始搜索</p>}
-        {query.trim() && status === 'idle' && items.length === 0 && (
-          <p className="search-empty">没有匹配的证券</p>
-        )}
-        {status === 'error' && <p className="search-error">搜索失败，请稍后重试</p>}
-        {items.map((item, index) => (
-          <button
-            aria-selected={activeIndex === index}
-            className={activeIndex === index ? 'search-result active' : 'search-result'}
-            id={`${listID}-${index}`}
-            key={item.instrument}
-            onClick={() => select(item)}
-            onMouseEnter={() => setActiveIndex(index)}
-            role="option"
-            type="button"
-          >
-            <span className="symbol-mark">{item.exchange === 'SSE' ? '沪' : item.exchange === 'SZSE' ? '深' : '北'}</span>
-            <span className="result-name"><strong>{item.name}</strong><small>{item.code}</small></span>
-            <span className="exchange-tag">{item.exchange}</span>
-          </button>
-        ))}
-      </div>
-      <div className="search-footnote">
-        <span className="status-dot" />
-        <span>数据来自版本化行情快照</span>
-      </div>
+      {dropdownOpen && (
+        <div className="search-results" id={listID} role="listbox" aria-label="搜索结果">
+          {status === 'idle' && items.length === 0 && (
+            <p className="search-empty">没有匹配的证券</p>
+          )}
+          {status === 'error' && <p className="search-error">搜索失败，请稍后重试</p>}
+          {items.map((item, index) => (
+            <button
+              aria-selected={activeIndex === index}
+              className={activeIndex === index ? 'search-result active' : 'search-result'}
+              id={`${listID}-${index}`}
+              key={item.instrument}
+              onClick={() => select(item)}
+              onMouseEnter={() => setActiveIndex(index)}
+              role="option"
+              type="button"
+            >
+              <span className="symbol-mark">{item.exchange === 'SSE' ? '沪' : item.exchange === 'SZSE' ? '深' : '北'}</span>
+              <span className="result-name"><strong>{item.name}</strong><small>{item.code}</small></span>
+              <span className="exchange-tag">{item.exchange}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </section>
   )
 }

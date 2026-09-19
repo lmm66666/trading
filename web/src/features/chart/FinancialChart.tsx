@@ -23,6 +23,25 @@ const lineColors = ['#f5a623', '#3b82f6', '#a855f7', '#22d3ee', '#f472b6', '#84c
 
 const chartTime = (value: string): Time => value.slice(0, 10) as Time
 
+/** 可见 K 线数量上下限：桌面 15–400 根；容器宽 < 768px（移动设备）10–160 根 */
+const MOBILE_MAX_WIDTH = 768
+const DESKTOP_MIN_BARS = 15
+const DESKTOP_MAX_BARS = 400
+const MOBILE_MIN_BARS = 10
+const MOBILE_MAX_BARS = 160
+const MIN_BAR_SPACING_PX = 3
+
+/** 按容器宽度换算 barSpacing 边界：maxBarSpacing 防止单根过粗，minBarSpacing 限制最多可见根数 */
+export function computeBarSpacingLimits(width: number): { minBarSpacing: number; maxBarSpacing: number } {
+  const mobile = width < MOBILE_MAX_WIDTH
+  const minBars = mobile ? MOBILE_MIN_BARS : DESKTOP_MIN_BARS
+  const maxBars = mobile ? MOBILE_MAX_BARS : DESKTOP_MAX_BARS
+  return {
+    maxBarSpacing: width / minBars,
+    minBarSpacing: Math.max(width / maxBars, MIN_BAR_SPACING_PX),
+  }
+}
+
 export function FinancialChart({ bars, series, onLoadMore }: FinancialChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const loadMoreRef = useRef(onLoadMore)
@@ -45,20 +64,33 @@ export function FinancialChart({ bars, series, onLoadMore }: FinancialChartProps
     const chart = createChart(container, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: '#0c1017' },
-        textColor: '#8d98aa',
-        panes: { separatorColor: '#242c39', separatorHoverColor: '#344054', enableResize: true },
+        background: { type: ColorType.Solid, color: '#0b0e14' },
+        textColor: '#8792a6',
+        panes: { separatorColor: '#1d2432', separatorHoverColor: '#2a3550', enableResize: true },
       },
-      grid: { vertLines: { color: '#18202b' }, horzLines: { color: '#18202b' } },
+      grid: { vertLines: { color: '#161c28' }, horzLines: { color: '#161c28' } },
       crosshair: { vertLine: { color: '#7c8ba1', labelBackgroundColor: '#273142' }, horzLine: { color: '#7c8ba1', labelBackgroundColor: '#273142' } },
-      rightPriceScale: { borderColor: '#273142', scaleMargins: { top: 0.08, bottom: 0.23 } },
-      timeScale: { borderColor: '#273142', timeVisible: false, rightOffset: 3, barSpacing: 8, minBarSpacing: 3 },
+      rightPriceScale: { borderColor: '#1d2432', scaleMargins: { top: 0.08, bottom: 0.23 } },
+      timeScale: { borderColor: '#1d2432', timeVisible: false, rightOffset: 3, barSpacing: 8, minBarSpacing: 3 },
       localization: { locale: 'zh-CN' },
     })
     chartRef.current = chart
+    // TWR-011：可见 K 线数量按设备上下限换算为 barSpacing 边界，容器尺寸变化时重算
+    const applyBarSpacingLimits = () => {
+      const width = container.clientWidth
+      if (width <= 0) return
+      const { minBarSpacing, maxBarSpacing } = computeBarSpacingLimits(width)
+      chart.timeScale().applyOptions({ minBarSpacing, maxBarSpacing })
+    }
+    applyBarSpacingLimits()
+    let resizeObserver: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(applyBarSpacingLimits)
+      resizeObserver.observe(container)
+    }
     const candles = chart.addSeries(CandlestickSeries, {
-      upColor: '#ef4444', downColor: '#10b981', borderVisible: false,
-      wickUpColor: '#ef4444', wickDownColor: '#10b981', priceLineColor: '#ef4444',
+      upColor: '#ef5350', downColor: '#26a69a', borderVisible: false,
+      wickUpColor: '#ef5350', wickDownColor: '#26a69a', priceLineColor: '#ef5350',
     })
     candlesRef.current = candles
 
@@ -83,7 +115,7 @@ export function FinancialChart({ bars, series, onLoadMore }: FinancialChartProps
           color, priceLineVisible: false, lastValueVisible: true,
         }, paneIndex)
         indicatorUpdatersRef.current.set(item.key, (updated) => indicator.setData(updated.points.map((point): HistogramData => ({
-          time: chartTime(point.time), value: point.value, color: point.value >= 0 ? 'rgba(239, 68, 68, .72)' : 'rgba(16, 185, 129, .72)',
+          time: chartTime(point.time), value: point.value, color: point.value >= 0 ? 'rgba(239, 83, 80, .72)' : 'rgba(38, 166, 154, .72)',
         }))))
       } else {
         const indicator = chart.addSeries(LineSeries, {
@@ -102,6 +134,7 @@ export function FinancialChart({ bars, series, onLoadMore }: FinancialChartProps
     rangeHandlerRef.current = rangeHandler
     return () => {
       if (rangeSubscribedRef.current) chart.timeScale().unsubscribeVisibleLogicalRangeChange(rangeHandler)
+      resizeObserver?.disconnect()
       chart.remove()
       chartRef.current = null
       candlesRef.current = null
@@ -124,7 +157,7 @@ export function FinancialChart({ bars, series, onLoadMore }: FinancialChartProps
     })))
     volume.setData(bars.map((bar) => ({
       time: chartTime(bar.close_time), value: bar.volume,
-      color: bar.close >= bar.open ? 'rgba(239, 68, 68, .55)' : 'rgba(16, 185, 129, .55)',
+      color: bar.close >= bar.open ? 'rgba(239, 83, 80, .5)' : 'rgba(38, 166, 154, .5)',
     })))
     for (const item of series) indicatorUpdatersRef.current.get(item.key)?.(item)
     const prepended = bars.length - previousCount
