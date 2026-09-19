@@ -73,9 +73,9 @@ related: []
 | `internal/application` | 行情、图表、扫描、回测和 Worker 用例编排 | port、market、indicator、strategy、backtest | [应用层设计](internal/application.md) |
 | `internal/port` | 应用所需的存储、数据源、任务与遥测边界 | market、backtest、标准库 | [端口设计](internal/port.md) |
 | `internal/infrastructure/mysql` | 版本化行情、任务、租约、结果和迁移持久化 | port、market、backtest、兼容 model、GORM/MySQL | [MySQL 设计](internal/infrastructure/mysql.md) |
-| `pkg/broker` | 新浪与东方财富外部数据源适配 | port、market、HTTP | [Broker 设计](pkg/broker.md) |
+| `pkg/broker` | 新浪外部数据源适配 | port、market、HTTP | [Broker 设计](pkg/broker.md) |
 | `web` | React 行情工作台和 API 客户端状态 | React、Lightweight Charts、HTTP API | [前端设计](web.md) |
-| `cmd/migrate-strategy-kernel` | 旧行情到版本化内核的一次性迁移 | config、broker、MySQL adapter、GORM | [迁移设计](cmd/migrate-strategy-kernel.md) |
+| `cmd/migrate-strategy-kernel` | 旧行情到版本化内核的一次性迁移 | config、MySQL adapter、GORM | [迁移设计](cmd/migrate-strategy-kernel.md) |
 | `scripts` | 验证门禁 | CLI 工具 | [工程标准](../standards/engineering.md) |
 
 ## 边界规则

@@ -16,7 +16,7 @@ related: []
 |---|---|
 | 状态 | 当前有效 |
 | 适用范围 | `internal/port` |
-| 最后更新 | 2026-09-14 |
+| 最后更新 | 2026-09-20 |
 
 ## 1. 职责与非职责
 
@@ -30,7 +30,7 @@ related: []
 |---|---|---|
 | 行情读取 | `MarketData`、`MarketChangeReader` | 完成版本、单证券/批量 Dataset、证券范围和版本变化 |
 | 行情写入 | `MarketDataWriter` | 校验一个不可变发布候选并返回完成版本 |
-| 外部来源 | `MarketSource`、`DailyMarketSource` | 迁移能力获取多周期 Bar、因子和公司行动；生产刷新获取日线与因子 |
+| 外部来源 | `DailyMarketSource` | 生产刷新获取日线与复权因子 |
 | 任务队列 | `JobQueue`、`IdempotentRunReader` | 入队、领取、续租、重试、取消和过期回收 |
 | 结果存储 | `RunStore` | Run 状态、回测结果页和原子完成/失败 |
 | 快照 | `SignalSnapshotStore` | 按完整 SnapshotKey 选择或继续不可变快照 |
@@ -46,7 +46,7 @@ related: []
 
 可选扩展接口表达实现能力，例如幂等前读和行情变化分类。生产装配不能用功能不完整的包装器隐藏已需要的扩展能力。
 
-`DailyMarketSource` 是当前生产行情刷新边界，只返回日线和复权因子；周线由应用层生成，生产刷新不调用 `MarketSource.FetchCorporateActions`。`MarketSource` 保留给旧迁移等需要多周期与公司行动的流程。
+`DailyMarketSource` 是当前唯一的外部行情来源边界，只返回日线和复权因子；周线由应用层生成，旧库迁移在进程内直接转换旧表行、不经过外部来源。
 
 ## 4. 核心模型与不变量
 

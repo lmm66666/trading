@@ -67,7 +67,7 @@ Roadmap 表达方向和进入条件，不等同于已批准需求。大型事项
 
 财报、宏观和旧 URL 兼容层已经下线（见 [下线财报/宏观兼容能力](changes/archive/2026-09-19-legacy-finance-macro-cleanup/requirements.md)）：`business`、`internal/financialscreen`、`pkg/indicator` 与旧 `SinaBroker`/`EastMoneyBroker` 已删除，路由收敛到 `/api/v1/*`，手动刷新合并为 `POST /api/v1/market/refresh`。
 
-剩余兼容面只有旧库迁移链路：`cmd/migrate-strategy-kernel`、`EastmoneyMarketSource`、`data`/`model` 兼容模型与旧表 `t_stock_info`/`t_stock_kline_daily`/`t_stock_kline_weekly`。迁移验收后由后续变更删除迁移链路、把 `data` 收敛进组合根并 DROP 旧表。不得在普通缺陷修复中顺带移动模块或改变公开行为。
+剩余兼容面只有旧库迁移链路：`cmd/migrate-strategy-kernel`（进程内直迁旧表行，不使用外部行情源）、`data`/`model` 兼容模型与旧表 `t_stock_info`/`t_stock_kline_daily`/`t_stock_kline_weekly`。迁移验收后由后续变更删除迁移链路、把 `data` 收敛进组合根并 DROP 旧表。不得在普通缺陷修复中顺带移动模块或改变公开行为。
 
 ## Roadmap 维护规则
 

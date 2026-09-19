@@ -16,13 +16,13 @@ related: []
 |---|---|
 | 状态 | 当前有效 |
 | 适用范围 | `cmd/migrate-strategy-kernel` 与 MySQL LegacyMigrator |
-| 最后更新 | 2026-09-14 |
+| 最后更新 | 2026-09-20 |
 
 ## 1. 职责与非职责
 
-本命令在维护窗口内检查旧日/周 K 线，并将经过外部行情源回填和完整性验证的数据迁移到版本化策略内核。它支持只读 dry-run、显式 apply、持久化检查点和幂等重跑。
+本命令在维护窗口内检查旧日/周 K 线，并将旧表行直接转换成的内核 Bar 数据迁移到版本化策略内核。它支持只读 dry-run、显式 apply、持久化检查点和幂等重跑。
 
-本命令不在正常服务启动时运行，不推断证券 active 或 lot_size，不在线双写，也不把不完整数据切换为可消费版本。
+本命令不在正常服务启动时运行，不推断证券 active 或 lot_size，不在线双写，也不把不完整数据切换为可消费版本；不调用任何外部行情源，迁移版本不携带复权因子与公司行动。
 
 ## 2. 操作入口
 
@@ -44,7 +44,7 @@ go run ./cmd/migrate-strategy-kernel -config config.yaml -dry-run=false -batch-s
 
 - 命令单独打开最多 2 条 MySQL 连接，不调用 `data.New`，保证 dry-run 不执行任何 AutoMigrate。
 - apply 才初始化新内核表，并调用 MySQL adapter 的 LegacyMigrator。
-- 外部回填通过 Broker 获取 raw 行情、复权因子和公司行动。
+- 旧表行在本进程内直接转换为内核 Bar（价格缩放、UTC 交易日），无外部行情源依赖。
 - 配置文件最多读取 1MiB、启用 YAML KnownFields，DSN 使用结构化驱动配置且不进入日志。
 
 ## 4. 核心不变量
@@ -60,12 +60,12 @@ go run ./cmd/migrate-strategy-kernel -config config.yaml -dry-run=false -batch-s
 - 源读取在专用只读 Repeatable Read 事务中形成一致快照。
 - 旧表按主键分页，每批校验、更新 SHA-256/统计并持久化源行和游标后才读取下一批。
 - 恢复时重新验证已经复制的前缀；源扫描完成后冻结摘要，任何新增、删除或修改都会拒绝续跑。
-- 未知证券代码、无历史 Bar、日期缺失、复权冲突或来源失败阻止最终切换。
+- 未知证券代码、无历史 Bar 或日期缺失阻止最终切换。
 
-### 4.3 回填与发布
+### 4.3 直迁转换与发布
 
-- 旧 OHLC 复权来源不可信，最终 raw OHLCV/Amount 由外部来源回填；旧日/周日期必须精确匹配。
-- 因子排序后一次顺序验证覆盖；公司行动请求必须成功，明确的空列表合法。
+- 旧表行直接转换为内核 Bar：价格按 DECIMAL 值缩放 10000 转 `market.Price`，非有限或超范围值拒绝；交易日期解析为 UTC 全日会话（OpenTime=CloseTime），`Trading=Tradable`，成交量原样保留。
+- 每个 timeframe 的转换结果经 `market.NewDataset` 校验（升序、无重复、OHLC 与成交量合法）；复权因子与公司行动为空列表，激活后由首次全市场刷新（新浪 `qfq.js`）补齐 QFQ 因子。
 - 目标按 batch-size 写入真实 `INCOMPLETE` 版本，每批数据与目标游标在同一短事务提交。
 - 所有证券完成后重新计算目标摘要并保存验证凭证；最后一个轻量事务只在凭证完整时切换为 `COMPLETE`。
 - 普通 Publish 遇到迁移中的 INCOMPLETE 版本必须拒绝，新计算始终无法读取部分迁移数据。
@@ -83,13 +83,13 @@ go run ./cmd/migrate-strategy-kernel -config config.yaml -dry-run=false -batch-s
 
 ## 6. 性能与资源约束
 
-- 常驻内存只包含当前源批次、当前证券历史/回填/校验数据和证券元数据，不保留全市场原始 JSON。
+- 常驻内存只包含当前源批次、当前证券历史/转换/校验数据和证券元数据。
 - 外部 batch-size 上限 10000；内部 INSERT 根据可绑定列数自动拆分，单条最多 64511 个参数，低于 MySQL 65535 上限并预留 1024。
-- 单证券历史仍决定峰值内存和来源耗时，正式执行前必须在备份副本演练。
+- 单证券历史仍决定峰值内存，正式执行前必须在备份副本演练。
 
 ## 7. 测试与验收证据
 
-单元测试覆盖默认 dry-run、显式 apply、参数/配置/连接脱敏、报告输出和连接所有权。真实集成测试覆盖失败回填、批次中断、检查点恢复、版本不可见和幂等重跑。
+单元测试覆盖默认 dry-run、显式 apply、参数/配置/连接脱敏、报告输出和连接所有权。真实集成测试覆盖失败转换与目标写入失败、批次中断、检查点恢复、版本不可见和幂等重跑。
 
 ```bash
 go test ./cmd/migrate-strategy-kernel
