@@ -64,12 +64,20 @@ func TestMarketRefreshTriggersFullScanWithoutIdentity(t *testing.T) {
 	trigger := &refreshTriggerFake{}
 	router := refreshRouter(KernelServices{MarketTrigger: trigger, MarketWorkers: 8})
 
-	for _, body := range []string{"", "{}"} {
+	for _, body := range []string{"", "{}", "   "} {
 		w := refreshRequest(t, router, body)
 		require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
 		require.Contains(t, w.Body.String(), "ACCEPTED")
 		require.Equal(t, 8, trigger.workers)
 	}
+}
+
+func TestMarketRefreshMapsAlreadyRunningTrigger(t *testing.T) {
+	router := refreshRouter(KernelServices{MarketTrigger: &refreshTriggerFake{err: application.ErrRefreshAlreadyRunning}})
+
+	w := refreshRequest(t, router, "")
+	require.Equal(t, http.StatusTooManyRequests, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), "MARKET_REFRESH_ALREADY_RUNNING")
 }
 
 func TestMarketRefreshRefreshesSingleInstrument(t *testing.T) {
@@ -97,10 +105,10 @@ func TestMarketRefreshRejectsHalfIdentity(t *testing.T) {
 }
 
 func TestMarketRefreshMapsResolutionOutcomes(t *testing.T) {
-	id := market.InstrumentID{Exchange: market.SSE, Code: "600000"}
+	sseID := market.InstrumentID{Exchange: market.SSE, Code: "600000"}
 	router := refreshRouter(KernelServices{
 		MarketIngestion: &refreshIngestionFake{},
-		Instruments:     &refreshLookupFake{ids: []market.InstrumentID{id, {Exchange: market.BSE, Code: "600000"}}},
+		Instruments:     &refreshLookupFake{ids: []market.InstrumentID{sseID, {Exchange: market.BSE, Code: "600000"}}},
 	})
 
 	w := refreshRequest(t, router, `{"exchange":"SSE","code":"600000"}`)
@@ -114,6 +122,26 @@ func TestMarketRefreshMapsResolutionOutcomes(t *testing.T) {
 	w = refreshRequest(t, router, `{"exchange":"SSE","code":"600000"}`)
 	require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
 	require.Contains(t, w.Body.String(), "NOT_FOUND")
+
+	// 代码存在但唯一匹配的交易所与请求身份不符时，请求的证券视为不存在。
+	router = refreshRouter(KernelServices{
+		MarketIngestion: &refreshIngestionFake{},
+		Instruments:     &refreshLookupFake{ids: []market.InstrumentID{sseID}},
+	})
+	w = refreshRequest(t, router, `{"exchange":"SZSE","code":"600000"}`)
+	require.Equal(t, http.StatusNotFound, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), "NOT_FOUND")
+}
+
+func TestMarketRefreshMapsRefreshFailure(t *testing.T) {
+	router := refreshRouter(KernelServices{
+		MarketIngestion: &refreshIngestionFake{err: application.ErrRefreshAlreadyRunning},
+		Instruments:     &refreshLookupFake{ids: []market.InstrumentID{{Exchange: market.SSE, Code: "600000"}}},
+	})
+
+	w := refreshRequest(t, router, `{"exchange":"SSE","code":"600000"}`)
+	require.Equal(t, http.StatusTooManyRequests, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), "MARKET_REFRESH_ALREADY_RUNNING")
 }
 
 func TestMarketRefreshValidatesIdentity(t *testing.T) {
@@ -122,7 +150,7 @@ func TestMarketRefreshValidatesIdentity(t *testing.T) {
 		Instruments:     &refreshLookupFake{},
 	})
 
-	for _, body := range []string{`{"exchange":"NYSE","code":"600000"}`, `{"exchange":"SSE","code":"6000"}`, `{"exchange":"SSE","code":"600000","extra":1}`} {
+	for _, body := range []string{`{"exchange":"NYSE","code":"600000"}`, `{"exchange":"SSE","code":"6000"}`, `{"exchange":"SSE","code":"600000","extra":1}`, `invalid`} {
 		w := refreshRequest(t, router, body)
 		require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
 		require.Contains(t, w.Body.String(), "INVALID_REQUEST")

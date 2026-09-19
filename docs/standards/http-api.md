@@ -181,6 +181,6 @@ curl -X POST http://localhost:8080/api/v1/market/refresh \
 
 - 请求体可选：`exchange` 与 `code` 必须同时提供或同时缺省，任一单独出现返回400。
 - 全量触发：语义与调度器定时刷新一致；同一进程内定时与手工刷新只允许一个运行实例，运行中返回429；成功受理返回 `202 {"status":"ACCEPTED"}`。
-- 单证券：`exchange` 合法值为 SSE、SZSE、BSE，`code` 为六位数字；经活跃证券主数据精确解析，零结果返回404，同一代码匹配多个活跃交易所返回409，同一证券正在刷新返回429。成功返回 `{"instrument","version","quality","daily_bars","weekly_bars"}`，与既有刷新结果结构一致。
+- 单证券：`exchange` 合法值为 SSE、SZSE、BSE，`code` 为六位数字；经活跃证券主数据精确解析，零结果或唯一匹配的交易所与请求身份不符返回404，同一代码匹配多个活跃交易所返回409，同一证券正在刷新返回429。成功返回 `{"instrument","version","quality","daily_bars","weekly_bars"}`，与既有刷新结果结构一致。
 - 请求 JSON 限制1MiB，拒绝未知字段和尾随第二个 JSON 值。
 
