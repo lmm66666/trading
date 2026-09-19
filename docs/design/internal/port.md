@@ -35,6 +35,7 @@ related: []
 | 结果存储 | `RunStore` | Run 状态、回测结果页和原子完成/失败 |
 | 快照 | `SignalSnapshotStore` | 按完整 SnapshotKey 选择或继续不可变快照 |
 | 证券目录 | `InstrumentCatalog` | 活跃证券搜索和完整身份查询 |
+| 自选清单 | `WatchlistStore`、`DailyQuoteReader` | 单用户自选增删查（插入序、上限 100）与按证券行 ID 批量读取最新日线报价 |
 | 可观测性 | `Telemetry` | 白名单阶段耗时与重试计数 |
 | 事件 | `EventPublisher` | 按稳定事件身份持久化完成事件 |
 
@@ -76,7 +77,13 @@ related: []
 - 同证券不能同时出现在成功 rows 与 failures，快照证券行不得重复。
 - PageRequest 使用非负排他序号，limit 为 1–1000。
 
-### 4.5 身份与时间
+### 4.5 自选清单
+
+- `WatchlistEntry` 携带完整证券身份与 `t_instruments` 行 ID，行 ID 仅供报价批量读取，不外泄到 API。
+- `DailyQuote` 的 Close/Change/ChangePercent 为指针语义：null 表示对应 bar 不可用，零值不承载"无数据"含义。
+- `WatchlistStore.Add` 幂等，`Remove` 对不存在条目也成功；上限由 `MaxWatchlistItems`（100）约束，应用层校验。
+
+### 4.6 身份与时间
 
 - 所有不透明身份按 UTF-8 字节验证，不 trim，不折叠大小写或尾空格。
 - UTC 时间必须明确 Location 且最多微秒精度；允许零时间的字段由各 DTO 单独声明。
