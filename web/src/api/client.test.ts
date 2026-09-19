@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { queryChart, searchInstruments } from './client'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+})
 
 describe('API client', () => {
   it('搜索时编码关键词并返回列表', async () => {
@@ -35,5 +38,43 @@ describe('API client', () => {
 
     await expect(searchInstruments('x')).rejects.toThrow('参数无效')
     await expect(searchInstruments('x')).rejects.toThrow('无法解析')
+  })
+})
+
+describe('开发模式连接失败回退', () => {
+  it('后端不可达时返回演示数据', async () => {
+    vi.stubEnv('MODE', 'development')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+    vi.resetModules()
+    const { queryChart, searchInstruments } = await import('./client')
+
+    await expect(searchInstruments('600519')).resolves.toEqual([
+      expect.objectContaining({ code: '600519', name: '贵州茅台' }),
+    ])
+    const chart = await queryChart({
+      instrument: 'SSE:600519', timeframe: 'DAY', price_view: 'QFQ', indicators: [],
+    })
+    expect(chart.bars.length).toBeGreaterThan(0)
+    expect(chart.instrument.name).toBe('贵州茅台')
+  })
+
+  it('业务错误不走演示数据回退', async () => {
+    vi.stubEnv('MODE', 'development')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      code: 40001, message: '参数无效', data: null,
+    }), { status: 400 })))
+    vi.resetModules()
+    const { searchInstruments } = await import('./client')
+
+    await expect(searchInstruments('x')).rejects.toThrow('参数无效')
+  })
+
+  it('非开发模式不启用回退', async () => {
+    vi.stubEnv('MODE', 'test')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+    vi.resetModules()
+    const { searchInstruments } = await import('./client')
+
+    await expect(searchInstruments('x')).rejects.toThrow('无法连接服务')
   })
 })
