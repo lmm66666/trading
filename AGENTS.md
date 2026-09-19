@@ -11,13 +11,13 @@
 本项目唯一文档导航是 [功能目录与源码地图](docs/design/README.md)：
 
 - `docs/architecture/`：跨模块边界、数据流和全局不变量。
-- `docs/design/`：当前包设计，按源码路径定位；一个实质源码文件恰有一个 `owns` 所有者。
+- `docs/design/README.md` 面向人的功能导航；`workflows/` 解释业务流程，`strategies/` 解释具体策略，其他设计文档维护技术契约。业务说明使用 `kind: explanation`、`status: baseline-review`、`authority: code-derived` 和完整代码基线，不声明源码归属、不覆盖已批准契约；一个实质源码文件仍恰有一个技术设计 `owns` 所有者。
 - `docs/standards/`：[工程标准](docs/standards/engineering.md) 与 [HTTP 契约](docs/standards/http-api.md)。
 - `docs/changes/active/<date>-<slug>/`：复杂变更的需求、目标设计和验证证据；验收完成后移入 `archive/`。
 - `docs/changes/archive/legacy/`：迁移前历史 REQ 记录，保留原证据与状态，不用于推断当前流程。
 - `docs/adr/`：仅在出现值得长期独立保存的跨模块决策时创建；不与变更记录重复。
 
-修改前从源码地图定位模块，再读模块设计及上游架构；涉及公开 HTTP 行为同时读取 API 设计与 HTTP 契约；复杂变更还需读取活动变更的 requirements/design。历史变更不能代替当前设计。
+修改前先从功能导航读相关业务说明，再通过源码地图定位模块，读取模块设计及上游架构；涉及公开 HTTP 行为同时读取 API 设计与 HTTP 契约；复杂变更还需读取活动变更的 requirements/design。历史变更不能代替当前设计。
 
 ## 项目审批与冲突门禁
 

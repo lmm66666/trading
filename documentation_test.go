@@ -64,6 +64,8 @@ func TestDocumentationContract(t *testing.T) {
 		"docs/design/internal/market.md",
 		"docs/design/internal/indicator.md",
 		"docs/design/internal/strategy.md",
+		"docs/design/workflows/strategy-scan.md",
+		"docs/design/strategies/daily-b1.md",
 		"docs/design/internal/backtest.md",
 		"docs/design/internal/application.md",
 		"docs/design/internal/financialscreen.md",
@@ -333,6 +335,8 @@ func externalDocumentationTarget(target string) bool {
 
 // documentMetadata contains only fields checked by the repository gates.
 type documentMetadata struct {
+	Kind             string   `yaml:"kind"`
+	BaselineRevision string   `yaml:"baseline_revision"`
 	ID               string   `yaml:"id"`
 	Status           string   `yaml:"status"`
 	Authority        string   `yaml:"authority"`
@@ -375,8 +379,8 @@ func TestDocumentationOwnership(t *testing.T) {
 				return nil
 			}
 			metadata := readDocumentMetadata(t, name)
-			if metadata.Status != "approved" || metadata.Authority != "normative" {
-				t.Errorf("current design must be approved/normative: %s", name)
+			if !validDesignMetadata(filepath.ToSlash(name), metadata) {
+				t.Errorf("invalid design authority or explanation metadata: %s", name)
 			}
 			for _, claim := range metadata.Owns {
 				clean := filepath.ToSlash(filepath.Clean(claim))
@@ -443,5 +447,45 @@ func TestDocumentationOwnership(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func validDesignMetadata(name string, metadata documentMetadata) bool {
+	explanationPath := strings.HasPrefix(name, "docs/design/workflows/") || strings.HasPrefix(name, "docs/design/strategies/")
+	if explanationPath {
+		return metadata.Kind == "explanation" && metadata.Status == "baseline-review" &&
+			metadata.Authority == "code-derived" && len(metadata.Owns) == 0 &&
+			regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(metadata.BaselineRevision)
+	}
+	return metadata.Kind == "" && metadata.Status == "approved" && metadata.Authority == "normative"
+}
+
+func TestDocumentationAuthorityBoundaries(t *testing.T) {
+	baseline := "0aadb823d45701cd3c1d702f510bf97420bb4fc1"
+	explanation := documentMetadata{Kind: "explanation", Status: "baseline-review", Authority: "code-derived", BaselineRevision: baseline}
+	normative := documentMetadata{Status: "approved", Authority: "normative"}
+	cases := []struct {
+		name     string
+		path     string
+		metadata documentMetadata
+		want     bool
+	}{
+		{"existing module", "docs/design/internal/strategy.md", normative, true},
+		{"workflow explanation", "docs/design/workflows/strategy-scan.md", explanation, true},
+		{"strategy explanation", "docs/design/strategies/daily-b1.md", explanation, true},
+		{"module cannot downgrade", "docs/design/internal/strategy.md", explanation, false},
+		{"standard cannot downgrade", "docs/standards/http-api.md", explanation, false},
+		{"draft module", "docs/design/internal/strategy.md", documentMetadata{Status: "draft", Authority: "proposed"}, false},
+		{"missing source revision", "docs/design/strategies/daily-b1.md", documentMetadata{Kind: "explanation", Status: "baseline-review", Authority: "code-derived"}, false},
+		{"explanation cannot own source", "docs/design/strategies/daily-b1.md", documentMetadata{Kind: "explanation", Status: "baseline-review", Authority: "code-derived", BaselineRevision: baseline, Owns: []string{"internal/strategy/"}}, false},
+		{"explanation cannot claim approval", "docs/design/strategies/daily-b1.md", documentMetadata{Kind: "explanation", Status: "approved", Authority: "normative", BaselineRevision: baseline}, false},
+		{"explanation kind required", "docs/design/strategies/daily-b1.md", normative, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := validDesignMetadata(tc.path, tc.metadata); got != tc.want {
+				t.Fatalf("validDesignMetadata(%s) = %v, want %v", tc.path, got, tc.want)
+			}
+		})
 	}
 }
