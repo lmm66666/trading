@@ -4,7 +4,12 @@ import type { ChartResult } from '../../api/client'
 import { ChartWorkspace } from './ChartWorkspace'
 
 vi.mock('./FinancialChart', () => ({
-  FinancialChart: ({ bars }: { bars: unknown[] }) => <div data-testid="financial-chart">{bars.length} bars</div>,
+  FinancialChart: ({ bars, onLoadMore }: { bars: unknown[]; onLoadMore: () => void }) => (
+    <div>
+      <div data-testid="financial-chart">{bars.length} bars</div>
+      <button onClick={onLoadMore} type="button">触发自动加载</button>
+    </div>
+  ),
 }))
 
 const response: ChartResult = {
@@ -108,11 +113,56 @@ describe('ChartWorkspace', () => {
       />,
     )
 
-    fireEvent.click(await screen.findByRole('button', { name: '加载更早行情' }))
+    fireEvent.click(await screen.findByRole('button', { name: '触发自动加载' }))
     await waitFor(() => expect(query).toHaveBeenLastCalledWith(expect.objectContaining({
       before: first.next_before, data_version: 17,
     }), expect.any(AbortSignal)))
     expect(screen.getByTestId('financial-chart')).toHaveTextContent('2 bars')
+  })
+
+  it('自动加载进行中不重复触发请求', async () => {
+    let resolveOlder!: (value: ChartResult) => void
+    const first = { ...response, has_more: true, next_before: response.bars[0].close_time }
+    const query = vi.fn()
+      .mockResolvedValueOnce(first)
+      .mockReturnValueOnce(new Promise<ChartResult>((resolve) => { resolveOlder = resolve }))
+    render(
+      <ChartWorkspace
+        instrument="SZSE:002415"
+        initialPriceView="QFQ"
+        initialTimeframe="DAY"
+        onStateChange={vi.fn()}
+        onToggleWatch={vi.fn()}
+        query={query}
+        watched={false}
+      />,
+    )
+
+    const trigger = await screen.findByRole('button', { name: '触发自动加载' })
+    fireEvent.click(trigger)
+    fireEvent.click(trigger)
+    expect(query).toHaveBeenCalledTimes(2)
+
+    await act(async () => resolveOlder({ ...response, bars: [{ ...response.bars[0], close_time: '2026-09-10T07:00:00Z' }], has_more: false, next_before: null }))
+    expect(screen.getByTestId('financial-chart')).toHaveTextContent('2 bars')
+  })
+
+  it('没有更多历史数据时不触发自动加载', async () => {
+    const query = vi.fn().mockResolvedValue(response)
+    render(
+      <ChartWorkspace
+        instrument="SZSE:002415"
+        initialPriceView="QFQ"
+        initialTimeframe="DAY"
+        onStateChange={vi.fn()}
+        onToggleWatch={vi.fn()}
+        query={query}
+        watched={false}
+      />,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: '触发自动加载' }))
+    expect(query).toHaveBeenCalledTimes(1)
   })
 
   it('显示服务错误并同步复权方式', async () => {
@@ -156,7 +206,7 @@ describe('ChartWorkspace', () => {
       />,
     )
 
-    fireEvent.click(await screen.findByRole('button', { name: '加载更早行情' }))
+    fireEvent.click(await screen.findByRole('button', { name: '触发自动加载' }))
     fireEvent.click(screen.getByRole('button', { name: '周线' }))
     await waitFor(() => expect(query).toHaveBeenCalledWith(expect.objectContaining({ timeframe: 'WEEK' }), expect.any(AbortSignal)))
     await act(async () => resolveOlder({ ...response, bars: [{ ...response.bars[0], close_time: '2026-09-10T07:00:00Z' }] }))

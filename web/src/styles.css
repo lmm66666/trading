@@ -300,8 +300,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .chart-loading strong, .chart-error strong { color: var(--text); font-size: 15px; font-weight: 600; }
 .chart-loading span:last-child, .chart-error span { font-size: 11px; }
 .loading-orbit { width: 32px; height: 32px; margin-bottom: 8px; border: 1px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
-.load-more { position: absolute; left: 16px; bottom: 22px; z-index: 3; padding: 6px 10px; color: var(--muted); background: rgba(21, 27, 38, .92); border: 0; border-radius: 4px; cursor: pointer; font-size: 10px; }
-.load-more:hover { color: var(--text); }
 .chart-toast { position: absolute; right: 16px; bottom: 16px; z-index: 3; padding: 8px 12px; color: var(--up); background: rgba(51, 14, 18, .92); border-radius: 5px; font-size: 11px; }
 
 /* ---- 欢迎空态 ---- */

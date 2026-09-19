@@ -178,14 +178,7 @@ export function ChartWorkspace({
           <div className="chart-error"><strong>暂无行情数据</strong><span>该证券在当前周期没有可展示的 K 线。</span></div>
         )}
         {status === 'ready' && result && result.bars.length > 0 && (
-          <>
-            <FinancialChart bars={result.bars} onLoadMore={loadMore} series={result.series} />
-            {result.has_more && (
-              <button className="load-more" disabled={loadingMore} onClick={loadMore} type="button">
-                {loadingMore ? '正在加载…' : '加载更早行情'}
-              </button>
-            )}
-          </>
+          <FinancialChart bars={result.bars} onLoadMore={loadMore} series={result.series} />
         )}
         {error && status === 'ready' && <div className="chart-toast">{error}</div>}
       </section>
