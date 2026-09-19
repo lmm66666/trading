@@ -38,7 +38,7 @@ func TestQueryChartMapsRequestAndResponse(t *testing.T) {
 		NextBefore:  &next,
 	}}
 	f.services.ChartQueries = queries
-	f.router = NewRouter(nil, nil, nil, nil, nil, f.services)
+	f.router = NewRouter(f.services)
 
 	body := `{"instrument":"SZSE:002415","timeframe":"DAY","price_view":"QFQ","before":"2026-02-01T08:00:00+08:00","limit":400,"data_version":8,"indicators":[{"kind":"SMA","period":5}]}`
 	w := kernelRequest(t, f, "POST", "/api/v1/chart-queries", body)
@@ -63,7 +63,7 @@ func TestQueryChartRejectsInvalidAndNonStrictBodies(t *testing.T) {
 	} {
 		f := newKernelFixture(t)
 		f.services.ChartQueries = &apiChartQueries{}
-		f.router = NewRouter(nil, nil, nil, nil, nil, f.services)
+		f.router = NewRouter(f.services)
 		w := kernelRequest(t, f, "POST", "/api/v1/chart-queries", body)
 		require.Equal(t, 400, w.Code, w.Body.String())
 		require.Contains(t, w.Body.String(), "INVALID_REQUEST")

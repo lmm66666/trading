@@ -102,3 +102,11 @@ func (h *StockHandler) GetMarketBars(c *gin.Context) {
 		"bars":         result.Bars,
 	})
 }
+
+func positiveQueryInt(value string) (int, error) {
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 1 {
+		return 0, application.ErrInvalidRequest
+	}
+	return n, nil
+}

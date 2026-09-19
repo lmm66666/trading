@@ -17,7 +17,7 @@ var (
 	ErrRefreshAlreadyRunning = errors.New("market refresh already running")
 )
 
-// UpstreamLimiter 与已有 indicator.Limiter 兼容；成功获取后必须释放。
+// UpstreamLimiter 限制对上游行情源的并发请求；成功获取后必须释放。
 type UpstreamLimiter interface {
 	Acquire(context.Context) error
 	Release()

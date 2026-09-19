@@ -5,11 +5,31 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"trading/internal/market"
 	"trading/internal/port"
-	"trading/pkg/indicator"
+
+	"github.com/stretchr/testify/require"
 )
+
+// testLimiter 是 UpstreamLimiter 的信号量实现，用于验证获取/释放钩子与取消传播。
+type testLimiter struct {
+	sem chan struct{}
+}
+
+func newTestLimiter(capacity int) *testLimiter {
+	return &testLimiter{sem: make(chan struct{}, capacity)}
+}
+
+func (l *testLimiter) Acquire(ctx context.Context) error {
+	select {
+	case l.sem <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (l *testLimiter) Release() { <-l.sem }
 
 var marketID = market.InstrumentID{Exchange: market.SSE, Code: "600000"}
 
@@ -145,7 +165,7 @@ func ingestionFixture(t *testing.T) (*MarketIngestionService, *marketSourceFake,
 	src := &marketSourceFake{bars: map[market.Timeframe][]market.Bar{market.Day: {marketBar(market.Day, 9)}, market.Week: {marketBar(market.Week, 9)}}, factors: map[market.Timeframe][]market.AdjustmentFactor{market.Day: {factor}, market.Week: {factor}}, actions: []market.CorporateAction{{ID: "dividend", Instrument: marketID, ExDate: marketDate(9), Kind: market.CashDividend, CashPerShare: 100}}}
 	data := &marketReadFake{}
 	writer := &marketWriterFake{}
-	svc, err := NewMarketIngestionService(src, data, writer, MarketIngestionConfig{Source: "fixture", HistoryStart: marketDate(1), Clock: func() time.Time { return marketDate(31) }, Limiter: indicator.NewLimiter(2)})
+	svc, err := NewMarketIngestionService(src, data, writer, MarketIngestionConfig{Source: "fixture", HistoryStart: marketDate(1), Clock: func() time.Time { return marketDate(31) }, Limiter: newTestLimiter(2)})
 	require.NoError(t, err)
 	return svc, src, data, writer
 }
@@ -333,7 +353,7 @@ func TestRefreshGuardAndLimiterCancellation(t *testing.T) {
 	cancel()
 	require.ErrorIs(t, <-done, context.Canceled)
 	require.Empty(t, writer.batches)
-	limiter := indicator.NewLimiter(1)
+	limiter := newTestLimiter(1)
 	require.NoError(t, limiter.Acquire(context.Background()))
 	defer limiter.Release()
 	svc.config.Limiter = limiter

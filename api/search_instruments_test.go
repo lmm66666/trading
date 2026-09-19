@@ -29,7 +29,7 @@ func TestSearchInstrumentsMapsQueryAndMetadata(t *testing.T) {
 	f := newKernelFixture(t)
 	queries := &apiInstrumentQueries{items: []port.InstrumentSummary{{ID: market.InstrumentID{Exchange: market.SZSE, Code: "002415"}, Name: "海康威视", Board: "MAIN", Active: true, LotSize: 100}}}
 	f.services.InstrumentCatalog = queries
-	f.router = NewRouter(nil, nil, nil, nil, nil, f.services)
+	f.router = NewRouter(f.services)
 
 	w := kernelRequest(t, f, "GET", "/api/v1/instruments?q=%E6%B5%B7%E5%BA%B7&exchange=SZSE&limit=10", "")
 	require.Equal(t, 200, w.Code, w.Body.String())
@@ -46,7 +46,7 @@ func TestSearchInstrumentsRejectsMissingOrRepeatedParameters(t *testing.T) {
 	} {
 		f := newKernelFixture(t)
 		f.services.InstrumentCatalog = &apiInstrumentQueries{}
-		f.router = NewRouter(nil, nil, nil, nil, nil, f.services)
+		f.router = NewRouter(f.services)
 		w := kernelRequest(t, f, "GET", path, "")
 		require.Equal(t, 400, w.Code, path+": "+w.Body.String())
 		require.Contains(t, w.Body.String(), "INVALID_REQUEST")

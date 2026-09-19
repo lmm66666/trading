@@ -78,15 +78,14 @@ func migrateSchema(db *gorm.DB) error {
 	return nil
 }
 
-// runtimeModels excludes legacy technical K-line tables. They remain readable
-// through legacy repositories for rollback/migration tooling, but normal startup
-// no longer creates or mutates their schema.
+// runtimeModels 仅保留旧库迁移链路依赖的 t_stock_info（迁移器 stage "info"
+// 读取证券名称）；旧 K 线表由迁移工具自行访问，正常启动不创建、不变更其结构。
 func runtimeModels() []any {
-	return []any{&model.FinancialReport{}, &model.StockInfo{}}
+	return []any{&model.StockInfo{}}
 }
 
-// mysqlDSN 统一无时区 DATETIME 的编码与解析口径；旧业务交易日期是
-// 字符串字段，其内容不会被驱动按时区转换。
+// mysqlDSN 统一无时区 DATETIME 的编码与解析口径；旧表交易日期是字符串字段，
+// 其内容不会被驱动按时区转换。
 func mysqlDSN(cfg config.DB) string {
 	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=UTC",
 		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName)
@@ -95,24 +94,4 @@ func mysqlDSN(cfg config.DB) string {
 // DB 返回底层 gorm.DB 实例
 func (d *Data) DB() *gorm.DB {
 	return d.db
-}
-
-// StockKlineDaily 返回日线 Repository
-func (d *Data) StockKlineDaily() StockKlineDailyRepo {
-	return newStockKlineDailyRepo(d.db)
-}
-
-// StockKlineWeekly 返回周线 Repository
-func (d *Data) StockKlineWeekly() StockKlineWeeklyRepo {
-	return newStockKlineWeeklyRepo(d.db)
-}
-
-// FinancialReport 返回财报 Repository
-func (d *Data) FinancialReport() FinancialReportRepo {
-	return newFinancialReportRepo(d.db)
-}
-
-// StockInfo 返回股票信息 Repository
-func (d *Data) StockInfo() StockInfoRepo {
-	return newStockInfoRepo(d.db)
 }

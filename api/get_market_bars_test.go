@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,9 +13,24 @@ import (
 	"trading/internal/market"
 )
 
+type marketQueryFake struct {
+	query application.PriceQuery
+	bars  []application.PriceBar
+	err   error
+}
+
+func (f *marketQueryFake) Prices(_ context.Context, q application.PriceQuery) (application.PriceResult, error) {
+	f.query = q
+	bars := f.bars
+	if bars == nil {
+		bars = []application.PriceBar{{CloseTime: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), Close: 10.5}}
+	}
+	return application.PriceResult{Instrument: q.Instrument, Timeframe: q.Timeframe, View: q.View, DataVersion: 9, Bars: bars}, f.err
+}
+
 func TestGetMarketBarsQueriesFuturesByCanonicalInstrument(t *testing.T) {
 	query := &marketQueryFake{bars: []application.PriceBar{{CloseTime: time.Date(2026, 9, 11, 7, 0, 0, 0, time.UTC), Close: 944.94}}}
-	router := NewRouter(nil, nil, nil, nil, nil, KernelServices{MarketQueries: query, Clock: func() time.Time {
+	router := NewRouter(KernelServices{MarketQueries: query, Clock: func() time.Time {
 		return time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)
 	}})
 	response := httptest.NewRecorder()
@@ -30,7 +46,7 @@ func TestGetMarketBarsQueriesFuturesByCanonicalInstrument(t *testing.T) {
 }
 
 func TestGetMarketBarsRejectsMissingDuplicateAndUnknownQueries(t *testing.T) {
-	router := NewRouter(nil, nil, nil, nil, nil, KernelServices{MarketQueries: &marketQueryFake{}})
+	router := NewRouter(KernelServices{MarketQueries: &marketQueryFake{}})
 	for _, target := range []string{
 		"/api/v1/market/bars",
 		"/api/v1/market/bars?instrument=SHFE%3AAU.MAIN&instrument=INE%3ASC.MAIN",
