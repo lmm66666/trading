@@ -116,3 +116,10 @@ fetchRunPage<T>(kind, runId, resource, after?, limit?): Promise<Page<T>> // orde
 ## 6. 回滚
 
 纯前端新增，无持久化与接口变化；回滚即恢复前端文件，localStorage 键残留无副作用。
+
+## 7. 实现差异登记
+
+实现阶段发现目标设计与后端实际契约有两处不一致，经用户于 2026-09-20 会话裁决"按契约适配"（前端适配、不修改后端），差异登记如下：
+
+1. **策略参数形状**：1.2 假设 `parameters` 为数组；契约实际返回对象映射 `{参数名: {default,min,max,integer}}`。实现在 `api/client.ts` 提供 `strategyParamList()` 把映射转为按参数名排序的数组，`StrategyForm` 仍按数组渲染，调用方无感知。
+2. **扫描结果行字段**：1.4 计划展示入选行的 `name`；契约快照行仅含 `{instrument, signal_time, reason, values}`，无名称字段。实现的结果行只展示 `instrument` 与 `signal_time`，点击行为不变。
