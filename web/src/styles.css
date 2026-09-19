@@ -134,3 +134,14 @@ button:focus-visible, input:focus-visible { outline: 2px solid #d9a744; outline-
   .financial-chart { min-height: 360px; }
   .welcome-footer { flex-wrap: wrap; justify-content: center; max-width: 300px; }
 }
+
+/* ---- 视图切换（图表 / 扫描 / 回测）---- */
+.view-tabs { display: flex; gap: 4px; padding: 10px 23px 0; background: #0d1219; border-bottom: 1px solid var(--line); }
+.view-tab { padding: 9px 18px 10px; color: var(--muted); background: transparent; border: 0; border-bottom: 2px solid transparent; cursor: pointer; font-size: 12px; font-weight: 600; letter-spacing: .04em; }
+.view-tab:hover { color: #cbd3df; }
+.view-tab.active { color: #e7ecf4; border-bottom-color: var(--accent); }
+.panel-placeholder { display: grid; place-content: center; gap: 10px; justify-items: center; height: calc(100vh - 90px); color: var(--faint); font-size: 13px; letter-spacing: .06em; }
+.placeholder-run-id { max-width: 420px; overflow: hidden; color: #445064; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 760px) {
+  .view-tabs { padding: 10px 10px 0 112px; }
+}
