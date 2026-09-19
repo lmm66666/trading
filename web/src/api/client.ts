@@ -394,3 +394,33 @@ export function queryChart(input: ChartQueryInput, signal?: AbortSignal): Promis
     () => mockChartQuery(input),
   )
 }
+
+// ---- 自选清单（无 mock 回退：后端不可用时呈现错误态）----
+
+export interface WatchlistItem extends InstrumentSummary {
+  close: number | null
+  change: number | null
+  change_pct: number | null
+}
+
+function unwrapItems(result: { items: WatchlistItem[] }): WatchlistItem[] {
+  return result.items
+}
+
+export function listWatchlist(): Promise<WatchlistItem[]> {
+  return request<{ items: WatchlistItem[] }>('/api/v1/watchlist').then(unwrapItems)
+}
+
+export function addWatchlistItem(instrument: string): Promise<WatchlistItem[]> {
+  return request<{ items: WatchlistItem[] }>('/api/v1/watchlist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ instrument }),
+  }).then(unwrapItems)
+}
+
+export function removeWatchlistItem(instrument: string): Promise<WatchlistItem[]> {
+  return request<{ items: WatchlistItem[] }>(`/api/v1/watchlist/${encodeURIComponent(instrument)}`, {
+    method: 'DELETE',
+  }).then(unwrapItems)
+}

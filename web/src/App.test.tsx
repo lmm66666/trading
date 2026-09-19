@@ -46,14 +46,21 @@ describe('App', () => {
 
   it('从空状态选股并同步 URL', () => {
     render(<App />)
-    expect(screen.getByText(/选择一只股票/)).toBeVisible()
-    const searchButtons = screen.getAllByRole('button', { name: '搜索股票' })
-    fireEvent.click(searchButtons.at(-1)!)
-    const closeButtons = screen.getAllByRole('button', { name: '关闭股票搜索' })
-    fireEvent.click(closeButtons.at(-1)!)
+    expect(screen.getByText(/选择一只证券/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: '选择海康威视' }))
     expect(screen.getByText('图表 SZSE:002415')).toBeVisible()
     expect(window.location.search).toContain('symbol=SZSE%3A002415')
+  })
+
+  it('顶栏浮层搜索与自选抽屉开关可交互', () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '打开股票搜索' }))
+    expect(screen.getByRole('button', { name: '关闭股票搜索' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '关闭股票搜索' }))
+
+    fireEvent.click(screen.getByRole('button', { name: '打开自选清单' }))
+    expect(screen.getByRole('button', { name: '关闭自选清单' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '关闭自选清单' }))
   })
 
   it('恢复 URL 状态并接收图表状态变更', () => {
@@ -73,7 +80,7 @@ describe('App', () => {
 
     window.history.replaceState(null, '', '/?tab=OPTIMIZER')
     render(<App />)
-    expect(screen.getByText(/选择一只股票/)).toBeVisible()
+    expect(screen.getByText(/选择一只证券/)).toBeVisible()
   })
 
   it('切换视图时保持选中证券并同步 tab', () => {

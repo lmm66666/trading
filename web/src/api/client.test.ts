@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  addWatchlistItem,
   cancelRun,
   createBacktestRun,
   createScanRun,
@@ -8,7 +9,9 @@ import {
   fromScaled,
   getRun,
   listStrategies,
+  listWatchlist,
   queryChart,
+  removeWatchlistItem,
   searchInstruments,
   strategyParamList,
   toScaled,
@@ -219,6 +222,35 @@ describe('策略任务客户端', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/v1/backtest-runs/r1/equity?limit=100', undefined)
     await fetchRunPage('backtest', 'r1', 'orders', 200, 500)
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/backtest-runs/r1/orders?limit=500&after_sequence=200', undefined)
+  })
+})
+
+describe('自选清单客户端', () => {
+  it('拉取自选列表并解包 items', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse({ items: [{ instrument: 'SSE:600000' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(listWatchlist()).resolves.toEqual([{ instrument: 'SSE:600000' }])
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/watchlist', undefined)
+  })
+
+  it('添加自选发送 JSON 体', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse({ items: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await addWatchlistItem('SSE:600000')
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/watchlist', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ instrument: 'SSE:600000' }),
+    }))
+  })
+
+  it('移除自选对身份做 URL 编码并使用 DELETE', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse({ items: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await removeWatchlistItem('SSE:600000')
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/watchlist/SSE%3A600000', { method: 'DELETE' })
   })
 })
 
