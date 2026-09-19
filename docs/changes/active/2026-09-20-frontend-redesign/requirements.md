@@ -1,0 +1,75 @@
+---
+id: CHG-2026-09-20-frontend-redesign
+status: draft
+authority: normative
+approval_status: approved
+approved_by: user
+approved_at: "2026-09-20"
+approved_revision: "27398ff:docs/changes/active/2026-09-20-frontend-redesign/requirements.md"
+approved_scope: [TWR-001, TWR-002, TWR-003, TWR-004, TWR-005, TWR-006, TWR-007, TWR-008, TWR-009, TWR-010]
+---
+
+# 前端改版：TradingView 风格工作台与自选清单
+
+| 属性 | 内容 |
+|---|---|
+| 创建日期 | 2026-09-20 |
+| 适用范围 | `web`（整体布局、样式、搜索、新增自选面板）、后端新增自选能力（`port`、`application`、`infrastructure/mysql`、`api`）、`docs/design/` 与 `docs/standards/http-api.md` 同步 |
+| 基线 | main（27398ff）+ CHG-2026-09-20-strategy-frontend 合并后 |
+| 已确认意图 | 用户于 2026-09-20 会话裁决：TV 科技风格改版、左侧自选清单、搜索移至右上角、前后端整体设计；先完成 strategy-frontend 再实施本变更；自选显示最新价与涨跌幅；强调色采用 TV 蓝 #2962FF；主工作区 mock 回退改动已先行提交 main（27398ff） |
+
+## 1. 问题、目标与使用条件
+
+当前工作台是"左搜索 + 右图表"的单一布局：常用证券每次都要重新搜索，视觉密度与专业行情终端（TradingView）差距明显。本变更引入服务端自选清单（跨会话收藏）并整体改版为 TV 风格三段布局：顶栏（品牌 + 视图切换 + 右上角搜索）、左侧自选面板（含报价）、主工作区（图表/扫描/回测）。后端新增自选持久化与批量报价能力，其余后端行为不变。
+
+## 2. 稳定需求
+
+- TWR-001 自选列表：`GET /api/v1/watchlist` 返回按添加时间升序的自选证券，每项含完整身份（`instrument/code/name/exchange/board/lot_size`）与最新日线报价（`close/change/change_pct`，无数据为 `null`）；仅返回当前活跃证券。
+- TWR-002 添加自选：`POST /api/v1/watchlist`，请求体 `{"instrument":"SSE:600000"}`；身份非法 400；未知或非活跃证券 404；已存在视为幂等成功；上限 100 只，超出 409；成功返回更新后的完整列表。
+- TWR-003 移除自选：`DELETE /api/v1/watchlist/:instrument`（完整身份按 URL 编码传递）；条目不存在视为幂等成功；成功返回更新后的完整列表。
+- TWR-004 报价语义：`close/change/change_pct` 取最新 `COMPLETE` 数据版本的当前（未失效）日线 bar，`change` 与 `change_pct` 基于上一根日线收盘价；不足两根 bar 时相应字段为 `null`；价格以元为单位的数值。
+- TWR-005 TV 风格布局：顶栏（品牌、图表/扫描/回测视图切换、右上角搜索框）、左侧自选面板、主工作区三段结构；既有 URL 状态语义（symbol/timeframe/priceView/tab 白名单与回落）不变。
+- TWR-006 顶栏搜索：搜索框位于顶栏右上角，输入后展示 TV 式下拉结果；220ms 防抖、上下键/Enter/Escape 键盘导航与过期请求取消行为保留；`/` 键全局聚焦搜索框、Escape 收起；选中证券进入图表视图。
+- TWR-007 自选面板交互：行点击选中该证券并切到图表视图；行悬停提供移除入口；当前选中证券行高亮；空态、加载、错误态可理解；提供手动刷新报价入口。
+- TWR-008 图表收藏：图表头部提供 ★ 收藏开关，状态与自选列表一致；切换后自选列表即时更新；失败提示且不破坏当前列表。
+- TWR-009 视觉规范：TV 蓝 `#2962FF` 为唯一强调色（选中/激活/聚焦）；红涨绿跌约定保留；数字使用等宽表格数字；紧凑密度；K 线、成交量与指标图配色同步新视觉；扫描与回测面板适配新布局与视觉，功能不变。
+- TWR-010 移动适配：小屏下搜索为顶栏图标触发的全屏浮层；自选为抽屉；图表、扫描、回测面板可用性不退化。
+
+## 3. 非目标
+
+- 不做实时报价推送（WebSocket/SSE）与自动轮询，报价仅在加载与手动刷新时读取。
+- 不做自选拖拽排序、分组、多清单与备注。
+- 不做用户体系与多用户隔离（单用户系统）。
+- 自选与顶栏搜索暂仅覆盖 A 股股票（`t_instruments` 活跃证券）；期货主力序列（如 `SHFE:AU.MAIN`）的入列与搜索留待后续变更评估。
+- 不做搜索结果行内加自选（v1 仅图表头部 ★）。
+- 不做明暗主题切换、绘图工具、自定义列。
+- 不修改既有后端接口、策略内核与 Worker 行为。
+
+## 4. 方案比较与选择
+
+- 自选存储：服务端 MySQL 表（选定，跨会话/跨设备且与整体后端设计一致）vs 浏览器 localStorage（放弃，无后端沉淀、换端丢失）。
+- 写接口形状：集合级——POST/DELETE 直接返回更新后的完整列表（选定，列表上限 100，前端无需变更后二次拉取）vs 严格 REST 单资源（放弃，每次变更需额外 GET）。
+- 报价读取：单条批量 SQL（窗口函数取每只最新两根当前日线 bar，选定）vs 按证券循环查询（放弃，违反工程标准"API 不按证券循环查询 Repository"）。
+
+## 5. 可执行验收
+
+| 需求 | 验证 |
+|---|---|
+| TWR-001 | dbtest：建表、插入、按序返回、非活跃过滤；handler 测试：响应结构与排序 |
+| TWR-002 | handler 测试：严格 JSON、非法身份 400、未知/非活跃 404、重复添加幂等、上限 409 |
+| TWR-003 | handler 测试：URL 编码身份、不存在幂等、返回更新列表 |
+| TWR-004 | dbtest：两根 bar 计算、单根/零根 null、缩放换算为元；service 测试：enrichment 组装 |
+| TWR-005 | Vitest：三段布局渲染、tab 白名单与非法值回落（沿用既有用例） |
+| TWR-006 | Vitest：防抖/键盘导航/取消保留、选中进入图表、下拉可访问性属性 |
+| TWR-007 | Vitest：行点击回调、移除调用、高亮、空/错/载三态、刷新按钮 |
+| TWR-008 | Vitest：★ 状态反映列表、toggle 调 POST/DELETE、失败提示与列表保留 |
+| TWR-009 | Vitest + 人工走查：配色变量应用、图表配色同步、面板适配渲染 |
+| TWR-010 | 人工走查 + CSS 断言：断点下搜索浮层与自选抽屉可用 |
+| 门禁 | `npm --prefix web run check`；`go test ./... && go vet ./...`；`bash scripts/verify.sh --mysql`（新增表与 SQL，触发 MySQL 门禁） |
+
+## 6. 风险
+
+- `t_watchlist` 引用后续被删除或停用的证券：`GET` 过滤非活跃，孤儿行保留表中，证券恢复活跃后自动重新显示。
+- 报价非实时：依赖行情刷新节奏（日线级别），面板提供手动刷新；属可接受的产品语义而非缺陷。
+- `web/src/api/client.ts` 已有 mock 回退与 strategy 扩展两批改动：实施顺序上先合并 strategy-frontend（已裁决），本变更在其之上进行，避免三方冲突。
+- 图表库配色与 CSS 变量双处维护：设计约定图表颜色取自同一套色板常量，减少漂移。
