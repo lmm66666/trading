@@ -26,9 +26,9 @@ const mocks = vi.hoisted(() => {
     unsubscribeCrosshairMove: vi.fn(),
     addSeries: vi.fn(() => series),
     panes: () => [
-      { setStretchFactor, getStretchFactor },
-      { setStretchFactor, getStretchFactor },
-      { setStretchFactor, getStretchFactor },
+      { setStretchFactor, getStretchFactor, getHeight: () => 100, getHTMLElement: () => null },
+      { setStretchFactor, getStretchFactor, getHeight: () => 100, getHTMLElement: () => null },
+      { setStretchFactor, getStretchFactor, getHeight: () => 100, getHTMLElement: () => null },
     ],
     remove: vi.fn(),
     timeScale: () => timeScale,
@@ -105,7 +105,26 @@ describe('FinancialChart', () => {
     const { unmount } = render(<FinancialChart bars={bars} series={series} onLoadMore={onLoadMore} />)
 
     expect(mocks.chart.addSeries).toHaveBeenCalledTimes(6)
-    expect(mocks.chart.addSeries).toHaveBeenCalledWith('line', expect.objectContaining({ title: 'SMA 5' }), 0)
+    // K 线红涨绿跌，右轴值标签统一关闭，指标值由图例展示
+    expect(mocks.chart.addSeries).toHaveBeenCalledWith(
+      'candlestick',
+      expect.objectContaining({ upColor: '#ef5350', downColor: '#26a69a' }),
+    )
+    expect(mocks.chart.addSeries).toHaveBeenCalledWith(
+      'histogram',
+      expect.objectContaining({ lastValueVisible: false }),
+      1,
+    )
+    expect(mocks.chart.addSeries).toHaveBeenCalledWith(
+      'line',
+      expect.objectContaining({ lastValueVisible: false }),
+      0,
+    )
+    expect(mocks.chart.addSeries).toHaveBeenCalledWith(
+      'line',
+      expect.objectContaining({ lastValueVisible: false }),
+      2,
+    )
     expect(mocks.timeScale.fitContent).toHaveBeenCalled()
     expect(onLoadMore).not.toHaveBeenCalled()
     const rangeHandler = mocks.timeScale.subscribeVisibleLogicalRangeChange.mock.calls[0][0]
@@ -116,6 +135,96 @@ describe('FinancialChart', () => {
     unmount()
     expect(mocks.timeScale.unsubscribeVisibleLogicalRangeChange).toHaveBeenCalledWith(rangeHandler)
     expect(mocks.chart.remove).toHaveBeenCalled()
+  })
+
+  it('关闭 TV 水印', () => {
+    const bar = {
+      open_time: '2026-09-11T01:00:00Z',
+      close_time: '2026-09-11T07:00:00Z',
+      open: 33,
+      high: 34,
+      low: 32,
+      close: 33.5,
+      volume: 100,
+      amount: 3300,
+      trading_status: 0,
+    }
+    render(<FinancialChart bars={[bar]} series={[]} onLoadMore={vi.fn()} />)
+    const options = (mocks.createChart.mock.calls[0] as unknown[])[1] as {
+      layout: { attributionLogo?: boolean }
+    }
+    expect(options.layout.attributionLogo).toBe(false)
+  })
+
+  it('主图图例展示日期与 OHLC，副图图例定位到对应 pane 并随十字光标更新', () => {
+    const bars = [
+      {
+        open_time: '2026-09-10T01:00:00Z',
+        close_time: '2026-09-10T07:00:00Z',
+        open: 30,
+        high: 31,
+        low: 29,
+        close: 30.5,
+        volume: 100,
+        amount: 3000,
+        trading_status: 0,
+      },
+      {
+        open_time: '2026-09-11T01:00:00Z',
+        close_time: '2026-09-11T07:00:00Z',
+        open: 33.5,
+        high: 35,
+        low: 33,
+        close: 34.5,
+        volume: 200,
+        amount: 6900,
+        trading_status: 0,
+      },
+    ]
+    const series = [
+      {
+        key: 'sma/day/qfq/close/p=5',
+        kind: 'SMA' as const,
+        component: 'value',
+        points: [{ time: '2026-09-11T07:00:00Z', value: 33.2 }],
+      },
+      {
+        key: 'macd/day/qfq/close/f=12/s=26/sig=9',
+        kind: 'MACD' as const,
+        component: 'histogram',
+        points: [{ time: '2026-09-11T07:00:00Z', value: -0.2 }],
+      },
+      {
+        key: 'macd/day/qfq/close/f=12/s=26/sig=9',
+        kind: 'MACD' as const,
+        component: 'dif',
+        points: [{ time: '2026-09-11T07:00:00Z', value: 0.1 }],
+      },
+    ]
+    const { container } = render(<FinancialChart bars={bars} series={series} onLoadMore={vi.fn()} />)
+
+    const legends = container.querySelectorAll('.chart-legend')
+    expect(legends.length).toBe(2) // 主图图例 + MACD 副图图例
+    const mainLegend = legends[0] as HTMLElement
+    // 日期独占一行，光标未悬停时显示最新一根
+    expect(mainLegend.querySelector('.chart-legend-date')!.textContent).toContain('2026-09-11')
+    // OHLC 原始值 + 涨跌 + 量
+    expect(mainLegend.textContent).toContain('34.50')
+    expect(mainLegend.textContent).toContain('+4.00 (+13.11%)')
+    expect(mainLegend.textContent).toContain('200')
+    // MACD 副图图例定位到 pane 2 左上角：mock pane 高 100 → top 206
+    const paneLegend = legends[1] as HTMLElement
+    expect(paneLegend.style.top).toBe('206px')
+    expect(paneLegend.textContent).toContain('DIF')
+
+    // 十字光标移到 09-10：图例切到该 K 线的值
+    const hover = mocks.chart.subscribeCrosshairMove.mock.calls[0][0] as (p: { time?: string }) => void
+    act(() => hover({ time: '2026-09-10' }))
+    expect(mainLegend.querySelector('.chart-legend-date')!.textContent).toContain('2026-09-10')
+    expect(mainLegend.textContent).toContain('30.50')
+    // 光标离开：回退到最新一根
+    act(() => hover({}))
+    expect(mainLegend.querySelector('.chart-legend-date')!.textContent).toContain('2026-09-11')
   })
 
   it('前插历史数据时复用图表并保持当前逻辑视口', () => {
