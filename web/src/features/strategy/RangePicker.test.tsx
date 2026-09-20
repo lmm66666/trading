@@ -178,9 +178,12 @@ describe('RangePicker', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('点击组件外部关闭弹层', () => {
+  it('点击组件外部关闭弹层，弹层内点击不关闭', () => {
     render(<Harness onChange={vi.fn()} />)
     openPicker()
+    expect(screen.getByRole('dialog')).toBeVisible()
+    // 弹层经 portal 渲染在 body 下，点击弹层内部元素不能误判为外部
+    fireEvent.pointerDown(screen.getByRole('button', { name: '近 1 月' }))
     expect(screen.getByRole('dialog')).toBeVisible()
     fireEvent.pointerDown(screen.getByRole('button', { name: '外部按钮' }))
     expect(screen.queryByRole('dialog')).toBeNull()

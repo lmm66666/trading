@@ -387,7 +387,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .range-trigger .chevron { margin-left: auto; transition: transform .15s; }
 .range-trigger.open .chevron { transform: rotate(180deg); }
 .range-text.placeholder { color: var(--faint); }
-.range-popover { position: absolute; z-index: 50; top: calc(100% + 6px); left: 0; max-width: min(560px, calc(100vw - 24px)); background: var(--raised); border-radius: 8px; box-shadow: 0 18px 44px rgba(0, 0, 0, .55); animation: dropdown-in .12s ease; }
+.range-popover { position: fixed; z-index: 50; max-width: min(556px, calc(100vw - 24px)); background: var(--raised); border-radius: 8px; box-shadow: 0 18px 44px rgba(0, 0, 0, .55); animation: dropdown-in .12s ease; outline: none; }
 .range-main { display: flex; }
 .range-presets { display: flex; flex-direction: column; gap: 2px; width: 92px; padding: 8px 6px; border-right: 1px solid var(--line); }
 .range-presets button { height: 28px; padding: 0 10px; color: var(--muted); background: transparent; border: 0; border-radius: 4px; cursor: pointer; font-size: 11px; text-align: left; transition: color .12s, background-color .12s; }

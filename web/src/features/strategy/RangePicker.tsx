@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 const PRESETS: ReadonlyArray<{ label: string; months?: number; ytd?: boolean }> = [
   { label: '近 1 月', months: 1 },
@@ -62,24 +63,54 @@ export function RangePicker({ ariaLabel = '时间范围', from, to, onChange }: 
     return new Date(today.getFullYear(), today.getMonth() - 1, 1)
   })
   const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
+  // 弹层经 portal 渲染到 body 并 fixed 定位，避免被滚动列裁剪
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties | null>(null)
 
   useEffect(() => {
     if (!open) return
+    popoverRef.current?.focus()
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    const onPointerDown = (event: PointerEvent) => {
-      if (rootRef.current && event.target instanceof Node && !rootRef.current.contains(event.target)) {
+      if (event.key === 'Escape') {
         setOpen(false)
+        triggerRef.current?.focus()
       }
+    }
+    const isInside = (target: EventTarget | null): boolean =>
+      target instanceof Node &&
+      ((rootRef.current?.contains(target) ?? false) || (popoverRef.current?.contains(target) ?? false))
+    const onPointerDown = (event: PointerEvent) => {
+      if (!isInside(event.target)) setOpen(false)
+    }
+    // 触发器随列滚动后 fixed 弹层不再对齐，直接收起
+    const onScroll = (event: Event) => {
+      if (!(event.target instanceof Node) || !popoverRef.current?.contains(event.target)) setOpen(false)
     }
     document.addEventListener('keydown', onKeyDown)
     document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('scroll', onScroll, true)
     return () => {
       document.removeEventListener('keydown', onKeyDown)
       document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('scroll', onScroll, true)
     }
   }, [open])
+
+  /** 按触发器位置计算 fixed 弹层坐标：右对齐触发器，视口放不下时左移，底部溢出时翻转到上方 */
+  const placePopover = () => {
+    const rect = rootRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const margin = 12
+    const width = 556
+    const heightEstimate = 360
+    const left = Math.max(margin, Math.min(rect.left, window.innerWidth - margin - width))
+    let top = rect.bottom + 6
+    if (top + heightEstimate > window.innerHeight - margin) {
+      top = Math.max(margin, rect.top - 6 - heightEstimate)
+    }
+    setPopoverStyle({ position: 'fixed', top, left })
+  }
 
   const openPopover = () => {
     const fromDate = parseDate(from)
@@ -89,6 +120,7 @@ export function RangePicker({ ariaLabel = '时间范围', from, to, onChange }: 
     setPreset(null)
     setHover(null)
     setView(new Date(base.getFullYear(), base.getMonth() - (fromDate ? 0 : 1), 1))
+    placePopover()
     setOpen(true)
   }
 
@@ -120,6 +152,7 @@ export function RangePicker({ ariaLabel = '时间范围', from, to, onChange }: 
     if (!start || !end) return
     onChange(fmtDate(start), fmtDate(end))
     setOpen(false)
+    triggerRef.current?.focus()
   }
 
   const clear = () => {
@@ -216,6 +249,7 @@ export function RangePicker({ ariaLabel = '时间范围', from, to, onChange }: 
     <div className="range-picker" ref={rootRef}>
       <button
         type="button"
+        ref={triggerRef}
         className={open ? 'range-trigger open' : 'range-trigger'}
         aria-label={ariaLabel}
         aria-haspopup="dialog"
@@ -233,8 +267,15 @@ export function RangePicker({ ariaLabel = '时间范围', from, to, onChange }: 
           <path d="m6 9 6 6 6-6" />
         </svg>
       </button>
-      {open && (
-        <div className="range-popover" role="dialog">
+      {open && createPortal(
+        <div
+          ref={popoverRef}
+          className="range-popover"
+          role="dialog"
+          aria-label="选择日期范围"
+          tabIndex={-1}
+          style={popoverStyle ?? { position: 'fixed', top: 0, left: 0 }}
+        >
           <div className="range-main">
             <div className="range-presets">
               {PRESETS.map((item) => (
@@ -242,6 +283,7 @@ export function RangePicker({ ariaLabel = '时间范围', from, to, onChange }: 
                   key={item.label}
                   type="button"
                   className={preset === item.label ? 'active' : ''}
+                  aria-pressed={preset === item.label ? 'true' : 'false'}
                   onClick={() => applyPreset(item)}
                 >
                   {item.label}
@@ -262,7 +304,8 @@ export function RangePicker({ ariaLabel = '时间范围', from, to, onChange }: 
               <button type="button" className="range-btn primary" disabled={!start || !end} onClick={confirm}>确定</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
