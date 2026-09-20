@@ -1,6 +1,6 @@
 ---
 id: CHG-2026-09-20-task-panel-redesign
-status: approved
+status: implemented
 approval_status: approved
 authority: proposed
 approved_by: 用户（对话）
