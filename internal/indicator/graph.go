@@ -66,6 +66,9 @@ func compute(dataset market.Dataset, factors []market.AdjustmentFactor, ref Ref)
 	switch ref.Kind {
 	case OHLC:
 		return priceSeries(dataset, factors, ref.PriceView, ref.Field)
+	case STDKind:
+		input, err := priceSeries(dataset, factors, ref.PriceView, ref.Field)
+		return stddevSeries(input, ref.Period), err
 	case SMAKind:
 		input, err := priceSeries(dataset, factors, ref.PriceView, ref.Field)
 		return smaSeries(input, ref.Period), err

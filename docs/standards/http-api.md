@@ -158,7 +158,7 @@ curl -X DELETE http://localhost:8080/api/v1/watchlist/SSE%3A600000
 
 `timeframe` 支持 DAY、WEEK；`price_view` 支持 RAW、QFQ；`limit` 默认400、范围100–1000。`data_version=0` 在首次请求解析最新版本，向前加载时必须回传响应中的正版本。`before` 是可选的 RFC3339 排他游标。
 
-指标最多16个：SMA/EMA 使用1–500的 period；MACD 使用正数 fast/slow/signal 且 slow>fast；KDJ 使用1–500的 period。服务端还会按指标类型和周期执行总计算成本门禁，拒绝可能造成 CPU 放大的极端组合。响应的 series 按请求顺序返回，MACD 展开为 dif/dea/histogram，KDJ 展开为 k/d/j；预热期无效点不输出，客户端取消后会在指标计算边界停止。
+指标最多16个：SMA/EMA/STD 使用1–500的 period；MACD 使用正数 fast/slow/signal 且 slow>fast；KDJ 使用1–500的 period。服务端还会按指标类型和周期执行总计算成本门禁，拒绝可能造成 CPU 放大的极端组合。STD 对当前价格视图收盘价计算滚动总体标准差（分母为 period，常量窗口为0），成本按 period 计入2000预算，返回单条 value 序列，预热不足不输出；在完整历史计算后裁页。响应的 series 按请求顺序返回，MACD 展开为 dif/dea/histogram，KDJ 展开为 k/d/j；预热期无效点不输出，客户端取消后会在指标计算边界停止。
 
 响应 Bar 按 close_time 升序。`has_more` 表示当前游标之前、项目统一的20年查询边界内是否仍有数据；它不承诺提供20年以前的数据。`has_more=true` 时，使用 `next_before` 和相同 `data_version` 获取更早一页。服务先在完整历史上下文计算指标，再裁剪响应页，避免页边界指标跳变。
 

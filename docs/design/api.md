@@ -102,3 +102,8 @@ go test ./api -cover
 - [系统设计](../architecture/system-design.md)
 - [应用层设计](internal/application.md)
 - [端口设计](internal/port.md)
+
+
+## 图表 STD 契约
+
+图表请求新增 STD(period) 类型，由应用层统一验证/计算，响应单条value序列；HTTP字段形状不变，详细口径见[HTTP契约](../standards/http-api.md)。关联期货仍使用已有market/bars，不新增路由或数据库结构。

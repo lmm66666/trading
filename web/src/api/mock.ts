@@ -12,14 +12,70 @@ import type {
 // 所有数据由种子随机数生成，同参数输出完全确定，分页与合并行为与真实接口一致。
 
 const MOCK_INSTRUMENTS: readonly InstrumentSummary[] = [
-  { instrument: 'SSE:600519', code: '600519', name: '贵州茅台', exchange: 'SSE', board: '主板', lot_size: 100 },
-  { instrument: 'SSE:601318', code: '601318', name: '中国平安', exchange: 'SSE', board: '主板', lot_size: 100 },
-  { instrument: 'SSE:688981', code: '688981', name: '中芯国际', exchange: 'SSE', board: '科创板', lot_size: 200 },
-  { instrument: 'SZSE:000001', code: '000001', name: '平安银行', exchange: 'SZSE', board: '主板', lot_size: 100 },
-  { instrument: 'SZSE:000858', code: '000858', name: '五粮液', exchange: 'SZSE', board: '主板', lot_size: 100 },
-  { instrument: 'SZSE:002415', code: '002415', name: '海康威视', exchange: 'SZSE', board: '主板', lot_size: 100 },
-  { instrument: 'SZSE:300750', code: '300750', name: '宁德时代', exchange: 'SZSE', board: '创业板', lot_size: 100 },
-  { instrument: 'BSE:920002', code: '920002', name: '示例股份', exchange: 'BSE', board: '北交所', lot_size: 100 },
+  {
+    instrument: 'SSE:600519',
+    code: '600519',
+    name: '贵州茅台',
+    exchange: 'SSE',
+    board: '主板',
+    lot_size: 100,
+  },
+  {
+    instrument: 'SSE:601318',
+    code: '601318',
+    name: '中国平安',
+    exchange: 'SSE',
+    board: '主板',
+    lot_size: 100,
+  },
+  {
+    instrument: 'SSE:688981',
+    code: '688981',
+    name: '中芯国际',
+    exchange: 'SSE',
+    board: '科创板',
+    lot_size: 200,
+  },
+  {
+    instrument: 'SZSE:000001',
+    code: '000001',
+    name: '平安银行',
+    exchange: 'SZSE',
+    board: '主板',
+    lot_size: 100,
+  },
+  {
+    instrument: 'SZSE:000858',
+    code: '000858',
+    name: '五粮液',
+    exchange: 'SZSE',
+    board: '主板',
+    lot_size: 100,
+  },
+  {
+    instrument: 'SZSE:002415',
+    code: '002415',
+    name: '海康威视',
+    exchange: 'SZSE',
+    board: '主板',
+    lot_size: 100,
+  },
+  {
+    instrument: 'SZSE:300750',
+    code: '300750',
+    name: '宁德时代',
+    exchange: 'SZSE',
+    board: '创业板',
+    lot_size: 100,
+  },
+  {
+    instrument: 'BSE:920002',
+    code: '920002',
+    name: '示例股份',
+    exchange: 'BSE',
+    board: '北交所',
+    lot_size: 100,
+  },
 ]
 
 export function mockSearchInstruments(query: string): InstrumentSummary[] {
@@ -244,6 +300,19 @@ function indicatorSeries(
   switch (indicator.kind) {
     case 'SMA':
       return [build(`SMA/p=${indicator.period}`, 'line', smaSeries(master.closes, indicator.period))]
+    case 'STD':
+      return [
+        build(
+          `STD/p=${indicator.period}`,
+          'value',
+          master.closes.map((_, i) => {
+            if (i < indicator.period - 1) return null
+            const window = master.closes.slice(i - indicator.period + 1, i + 1)
+            const mean = window.reduce((a, b) => a + b, 0) / window.length
+            return Math.sqrt(window.reduce((a, b) => a + (b - mean) ** 2, 0) / window.length)
+          }),
+        ),
+      ]
     case 'EMA':
       return [build(`EMA/p=${indicator.period}`, 'line', emaSeries(master.closes, indicator.period, 0))]
     case 'MACD': {
@@ -298,7 +367,9 @@ export function mockChartQuery(input: ChartQueryInput): ChartResult {
     price_view: input.price_view,
     data_version: 1,
     bars: bars.slice(start, end),
-    series: input.indicators.flatMap((indicator) => indicatorSeries(indicator, { bars, closes, highs, lows }, window)),
+    series: input.indicators.flatMap((indicator) =>
+      indicatorSeries(indicator, { bars, closes, highs, lows }, window),
+    ),
     has_more: start > 0,
     next_before: start > 0 ? bars[start].close_time : null,
   }

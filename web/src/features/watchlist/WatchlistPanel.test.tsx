@@ -5,16 +5,37 @@ import { WatchlistPanel } from './WatchlistPanel'
 
 const items: WatchlistItem[] = [
   {
-    instrument: 'SSE:600000', code: '600000', name: '浦发银行', exchange: 'SSE', board: 'MAIN', lot_size: 100,
-    close: 12.34, change: 0.15, change_pct: 1.23,
+    instrument: 'SSE:600000',
+    code: '600000',
+    name: '浦发银行',
+    exchange: 'SSE',
+    board: 'MAIN',
+    lot_size: 100,
+    close: 12.34,
+    change: 0.15,
+    change_pct: 1.23,
   },
   {
-    instrument: 'SZSE:002415', code: '002415', name: '海康威视', exchange: 'SZSE', board: 'MAIN', lot_size: 100,
-    close: null, change: null, change_pct: null,
+    instrument: 'SZSE:002415',
+    code: '002415',
+    name: '海康威视',
+    exchange: 'SZSE',
+    board: 'MAIN',
+    lot_size: 100,
+    close: null,
+    change: null,
+    change_pct: null,
   },
   {
-    instrument: 'SZSE:000001', code: '000001', name: '平安银行', exchange: 'SZSE', board: 'MAIN', lot_size: 100,
-    close: 10.5, change: -0.2, change_pct: -1.87,
+    instrument: 'SZSE:000001',
+    code: '000001',
+    name: '平安银行',
+    exchange: 'SZSE',
+    board: 'MAIN',
+    lot_size: 100,
+    close: 10.5,
+    change: -0.2,
+    change_pct: -1.87,
   },
 ]
 
@@ -128,4 +149,29 @@ describe('WatchlistPanel', () => {
     )
     expect(screen.getByText('自选已满（上限 100 只）')).toBeVisible()
   })
+})
+
+it('filters by name/code and sorts only on explicit action', () => {
+  const props = {
+    items,
+    status: 'ready' as const,
+    actionError: null,
+    currentInstrument: null,
+    onSelect: vi.fn(),
+    onToggle: vi.fn(),
+    onRefresh: vi.fn(),
+  }
+  const { rerender } = render(<WatchlistPanel {...props} />)
+  fireEvent.change(screen.getByRole('textbox', { name: '筛选自选' }), { target: { value: '银行' } })
+  expect(screen.queryByText('海康威视')).not.toBeInTheDocument()
+  fireEvent.change(screen.getByRole('textbox', { name: '筛选自选' }), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: '按涨跌幅排序' }))
+  expect(screen.getAllByRole('listitem')[0]).toHaveTextContent('浦发银行')
+  rerender(
+    <WatchlistPanel
+      {...props}
+      items={items.map((i) => ({ ...i, change_pct: i.instrument === 'SZSE:000001' ? 50 : i.change_pct }))}
+    />,
+  )
+  expect(screen.getAllByRole('listitem')[0]).toHaveTextContent('浦发银行')
 })
