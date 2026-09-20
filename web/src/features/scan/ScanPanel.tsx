@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { createScanRun } from '../../api/client'
 import { RunMonitor } from '../strategy/RunMonitor'
+import { RangePicker } from '../strategy/RangePicker'
 import { StrategyForm, type StrategyFormValue } from '../strategy/StrategyForm'
 import { describeTaskError, toRFC3339, validateDateRange } from '../strategy/taskUtils'
 import { useRunPolling } from '../strategy/useRunPolling'
@@ -19,7 +20,7 @@ interface ScanPanelProps {
   onSelectInstrument: (instrument: string) => void
 }
 
-/** 扫描视图：表单 → 任务状态条 → 结果表格 三段式 */
+/** 扫描视图：左配置栏（策略/时间/范围）→ 右侧状态条 + 入选名单 */
 export function ScanPanel({ runId, onRunIdChange, onSelectInstrument }: ScanPanelProps) {
   const catalog = useStrategyCatalog()
   const [selection, setSelection] = useState<StrategyFormValue>({ strategy: '', version: '', parameters: {} })
@@ -84,70 +85,103 @@ export function ScanPanel({ runId, onRunIdChange, onSelectInstrument }: ScanPane
       : null
 
   return (
-    <main className="task-panel" aria-label="策略扫描">
-      <section className="panel-card">
-        <h2>策略扫描</h2>
-        <form onSubmit={submit} noValidate>
-          <StrategyForm
-            definitions={catalog.definitions}
-            loading={catalog.loading}
-            error={catalog.error}
-            value={selection}
-            onChange={(next, valid) => {
-              setSelection(next)
-              setParamsValid(valid)
-            }}
-          />
-          <div className="field-row">
-            <label className="field">
-              开始日期
-              <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-            </label>
-            <label className="field">
-              截止日期
-              <input type="date" value={asOf} onChange={(event) => setAsOf(event.target.value)} />
-            </label>
+    <main className="task-workspace" aria-label="策略扫描">
+      <aside className="config-column">
+        <section className="panel-card config-card">
+          <div className="config-head">
+            <h2>策略扫描</h2>
+            <p>对全市场或指定交易所运行策略信号扫描</p>
           </div>
-          <fieldset className="scope-fieldset">
-            <legend>范围</legend>
-            <div className="checkbox-row">
-              {EXCHANGE_OPTIONS.map((option) => (
-                <label key={option.value}>
-                  <input
-                    type="checkbox"
-                    checked={exchanges.includes(option.value)}
-                    onChange={() => toggleExchange(option.value)}
-                  />
-                  {' '}{option.label}
-                </label>
-              ))}
+          <form onSubmit={submit} noValidate>
+            <div className="form-section">
+              <div className="section-label">策略</div>
+              <StrategyForm
+                definitions={catalog.definitions}
+                loading={catalog.loading}
+                error={catalog.error}
+                value={selection}
+                onChange={(next, valid) => {
+                  setSelection(next)
+                  setParamsValid(valid)
+                }}
+              />
             </div>
-            <p className="scope-hint">全部不勾选表示覆盖所有支持的交易所</p>
-            <div className="field-row">
-              <label className="field">
-                <input type="checkbox" checked={activeOnly} onChange={(event) => setActiveOnly(event.target.checked)} />
-                {' '}仅活跃证券
-              </label>
-              <label className="field">
-                数量上限
-                <input
-                  type="number"
-                  min={1}
-                  max={5000}
-                  value={limit}
-                  onChange={(event) => setLimit(event.target.value)}
-                />
-              </label>
+            <div className="form-section">
+              <div className="section-label">时间范围</div>
+              <RangePicker
+                ariaLabel="扫描时间范围"
+                from={from}
+                to={asOf}
+                onChange={(nextFrom, nextTo) => {
+                  setFrom(nextFrom)
+                  setAsOf(nextTo)
+                }}
+              />
             </div>
-          </fieldset>
-          {formError && <p className="form-error">{formError}</p>}
-          <button className="submit-task" disabled={submitting} type="submit">
-            {submitting ? '提交中…' : '发起扫描'}
-          </button>
-        </form>
-      </section>
-      <RunMonitor kind="scan" status={status} pollingError={pollingError} />
-      {terminalResult && <ScanResults run={terminalResult} onSelectInstrument={onSelectInstrument} />}
+            <div className="form-section">
+              <div className="section-label">范围</div>
+              <div className="scope-block">
+                <div className="chip-row" role="group" aria-label="交易所范围">
+                  {EXCHANGE_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className="chip"
+                      aria-pressed={exchanges.includes(option.value)}
+                      onClick={() => toggleExchange(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="scope-hint">全部不勾选表示覆盖所有支持的交易所</p>
+                <div className="scope-inline">
+                  <label className="switch-field">
+                    <span className="switch">
+                      <input
+                        type="checkbox"
+                        checked={activeOnly}
+                        onChange={(event) => setActiveOnly(event.target.checked)}
+                      />
+                      <i aria-hidden="true" />
+                    </span>
+                    仅活跃证券
+                  </label>
+                  <label className="inline-input">
+                    数量上限
+                    <input
+                      className="control"
+                      type="number"
+                      min={1}
+                      max={5000}
+                      value={limit}
+                      onChange={(event) => setLimit(event.target.value)}
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+            {formError && <p className="form-error">{formError}</p>}
+            <button className="submit-task" disabled={submitting} type="submit">
+              {submitting ? '提交中…' : '发起扫描'}
+            </button>
+          </form>
+        </section>
+      </aside>
+      <div className="result-column">
+        <RunMonitor kind="scan" status={status} pollingError={pollingError} />
+        {!status && !pollingError && (
+          <div className="result-empty">
+            <svg className="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+            <strong>尚未发起扫描</strong>
+            <span>在左侧配置策略与时间范围，点击「发起扫描」后结果将在此展示</span>
+          </div>
+        )}
+        {terminalResult && <ScanResults run={terminalResult} onSelectInstrument={onSelectInstrument} />}
+      </div>
     </main>
   )
 }

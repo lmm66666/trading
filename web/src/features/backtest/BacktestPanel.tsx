@@ -4,6 +4,7 @@ import { EquityChart } from './EquityChart'
 import { OrdersTradesTables } from './OrdersTradesTables'
 import { InstrumentSearch } from '../search/InstrumentSearch'
 import { RunMonitor } from '../strategy/RunMonitor'
+import { RangePicker } from '../strategy/RangePicker'
 import { StrategyForm, type StrategyFormValue } from '../strategy/StrategyForm'
 import { describeTaskError, toRFC3339, validateDateRange } from '../strategy/taskUtils'
 import { useRunPolling } from '../strategy/useRunPolling'
@@ -22,7 +23,7 @@ function percent(value: number | null): string {
   return value === null ? '—' : `${(value * 100).toFixed(2)}%`
 }
 
-/** 回测视图：标的与执行假设表单 → 任务状态条 → 指标卡 + 权益曲线 + 订单成交 */
+/** 回测视图：左配置栏（标的/策略/时间/执行假设）→ 右侧状态条 + 摘要与订单成交 */
 export function BacktestPanel({ runId, onRunIdChange, selectedSymbol, defaultLotSize }: BacktestPanelProps) {
   const catalog = useStrategyCatalog()
   const [instrument, setInstrument] = useState<string | null>(selectedSymbol)
@@ -40,6 +41,7 @@ export function BacktestPanel({ runId, onRunIdChange, selectedSymbol, defaultLot
   const [slippageBps, setSlippageBps] = useState('5')
   const [lotSize, setLotSize] = useState(String(defaultLotSize ?? 100))
   const [holdBars, setHoldBars] = useState('')
+  const [feesOpen, setFeesOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -143,161 +145,204 @@ export function BacktestPanel({ runId, onRunIdChange, selectedSymbol, defaultLot
     : null
 
   return (
-    <main className="task-panel" aria-label="策略回测">
-      <section className="panel-card">
-        <h2>策略回测</h2>
-        <form onSubmit={submit} noValidate>
-          <div className="instrument-field">
-            <span className="instrument-current" aria-label="回测标的">{instrument ?? '未选择证券'}</span>
-            <button className="change-instrument" onClick={() => setSearchOpen((open) => !open)} type="button">
-              {instrument ? '更换' : '选择证券'}
-            </button>
-            {searchOpen && (
-              <div className="instrument-popover">
-                <InstrumentSearch onSelect={chooseInstrument} />
+    <main className="task-workspace" aria-label="策略回测">
+      <aside className="config-column">
+        <section className="panel-card config-card">
+          <div className="config-head">
+            <h2>策略回测</h2>
+            <p>对单一标的回放策略信号并模拟成交</p>
+          </div>
+          <form onSubmit={submit} noValidate>
+            <div className="form-section">
+              <div className="section-label">标的</div>
+              <div className="instrument-field">
+                <span className="instrument-current" aria-label="回测标的">{instrument ?? '未选择证券'}</span>
+                <button className="change-instrument" onClick={() => setSearchOpen((open) => !open)} type="button">
+                  {instrument ? '更换' : '选择证券'}
+                </button>
+                {searchOpen && (
+                  <div className="instrument-popover">
+                    <InstrumentSearch onSelect={chooseInstrument} />
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <StrategyForm
-            definitions={catalog.definitions}
-            loading={catalog.loading}
-            error={catalog.error}
-            value={selection}
-            onChange={(next, valid) => {
-              setSelection(next)
-              setParamsValid(valid)
-            }}
-          />
-          <div className="field-row">
-            <label className="field">
-              开始日期
-              <input type="date" value={start} onChange={(event) => setStart(event.target.value)} />
-            </label>
-            <label className="field">
-              结束日期
-              <input type="date" value={end} onChange={(event) => setEnd(event.target.value)} />
-            </label>
-          </div>
-          <fieldset className="scope-fieldset">
-            <legend>执行假设</legend>
-            <div className="field-grid">
-              <label className="field">
-                初始资金（元）
-                <input
-                  type="number"
-                  min={1000}
-                  max={1e9}
-                  value={initialCash}
-                  onChange={(event) => setInitialCash(event.target.value)}
-                />
-              </label>
-              <label className="field">
-                现金使用比例（bps）
-                <input
-                  type="number"
-                  min={1}
-                  max={10000}
-                  value={cashFractionBps}
-                  onChange={(event) => setCashFractionBps(event.target.value)}
-                />
-              </label>
-              <label className="field">
-                每手股数
-                <input
-                  type="number"
-                  min={1}
-                  value={lotSize}
-                  onChange={(event) => setLotSize(event.target.value)}
-                />
-              </label>
-              <label className="field">
-                持有期（根）
-                <input
-                  type="number"
-                  min={0}
-                  placeholder={selectedDefinition ? `策略默认 ${selectedDefinition.default_hold_bars}` : '策略默认'}
-                  value={holdBars}
-                  onChange={(event) => setHoldBars(event.target.value)}
-                />
-              </label>
             </div>
-            <div className="field-grid">
-              <label className="field">
-                佣金（bps）
-                <input
-                  type="number"
-                  min={0}
-                  max={10000}
-                  value={commissionBps}
-                  onChange={(event) => setCommissionBps(event.target.value)}
-                />
-              </label>
-              <label className="field">
-                最低佣金（元）
-                <input
-                  type="number"
-                  min={0}
-                  max={1e9}
-                  value={minimumCommission}
-                  onChange={(event) => setMinimumCommission(event.target.value)}
-                />
-              </label>
-              <label className="field">
-                印花税（bps）
-                <input
-                  type="number"
-                  min={0}
-                  max={10000}
-                  value={stampDutyBps}
-                  onChange={(event) => setStampDutyBps(event.target.value)}
-                />
-              </label>
-              <label className="field">
-                过户费（bps）
-                <input
-                  type="number"
-                  min={0}
-                  max={10000}
-                  value={transferFeeBps}
-                  onChange={(event) => setTransferFeeBps(event.target.value)}
-                />
-              </label>
-              <label className="field">
-                滑点（bps）
-                <input
-                  type="number"
-                  min={0}
-                  max={10000}
-                  value={slippageBps}
-                  onChange={(event) => setSlippageBps(event.target.value)}
-                />
-              </label>
+            <div className="form-section">
+              <div className="section-label">策略</div>
+              <StrategyForm
+                definitions={catalog.definitions}
+                loading={catalog.loading}
+                error={catalog.error}
+                value={selection}
+                onChange={(next, valid) => {
+                  setSelection(next)
+                  setParamsValid(valid)
+                }}
+              />
             </div>
-            <p className="scope-hint">费用为演示值，非费率建议</p>
-          </fieldset>
-          {formError && <p className="form-error">{formError}</p>}
-          <button className="submit-task" disabled={submitting} type="submit">
-            {submitting ? '提交中…' : '发起回测'}
-          </button>
-        </form>
-      </section>
-      <RunMonitor kind="backtest" status={status} pollingError={pollingError} />
-      {succeeded && (
-        <>
-          <section className="summary-cards" aria-label="回测摘要">
-            <div className="summary-card"><span>总收益</span><strong>{percent(succeeded.summary.total_return)}</strong></div>
-            <div className="summary-card"><span>年化收益</span><strong>{percent(succeeded.summary.annualized_return)}</strong></div>
-            <div className="summary-card"><span>最大回撤</span><strong>{percent(succeeded.summary.maximum_drawdown)}</strong></div>
-            <div className="summary-card"><span>胜率</span><strong>{percent(succeeded.summary.win_rate)}</strong></div>
-            <div className="summary-card"><span>盈利因子</span><strong>{succeeded.summary.profit_factor === null ? '—' : succeeded.summary.profit_factor}</strong></div>
-            <div className="summary-card"><span>平均持有</span><strong>{succeeded.summary.average_holding_bars} 根</strong></div>
-            <div className="summary-card"><span>平仓笔数</span><strong>{succeeded.summary.closed_trades}</strong></div>
-            <div className="summary-card"><span>期末持仓</span><strong>{succeeded.summary.has_open_position ? '有持仓' : '空仓'}</strong></div>
-          </section>
-          <EquityChart runId={succeeded.run_id} />
-          <OrdersTradesTables runId={succeeded.run_id} />
-        </>
-      )}
+            <div className="form-section">
+              <div className="section-label">时间范围</div>
+              <RangePicker
+                ariaLabel="回测时间范围"
+                from={start}
+                to={end}
+                onChange={(nextStart, nextEnd) => {
+                  setStart(nextStart)
+                  setEnd(nextEnd)
+                }}
+              />
+            </div>
+            <div className="form-section">
+              <div className="section-label">执行假设</div>
+              <div className="field-grid">
+                <label className="field">
+                  初始资金（元）
+                  <input
+                    type="number"
+                    min={1000}
+                    max={1e9}
+                    value={initialCash}
+                    onChange={(event) => setInitialCash(event.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  现金使用比例（bps）
+                  <input
+                    type="number"
+                    min={1}
+                    max={10000}
+                    value={cashFractionBps}
+                    onChange={(event) => setCashFractionBps(event.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  每手股数
+                  <input
+                    type="number"
+                    min={1}
+                    value={lotSize}
+                    onChange={(event) => setLotSize(event.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  持有期（根）
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder={selectedDefinition ? `策略默认 ${selectedDefinition.default_hold_bars}` : '策略默认'}
+                    value={holdBars}
+                    onChange={(event) => setHoldBars(event.target.value)}
+                  />
+                </label>
+              </div>
+              <button
+                type="button"
+                className="advanced-toggle"
+                aria-expanded={feesOpen}
+                onClick={() => setFeesOpen((open) => !open)}
+              >
+                <svg className="icon chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+                高级费用设置
+                <span className="advanced-summary">
+                  佣金 {commissionBps}bps · 印花税 {stampDutyBps}bps · 滑点 {slippageBps}bps
+                </span>
+              </button>
+              {feesOpen && (
+                <div className="advanced-body">
+                  <div className="field-grid">
+                    <label className="field">
+                      佣金（bps）
+                      <input
+                        type="number"
+                        min={0}
+                        max={10000}
+                        value={commissionBps}
+                        onChange={(event) => setCommissionBps(event.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      最低佣金（元）
+                      <input
+                        type="number"
+                        min={0}
+                        max={1e9}
+                        value={minimumCommission}
+                        onChange={(event) => setMinimumCommission(event.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      印花税（bps）
+                      <input
+                        type="number"
+                        min={0}
+                        max={10000}
+                        value={stampDutyBps}
+                        onChange={(event) => setStampDutyBps(event.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      过户费（bps）
+                      <input
+                        type="number"
+                        min={0}
+                        max={10000}
+                        value={transferFeeBps}
+                        onChange={(event) => setTransferFeeBps(event.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      滑点（bps）
+                      <input
+                        type="number"
+                        min={0}
+                        max={10000}
+                        value={slippageBps}
+                        onChange={(event) => setSlippageBps(event.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <p className="scope-hint">费用为演示值，非费率建议</p>
+                </div>
+              )}
+            </div>
+            {formError && <p className="form-error">{formError}</p>}
+            <button className="submit-task" disabled={submitting} type="submit">
+              {submitting ? '提交中…' : '发起回测'}
+            </button>
+          </form>
+        </section>
+      </aside>
+      <div className="result-column">
+        <RunMonitor kind="backtest" status={status} pollingError={pollingError} />
+        {!status && !pollingError && (
+          <div className="result-empty">
+            <svg className="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 3v18h18" />
+              <path d="m7 14 4-4 4 3 5-6" />
+            </svg>
+            <strong>尚未发起回测</strong>
+            <span>在左侧选择标的、策略与时间范围，点击「发起回测」后结果将在此展示</span>
+          </div>
+        )}
+        {succeeded && (
+          <>
+            <section className="summary-cards" aria-label="回测摘要">
+              <div className="summary-card"><span>总收益</span><strong>{percent(succeeded.summary.total_return)}</strong></div>
+              <div className="summary-card"><span>年化收益</span><strong>{percent(succeeded.summary.annualized_return)}</strong></div>
+              <div className="summary-card"><span>最大回撤</span><strong>{percent(succeeded.summary.maximum_drawdown)}</strong></div>
+              <div className="summary-card"><span>胜率</span><strong>{percent(succeeded.summary.win_rate)}</strong></div>
+              <div className="summary-card"><span>盈利因子</span><strong>{succeeded.summary.profit_factor === null ? '—' : succeeded.summary.profit_factor}</strong></div>
+              <div className="summary-card"><span>平均持有</span><strong>{succeeded.summary.average_holding_bars} 根</strong></div>
+              <div className="summary-card"><span>平仓笔数</span><strong>{succeeded.summary.closed_trades}</strong></div>
+              <div className="summary-card"><span>期末持仓</span><strong>{succeeded.summary.has_open_position ? '有持仓' : '空仓'}</strong></div>
+            </section>
+            <EquityChart runId={succeeded.run_id} />
+            <OrdersTradesTables runId={succeeded.run_id} />
+          </>
+        )}
+      </div>
     </main>
   )
 }

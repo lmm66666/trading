@@ -74,6 +74,30 @@ const partialStatus: RunStatus = {
 
 const noop = () => {}
 
+const fmt = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
+function today(): Date {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+function monthsAgo(base: Date, months: number): Date {
+  const first = new Date(base.getFullYear(), base.getMonth(), 1)
+  first.setMonth(first.getMonth() - months)
+  const daysIn = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
+  first.setDate(Math.min(base.getDate(), daysIn))
+  return first
+}
+
+/** 通过 RangePicker 预设选择时间窗口并确定 */
+function pickPresetRange(label: string) {
+  fireEvent.click(screen.getByRole('button', { name: '扫描时间范围' }))
+  fireEvent.click(screen.getByRole('button', { name: label }))
+  fireEvent.click(screen.getByRole('button', { name: '确定' }))
+}
+
 async function renderWithCatalog(props?: Partial<Parameters<typeof ScanPanel>[0]>) {
   render(<ScanPanel runId={null} onRunIdChange={noop} onSelectInstrument={noop} {...props} />)
   // 目录加载后表单默认未选策略，先选中再等待参数输入出现
@@ -98,9 +122,10 @@ describe('ScanPanel 表单', () => {
     const onRunIdChange = vi.fn()
     await renderWithCatalog({ onRunIdChange })
 
-    fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-01-01' } })
-    fireEvent.change(screen.getByLabelText('截止日期'), { target: { value: '2026-06-01' } })
-    fireEvent.click(screen.getByLabelText('上交所 SSE'))
+    pickPresetRange('近 1 月')
+    const exchange = screen.getByRole('button', { name: '上交所 SSE' })
+    fireEvent.click(exchange)
+    expect(exchange).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: '发起扫描' }))
 
     await screen.findByText('提交中…')
@@ -109,8 +134,8 @@ describe('ScanPanel 表单', () => {
       strategy: 'daily_b1_buy',
       strategy_version: '1',
       idempotency_key: 'uuid-123',
-      from: '2026-01-01T00:00:00Z',
-      as_of: '2026-06-01T00:00:00Z',
+      from: `${fmt(monthsAgo(today(), 1))}T00:00:00Z`,
+      as_of: `${fmt(today())}T00:00:00Z`,
       parameters: undefined,
       scope: { exchanges: ['SSE'], active_only: true, limit: 5000 },
     })
@@ -120,33 +145,24 @@ describe('ScanPanel 表单', () => {
     vi.mocked(createScanRun).mockResolvedValue({ run_id: 'r9', status: 'PENDING' })
     await renderWithCatalog()
     fireEvent.change(screen.getByLabelText('参数 lookback_days'), { target: { value: '30' } })
-    fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-01-01' } })
-    fireEvent.change(screen.getByLabelText('截止日期'), { target: { value: '2026-06-01' } })
+    pickPresetRange('近 1 月')
     fireEvent.click(screen.getByRole('button', { name: '发起扫描' }))
 
     await vi.waitFor(() => expect(createScanRun).toHaveBeenCalled())
     expect(createScanRun).toHaveBeenCalledWith(expect.objectContaining({ parameters: { lookback_days: 30 } }))
   })
 
-  it('日期非法时不发出请求', async () => {
+  it('未选日期时不发出请求', async () => {
     await renderWithCatalog()
-    fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-06-01' } })
-    fireEvent.change(screen.getByLabelText('截止日期'), { target: { value: '2026-01-01' } })
     fireEvent.click(screen.getByRole('button', { name: '发起扫描' }))
-    expect(screen.getByText('开始日期不能晚于截止日期')).toBeVisible()
-    expect(createScanRun).not.toHaveBeenCalled()
-
-    fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2000-01-01' } })
-    fireEvent.click(screen.getByRole('button', { name: '发起扫描' }))
-    expect(screen.getByText('时间跨度不能超过 20 年')).toBeVisible()
+    expect(screen.getByText('请选择开始与截止日期')).toBeVisible()
     expect(createScanRun).not.toHaveBeenCalled()
   })
 
   it('参数越界时拦截提交', async () => {
     await renderWithCatalog()
     fireEvent.change(screen.getByLabelText('参数 lookback_days'), { target: { value: '999' } })
-    fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-01-01' } })
-    fireEvent.change(screen.getByLabelText('截止日期'), { target: { value: '2026-06-01' } })
+    pickPresetRange('近 1 月')
     fireEvent.click(screen.getByRole('button', { name: '发起扫描' }))
     expect(screen.getByText('请选择策略并检查参数')).toBeVisible()
     expect(createScanRun).not.toHaveBeenCalled()
@@ -155,8 +171,7 @@ describe('ScanPanel 表单', () => {
   it('幂等冲突时显示可读提示', async () => {
     vi.mocked(createScanRun).mockRejectedValue(new Error('IDEMPOTENCY_CONFLICT'))
     await renderWithCatalog()
-    fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-01-01' } })
-    fireEvent.change(screen.getByLabelText('截止日期'), { target: { value: '2026-06-01' } })
+    pickPresetRange('近 1 月')
     fireEvent.click(screen.getByRole('button', { name: '发起扫描' }))
     await screen.findByText('任务输入与已有任务冲突，请重新提交')
   })
@@ -164,11 +179,16 @@ describe('ScanPanel 表单', () => {
   it('其他错误原样展示且保留表单', async () => {
     vi.mocked(createScanRun).mockRejectedValue(new Error('NETWORK_DOWN'))
     await renderWithCatalog()
-    fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-01-01' } })
-    fireEvent.change(screen.getByLabelText('截止日期'), { target: { value: '2026-06-01' } })
+    pickPresetRange('近 1 月')
     fireEvent.click(screen.getByRole('button', { name: '发起扫描' }))
     await screen.findByText('NETWORK_DOWN')
-    expect(screen.getByLabelText('开始日期')).toHaveValue('2026-01-01')
+    const expected = `${fmt(monthsAgo(today(), 1))} → ${fmt(today())}`
+    expect(screen.getByRole('button', { name: '扫描时间范围' })).toHaveTextContent(expected)
+  })
+
+  it('未发起任务时展示空态引导', async () => {
+    await renderWithCatalog()
+    expect(screen.getByText('尚未发起扫描')).toBeVisible()
   })
 })
 
