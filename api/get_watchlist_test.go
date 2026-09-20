@@ -11,8 +11,8 @@ import (
 )
 
 type apiWatchlist struct {
-	items                       []application.WatchlistItem
-	addedID, removedID          market.InstrumentID
+	items                      []application.WatchlistItem
+	addedID, removedID         market.InstrumentID
 	addCalls, removeCalls      int
 	listErr, addErr, removeErr error
 }

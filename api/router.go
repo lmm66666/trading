@@ -25,6 +25,11 @@ func NewRouter(kernel KernelServices) *gin.Engine {
 	r.POST("/api/v1/watchlist", h.AddWatchlistItem)
 	r.DELETE("/api/v1/watchlist/:instrument", h.RemoveWatchlistItem)
 	r.POST("/api/v1/chart-queries", h.QueryChart)
+	r.GET("/api/v1/chart-boards", h.ListChartBoards)
+	r.POST("/api/v1/chart-boards", h.CreateChartBoard)
+	r.PUT("/api/v1/chart-boards/:id", h.UpdateChartBoard)
+	r.POST("/api/v1/chart-boards/:id/activate", h.ActivateChartBoard)
+	r.DELETE("/api/v1/chart-boards/:id", h.DeleteChartBoard)
 	r.GET("/api/v1/market/bars", h.GetMarketBars)
 	r.POST("/api/v1/market/refresh", h.MarketRefresh)
 	return r

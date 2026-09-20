@@ -152,6 +152,10 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 	if err != nil {
 		return kernelRuntime{}, err
 	}
+	chartBoards, err := application.NewChartBoardService(mysqlinfra.NewChartBoardStore(db))
+	if err != nil {
+		return kernelRuntime{}, err
+	}
 	queue := mysqlinfra.NewJobQueue(db)
 	store := mysqlinfra.NewRunStore(db)
 	snapshots := mysqlinfra.NewSignalSnapshotStore(db)
@@ -213,6 +217,7 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 		InstrumentCatalog: instrumentQueries,
 		ChartQueries:      chartQueries,
 		Watchlist:         watchlist,
+		ChartBoards:       chartBoards,
 		MarketWorkers:     settings.ScanBatchSize,
 		SyncWaitTimeout:   settings.SyncWaitTimeout,
 		PollInterval:      settings.PollInterval,
