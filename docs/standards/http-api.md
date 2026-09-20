@@ -137,6 +137,30 @@ curl -X DELETE http://localhost:8080/api/v1/watchlist/SSE%3A600000
 
 报价取最新 `COMPLETE` 数据版本的当前（未失效）日线 bar，`change` 与 `change_pct` 基于上一根日线收盘价；不足两根 bar 时相应字段为 `null`。POST 请求 JSON 限制 1MiB，拒绝未知字段和尾随第二个 JSON 值。
 
+#### 行情看板
+
+看板配置单用户全局持久化于 `t_chart_boards`（最多 20 个），五个接口成功后均返回更新后的全量状态 `{"boards":[{"id":1,"name":"默认看板","config":{...}}...],"active_id":1}`，boards 按 id 升序。`config` 的 JSON 字段名与前端 `BoardConfig` 一致（defaultSymbol、timeframe、priceView、indicators、comparison、paneWeights、visibleBars），服务端写路径严格校验后规范化落库、读路径原样透传。
+
+- `GET /api/v1/chart-boards` 返回全量状态。
+- `POST /api/v1/chart-boards` 请求体 `{"name":"...","config":{...}}`，创建即激活。
+- `PUT /api/v1/chart-boards/:id` 请求体 `{"name":"..."} `或 `{"config":{...}}`（至少一项），不触碰激活状态。
+- `POST /api/v1/chart-boards/:id/activate` 激活指定看板（恰一不变量由服务端维护）。
+- `DELETE /api/v1/chart-boards/:id` 删除指定看板；删除激活看板时服务端激活剩余 id 最小者。
+
+校验与错误映射：名称 1–40 字符（首尾空白剔除）；config 校验与图表查询同口径（defaultSymbol 为空或 `^(SSE|SZSE|BSE):[A-Z0-9]{1,32}$`、timeframe/priceView 枚举、指标 ≤16 且身份唯一、comparison 为空或八项期货白名单之一、visibleBars 10–400 整数、paneWeights ≤18 键且值 ∈ (0,10000]）；JSON/字段/校验错误 400 INVALID_REQUEST，未知 id 404 NOT_FOUND，超上限 409 BOARDS_FULL，删除最后一块 409 LAST_BOARD。请求体上限 1MiB，拒绝未知字段与尾随 JSON（嵌套 config 与指标对象递归适用）。
+
+```bash
+curl http://localhost:8080/api/v1/chart-boards
+curl -X POST http://localhost:8080/api/v1/chart-boards \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"默认看板","config":{"defaultSymbol":null,"timeframe":"DAY","priceView":"QFQ","indicators":[{"kind":"SMA","period":5}],"comparison":null,"paneWeights":{},"visibleBars":120}}'
+curl -X PUT http://localhost:8080/api/v1/chart-boards/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"config":{"defaultSymbol":"SSE:600000","timeframe":"DAY","priceView":"QFQ","indicators":[],"comparison":null,"paneWeights":{},"visibleBars":120}}'
+curl -X POST http://localhost:8080/api/v1/chart-boards/2/activate
+curl -X DELETE http://localhost:8080/api/v1/chart-boards/2
+```
+
 #### 图表查询
 
 `POST /api/v1/chart-queries` 在一个固定的 COMPLETE 行情版本上返回 K 线和技术指标：

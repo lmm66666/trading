@@ -77,6 +77,10 @@ WorkerPool 使用固定 worker、周期 reaper 和活跃任务续租。续租周
 
 `WatchlistService` 编排自选三接口：`List` 读取条目后按证券行 ID 批量读取最新日线报价并组装 DTO，无报价条目对应字段为 null；`Add` 校验身份（非法 400）与活跃性（未知或非活跃 404）、超过 `MaxWatchlistItems`（100）返回上限错误（409）后幂等写入；`Remove` 幂等删除。变更接口返回更新后的完整列表。报价由 MySQL 仓储单条窗口函数 SQL 批量完成，应用层不按证券循环查询。
 
+### 5.5 行情看板
+
+`ChartBoardService` 编排看板五接口，单用户全局（无 owner 维度）：名称校验 1–40 字符（首尾空白剔除）；config 以 `json.RawMessage` 接收后严格校验（defaultSymbol、timeframe/priceView 枚举、指标 ≤16 且身份唯一、comparison 白名单、visibleBars、paneWeights）并规范化序列化落库，读路径原样透传。超过 `MaxChartBoards`（20）返回上限错误，删除最后一块返回 `ErrLastBoard`；删除激活看板时激活剩余 id 最小者，恰一激活不变量由存储事务维护。所有变更成功后返回全量状态（boards 按 id 升序 + active_id），不做跨标签页冲突检测。
+
 ## 6. 失败、取消和一致性语义
 
 - context 取消贯穿端口、领域 Replay、Worker 和调度器；取消或失租不重试、不发布。
@@ -99,7 +103,7 @@ go test ./...
 go vet ./...
 ```
 
-测试覆盖输入摘要、固定版本、增量扫描、租约与取消、批量上限、日线合并、本地周线生成、复权因子覆盖、可选 Limiter、调度生命周期、自选校验/报价组装与幂等语义。
+测试覆盖输入摘要、固定版本、增量扫描、租约与取消、批量上限、日线合并、本地周线生成、复权因子覆盖、可选 Limiter、调度生命周期、自选校验/报价组装与幂等语义、看板校验/上限/末板保护与全量状态语义。
 
 ## 9. 相关文档
 

@@ -36,6 +36,7 @@ related: []
 | 快照 | `SignalSnapshotStore` | 按完整 SnapshotKey 选择或继续不可变快照 |
 | 证券目录 | `InstrumentCatalog` | 活跃证券搜索和完整身份查询 |
 | 自选清单 | `WatchlistStore`、`DailyQuoteReader` | 单用户自选增删查（插入序、上限 100）与按证券行 ID 批量读取最新日线报价 |
+| 行情看板 | `ChartBoardStore` | 单用户看板增删改查与激活（id 升序、上限 20、恰一激活） |
 | 可观测性 | `Telemetry` | 白名单阶段耗时与重试计数 |
 | 事件 | `EventPublisher` | 按稳定事件身份持久化完成事件 |
 
@@ -83,7 +84,13 @@ related: []
 - `DailyQuote` 的 Close/Change/ChangePercent 为指针语义：null 表示对应 bar 不可用，零值不承载"无数据"含义。
 - `WatchlistStore.Add` 幂等，`Remove` 对不存在条目也成功；上限由 `MaxWatchlistItems`（100）约束，应用层校验。
 
-### 4.6 身份与时间
+### 4.6 行情看板
+
+- `ChartBoard` 携带服务端生成的数值 id、name 与 `json.RawMessage` config；`ChartBoardState` 为全量状态信封（boards 按 id 升序 + active_id）。
+- `ChartBoardStore` 的创建即激活、更新不触碰激活状态、删除激活看板时由存储事务激活剩余 id 最小者。
+- 上限由 `MaxChartBoards`（20）约束，应用层校验；`ErrChartBoardNotFound` 区分未知 id。
+
+### 4.7 身份与时间
 
 - 所有不透明身份按 UTF-8 字节验证，不 trim，不折叠大小写或尾空格。
 - UTC 时间必须明确 Location 且最多微秒精度；允许零时间的字段由各 DTO 单独声明。
