@@ -1,7 +1,66 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChartResult } from '../../api/client'
+import type { ComponentProps } from 'react'
+import {
+  activateChartBoard,
+  createChartBoard,
+  deleteChartBoard,
+  listChartBoards,
+  updateChartBoard,
+  type BoardConfig,
+  type ChartResult,
+} from '../../api/client'
 import { ChartWorkspace } from './ChartWorkspace'
+import { useBoards } from './useBoards'
+
+vi.mock('../../api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api/client')>()
+  return {
+    ...actual,
+    activateChartBoard: vi.fn(),
+    createChartBoard: vi.fn(),
+    deleteChartBoard: vi.fn(),
+    listChartBoards: vi.fn(),
+    updateChartBoard: vi.fn(),
+  }
+})
+
+let server: { boards: { id: number; name: string; config: BoardConfig }[]; activeId: number }
+let nextId: number
+
+function stateOf() {
+  return { boards: structuredClone(server.boards), active_id: server.activeId }
+}
+
+beforeEach(() => {
+  server = { boards: [], activeId: 0 }
+  nextId = 1
+  vi.mocked(listChartBoards).mockReset().mockImplementation(async () => stateOf())
+  vi.mocked(createChartBoard).mockReset().mockImplementation(async (name: string, config: BoardConfig) => {
+    const board = { id: nextId++, name, config: structuredClone(config) }
+    server.boards.push(board)
+    server.activeId = board.id
+    return stateOf()
+  })
+  vi.mocked(updateChartBoard).mockReset().mockImplementation(
+    async (id: number, changes: { name?: string; config?: BoardConfig }) => {
+      const board = server.boards.find((b) => b.id === id)
+      if (!board) throw new Error('看板不存在')
+      if (changes.name !== undefined) board.name = changes.name
+      if (changes.config !== undefined) board.config = structuredClone(changes.config)
+      return stateOf()
+    },
+  )
+  vi.mocked(activateChartBoard).mockReset().mockImplementation(async (id: number) => {
+    server.activeId = id
+    return stateOf()
+  })
+  vi.mocked(deleteChartBoard).mockReset().mockImplementation(async (id: number) => {
+    server.boards = server.boards.filter((b) => b.id !== id)
+    if (server.activeId === id) server.activeId = server.boards[0]?.id ?? 0
+    return stateOf()
+  })
+})
 
 vi.mock('./FinancialChart', () => ({
   FinancialChart: ({ bars, onLoadMore }: { bars: unknown[]; onLoadMore: () => void }) => (
@@ -13,6 +72,13 @@ vi.mock('./FinancialChart', () => ({
     </div>
   ),
 }))
+
+type HarnessProps = Omit<ComponentProps<typeof ChartWorkspace>, 'board'>
+
+function Harness(props: HarnessProps) {
+  const board = useBoards({ defaultSymbol: 'SZSE:002415' })
+  return <ChartWorkspace {...props} board={board} />
+}
 
 const response: ChartResult = {
   instrument: {
@@ -44,21 +110,17 @@ const response: ChartResult = {
   next_before: null,
 }
 
+const baseProps = {
+  instrument: 'SZSE:002415',
+  onStateChange: vi.fn(),
+  onToggleWatch: vi.fn(),
+  watched: false,
+}
+
 describe('ChartWorkspace', () => {
-  beforeEach(() => localStorage.clear())
   it('加载默认均线并允许切换周期', async () => {
     const query = vi.fn().mockResolvedValue(response)
-    render(
-      <ChartWorkspace
-        instrument="SZSE:002415"
-        initialPriceView="QFQ"
-        initialTimeframe="DAY"
-        onStateChange={vi.fn()}
-        onToggleWatch={vi.fn()}
-        query={query}
-        watched={false}
-      />,
-    )
+    render(<Harness {...baseProps} query={query} />)
 
     await waitFor(() =>
       expect(query).toHaveBeenCalledWith(
@@ -90,17 +152,8 @@ describe('ChartWorkspace', () => {
   it('图表头部 ★ 反映自选状态并回调切换', async () => {
     const onToggleWatch = vi.fn()
     const query = vi.fn().mockResolvedValue(response)
-    const { rerender } = render(
-      <ChartWorkspace
-        instrument="SZSE:002415"
-        initialPriceView="QFQ"
-        initialTimeframe="DAY"
-        onStateChange={vi.fn()}
-        onToggleWatch={onToggleWatch}
-        query={query}
-        watched={false}
-      />,
-    )
+    const props: HarnessProps = { ...baseProps, onToggleWatch, query }
+    const { rerender } = render(<Harness {...props} />)
 
     const star = await screen.findByRole('button', { name: '添加自选' })
     expect(star).toHaveAttribute('aria-pressed', 'false')
@@ -108,17 +161,7 @@ describe('ChartWorkspace', () => {
     fireEvent.click(star)
     expect(onToggleWatch).toHaveBeenCalledTimes(1)
 
-    rerender(
-      <ChartWorkspace
-        instrument="SZSE:002415"
-        initialPriceView="QFQ"
-        initialTimeframe="DAY"
-        onStateChange={vi.fn()}
-        onToggleWatch={onToggleWatch}
-        query={query}
-        watched
-      />,
-    )
+    rerender(<Harness {...props} watched />)
     const filled = screen.getByRole('button', { name: '移除自选' })
     expect(filled).toHaveAttribute('aria-pressed', 'true')
     expect(filled).toHaveTextContent('★')
@@ -135,17 +178,7 @@ describe('ChartWorkspace', () => {
       next_before: null,
     }
     const query = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(older)
-    render(
-      <ChartWorkspace
-        instrument="SZSE:002415"
-        initialPriceView="QFQ"
-        initialTimeframe="DAY"
-        onStateChange={vi.fn()}
-        onToggleWatch={vi.fn()}
-        query={query}
-        watched={false}
-      />,
-    )
+    render(<Harness {...baseProps} query={query} />)
 
     fireEvent.click(await screen.findByRole('button', { name: '触发自动加载' }))
     await waitFor(() =>
@@ -171,17 +204,7 @@ describe('ChartWorkspace', () => {
           resolveOlder = resolve
         }),
       )
-    render(
-      <ChartWorkspace
-        instrument="SZSE:002415"
-        initialPriceView="QFQ"
-        initialTimeframe="DAY"
-        onStateChange={vi.fn()}
-        onToggleWatch={vi.fn()}
-        query={query}
-        watched={false}
-      />,
-    )
+    render(<Harness {...baseProps} query={query} />)
 
     const trigger = await screen.findByRole('button', { name: '触发自动加载' })
     fireEvent.click(trigger)
@@ -201,17 +224,7 @@ describe('ChartWorkspace', () => {
 
   it('没有更多历史数据时不触发自动加载', async () => {
     const query = vi.fn().mockResolvedValue(response)
-    render(
-      <ChartWorkspace
-        instrument="SZSE:002415"
-        initialPriceView="QFQ"
-        initialTimeframe="DAY"
-        onStateChange={vi.fn()}
-        onToggleWatch={vi.fn()}
-        query={query}
-        watched={false}
-      />,
-    )
+    render(<Harness {...baseProps} query={query} />)
 
     fireEvent.click(await screen.findByRole('button', { name: '触发自动加载' }))
     expect(query).toHaveBeenCalledTimes(1)
@@ -220,17 +233,7 @@ describe('ChartWorkspace', () => {
   it('显示服务错误并同步复权方式', async () => {
     const onStateChange = vi.fn()
     const query = vi.fn().mockRejectedValue(new Error('行情版本不存在'))
-    render(
-      <ChartWorkspace
-        instrument="SZSE:002415"
-        initialPriceView="QFQ"
-        initialTimeframe="DAY"
-        onStateChange={onStateChange}
-        onToggleWatch={vi.fn()}
-        query={query}
-        watched={false}
-      />,
-    )
+    render(<Harness {...baseProps} onStateChange={onStateChange} query={query} />)
 
     expect(await screen.findByText('行情版本不存在')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: '不复权' }))
@@ -248,17 +251,7 @@ describe('ChartWorkspace', () => {
       if (input.before) return olderPromise
       return Promise.resolve(input.timeframe === 'WEEK' ? weekly : first)
     })
-    render(
-      <ChartWorkspace
-        instrument="SZSE:002415"
-        initialPriceView="QFQ"
-        initialTimeframe="DAY"
-        onStateChange={vi.fn()}
-        onToggleWatch={vi.fn()}
-        query={query}
-        watched={false}
-      />,
-    )
+    render(<Harness {...baseProps} query={query} />)
 
     fireEvent.click(await screen.findByRole('button', { name: '触发自动加载' }))
     fireEvent.click(screen.getByRole('button', { name: '周线' }))
@@ -277,18 +270,9 @@ describe('ChartWorkspace', () => {
 })
 
 it('keeps configured indicators on stock switch and restores only manual saves', async () => {
-  localStorage.clear()
   const query = vi.fn().mockResolvedValue(response)
-  const props = {
-    instrument: 'SZSE:002415',
-    initialTimeframe: 'DAY' as const,
-    initialPriceView: 'QFQ' as const,
-    onStateChange: vi.fn(),
-    onToggleWatch: vi.fn(),
-    watched: false,
-    query,
-  }
-  const view = render(<ChartWorkspace {...props} />)
+  const props: HarnessProps = { ...baseProps, query }
+  const view = render(<Harness {...props} />)
   await screen.findByTestId('financial-chart')
   fireEvent.click(screen.getByRole('button', { name: /指标/ }))
   fireEvent.click(screen.getByRole('button', { name: '添加 MACD 12, 26, 9' }))
@@ -301,7 +285,16 @@ it('keeps configured indicators on stock switch and restores only manual saves',
     ),
   )
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
-  view.rerender(<ChartWorkspace {...props} instrument="SSE:600938" />)
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('已保存'))
+  expect(updateChartBoard).toHaveBeenCalledWith(
+    expect.any(Number),
+    expect.objectContaining({
+      config: expect.objectContaining({
+        indicators: expect.arrayContaining([expect.objectContaining({ kind: 'MACD' })]),
+      }),
+    }),
+  )
+  view.rerender(<Harness {...props} instrument="SSE:600938" />)
   await waitFor(() =>
     expect(query).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -313,7 +306,7 @@ it('keeps configured indicators on stock switch and restores only manual saves',
   )
   expect(screen.getByText('已保存')).toBeVisible()
   view.unmount()
-  render(<ChartWorkspace {...props} />)
+  render(<Harness {...props} />)
   await waitFor(() =>
     expect(query).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -322,5 +315,4 @@ it('keeps configured indicators on stock switch and restores only manual saves',
       expect.anything(),
     ),
   )
-  localStorage.clear()
 })

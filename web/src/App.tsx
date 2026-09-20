@@ -13,7 +13,7 @@ import { ChartWorkspace } from './features/chart/ChartWorkspace'
 import { readWorkbenchState, writeWorkbenchState, type WorkbenchView } from './features/chart/chartData'
 import { ScanPanel } from './features/scan/ScanPanel'
 import { InstrumentSearch } from './features/search/InstrumentSearch'
-import { readBoards } from './features/chart/boards'
+import { useBoards } from './features/chart/useBoards'
 import { WatchlistPanel } from './features/watchlist/WatchlistPanel'
 
 export type RunKindStore = 'scan' | 'backtest'
@@ -48,10 +48,7 @@ const VIEW_TABS: ReadonlyArray<{ key: WorkbenchView; label: string }> = [
 
 export default function App() {
   const initial = readWorkbenchState(window.location.search)
-  const [symbol, setSymbol] = useState(() => {
-    const saved = readBoards().data
-    return initial.symbol ?? saved.boards.find((b) => b.id === saved.activeId)!.config.defaultSymbol
-  })
+  const [symbol, setSymbol] = useState<string | null>(initial.symbol)
   const [timeframe, setTimeframe] = useState<Timeframe>(initial.timeframe)
   const [priceView, setPriceView] = useState<PriceView>(initial.priceView)
   const [view, setView] = useState<WorkbenchView>(initial.view)
@@ -163,6 +160,13 @@ export default function App() {
     storeRunId('scan', runId)
   }
 
+  // 看板控制器提升到 App：ChartWorkspace 仅在选中证券后挂载，若在内部加载看板，
+  // URL 无股票时 GET 永不触发、看板默认股票无法恢复。
+  const board = useBoards(
+    { defaultSymbol: initial.symbol, timeframe: initial.timeframe, priceView: initial.priceView },
+    (next) => selectSymbol(next, 'chart'),
+  )
+
   return (
     <div
       className="app-shell"
@@ -269,13 +273,19 @@ export default function App() {
         />
       </aside>
       <main className="workspace">
+        {board.status === 'error' && (
+          <div className="board-error" role="alert">
+            <span>看板加载失败：{board.error || '无法连接服务'}</span>
+            <button onClick={board.reload} type="button">
+              重试
+            </button>
+          </div>
+        )}
         <div className="chart-view" hidden={view !== 'chart'}>
-          {symbol ? (
+          {symbol && board.config ? (
             <ChartWorkspace
+              board={board}
               instrument={symbol}
-              initialPriceView={priceView}
-              initialTimeframe={timeframe}
-              onSelectSymbol={(next) => selectSymbol(next, 'chart')}
               onStateChange={changeChartState}
               onToggleWatch={() => toggleWatch(symbol)}
               watched={watchlist.items.some((item) => item.instrument === symbol)}
