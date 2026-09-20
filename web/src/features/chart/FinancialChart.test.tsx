@@ -4,6 +4,7 @@ import { FinancialChart, computeBarSpacingLimits } from './FinancialChart'
 
 const mocks = vi.hoisted(() => {
   let visibleRangeHandler: ((range: { from: number; to: number } | null) => void) | null = null
+  let paneHeights = [100, 100, 100]
   const setData = vi.fn()
   const applyOptions = vi.fn()
   const series = { setData, priceScale: () => ({ applyOptions }) }
@@ -26,15 +27,24 @@ const mocks = vi.hoisted(() => {
     unsubscribeCrosshairMove: vi.fn(),
     addSeries: vi.fn(() => series),
     panes: () => [
-      { setStretchFactor, getStretchFactor, getHeight: () => 100, getHTMLElement: () => null },
-      { setStretchFactor, getStretchFactor, getHeight: () => 100, getHTMLElement: () => null },
-      { setStretchFactor, getStretchFactor, getHeight: () => 100, getHTMLElement: () => null },
+      { setStretchFactor, getStretchFactor, getHeight: () => paneHeights[0], getHTMLElement: () => null },
+      { setStretchFactor, getStretchFactor, getHeight: () => paneHeights[1], getHTMLElement: () => null },
+      { setStretchFactor, getStretchFactor, getHeight: () => paneHeights[2], getHTMLElement: () => null },
     ],
     remove: vi.fn(),
     timeScale: () => timeScale,
   }
   const createChart = vi.fn(() => chart)
-  return { chart, createChart, setData, setStretchFactor, timeScale }
+  return {
+    chart,
+    createChart,
+    setData,
+    setStretchFactor,
+    timeScale,
+    setPaneHeights: (heights: number[]) => {
+      paneHeights = heights
+    },
+  }
 })
 
 vi.mock('lightweight-charts', () => ({
@@ -58,7 +68,10 @@ describe('computeBarSpacingLimits', () => {
 })
 
 describe('FinancialChart', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.setPaneHeights([100, 100, 100])
+  })
   afterEach(() => vi.unstubAllGlobals())
 
   it('绘制主图、成交量、叠加指标与副图，并在靠近左边界时翻页', () => {
@@ -225,6 +238,63 @@ describe('FinancialChart', () => {
     // 光标离开：回退到最新一根
     act(() => hover({}))
     expect(mainLegend.querySelector('.chart-legend-date')!.textContent).toContain('2026-09-11')
+  })
+
+  it('拖动 pane 分隔条时副图图例跟随 pane 新位置', () => {
+    const bars = [
+      {
+        open_time: '2026-09-10T01:00:00Z',
+        close_time: '2026-09-10T07:00:00Z',
+        open: 30,
+        high: 31,
+        low: 29,
+        close: 30.5,
+        volume: 100,
+        amount: 3000,
+        trading_status: 0,
+      },
+      {
+        open_time: '2026-09-11T01:00:00Z',
+        close_time: '2026-09-11T07:00:00Z',
+        open: 33.5,
+        high: 35,
+        low: 33,
+        close: 34.5,
+        volume: 200,
+        amount: 6900,
+        trading_status: 0,
+      },
+    ]
+    const series = [
+      {
+        key: 'macd/day/qfq/close/f=12/s=26/sig=9',
+        kind: 'MACD' as const,
+        component: 'histogram',
+        points: [{ time: '2026-09-11T07:00:00Z', value: -0.2 }],
+      },
+      {
+        key: 'macd/day/qfq/close/f=12/s=26/sig=9',
+        kind: 'MACD' as const,
+        component: 'dif',
+        points: [{ time: '2026-09-11T07:00:00Z', value: 0.1 }],
+      },
+    ]
+    const { container } = render(<FinancialChart bars={bars} series={series} onLoadMore={vi.fn()} />)
+    const plot = container.querySelector('.financial-chart') as HTMLDivElement
+    const paneLegend = container.querySelectorAll('.chart-legend')[1] as HTMLElement
+    expect(paneLegend.style.top).toBe('206px')
+
+    // 拖动分隔条：主图变高（100→200），副图整体下移；拖动过程中图例应实时跟随
+    mocks.setPaneHeights([200, 100, 100])
+    act(() => {
+      plot.dispatchEvent(new Event('pointerdown'))
+      plot.dispatchEvent(new Event('pointermove'))
+    })
+    expect(paneLegend.style.top).toBe('306px')
+
+    // 松开鼠标：按最终布局再校正一次，位置保持
+    act(() => window.dispatchEvent(new Event('pointerup')))
+    expect(paneLegend.style.top).toBe('306px')
   })
 
   it('前插历史数据时复用图表并保持当前逻辑视口', () => {

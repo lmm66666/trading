@@ -234,7 +234,9 @@ export function FinancialChart({
         let top = 0
         heights.forEach((height, index) => { tops[index] = top; top += height + separatorHeight })
       }
-      setPaneTops(tops)
+      setPaneTops((prev) =>
+        prev.length === tops.length && prev.every((top, index) => top === tops[index]) ? prev : tops,
+      )
     }
     applyBarSpacingLimits()
     let resizeObserver: ResizeObserver | null = null
@@ -346,13 +348,6 @@ export function FinancialChart({
       ),
     )
     measurePaneTops()
-    if (resizeObserver) {
-      // 观察 pane 元素本身：用户拖动分隔条调整 pane 高度时同步图例位置
-      for (const pane of panes) {
-        const paneEl = pane.getHTMLElement()
-        if (paneEl) resizeObserver.observe(paneEl)
-      }
-    }
     const captureLayout = () => {
       const range = chart.timeScale().getVisibleLogicalRange()
       return {
@@ -371,10 +366,19 @@ export function FinancialChart({
       beforeInteraction = JSON.stringify(captureLayout())
     }
     const rememberLayout = () => {
-      const next = captureLayout()
-      if (beforeInteraction !== null && JSON.stringify(next) !== beforeInteraction)
-        layoutRef.current.onLayoutChange?.(next)
-      beforeInteraction = null
+      if (beforeInteraction !== null) {
+        const next = captureLayout()
+        if (JSON.stringify(next) !== beforeInteraction)
+          layoutRef.current.onLayoutChange?.(next)
+        beforeInteraction = null
+        // 交互（含拖动 pane 分隔条）结束后按最终布局校正图例位置
+        measurePaneTops()
+      }
+    }
+    // 拖动 pane 分隔条时 pane 高度持续变化；pane 元素是 <tr>，其上的 ResizeObserver
+    // 在浏览器中不可靠（table-row 不派发 RO 通知），改为交互期间随指针移动实时重测
+    const syncPaneTopsWhileDragging = () => {
+      if (beforeInteraction !== null) measurePaneTops()
     }
     const wheel = () => {
       if (beforeInteraction === null) startInteraction()
@@ -382,6 +386,7 @@ export function FinancialChart({
       layoutTimer = window.setTimeout(rememberLayout, 150)
     }
     container.addEventListener('pointerdown', startInteraction)
+    container.addEventListener('pointermove', syncPaneTopsWhileDragging)
     window.addEventListener('pointerup', rememberLayout)
     container.addEventListener('wheel', wheel, { passive: true, capture: true })
     const crosshair = (param: { time?: Time }) =>
@@ -395,6 +400,7 @@ export function FinancialChart({
       if (rangeSubscribedRef.current) chart.timeScale().unsubscribeVisibleLogicalRangeChange(rangeHandler)
       window.clearTimeout(layoutTimer)
       container.removeEventListener('pointerdown', startInteraction)
+      container.removeEventListener('pointermove', syncPaneTopsWhileDragging)
       window.removeEventListener('pointerup', rememberLayout)
       container.removeEventListener('wheel', wheel, true)
       onCaptureLayout?.(null)
