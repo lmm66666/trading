@@ -53,6 +53,30 @@ const succeededStatus: RunStatus = {
 
 const noop = () => {}
 
+const fmt = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
+function today(): Date {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+function monthsAgo(base: Date, months: number): Date {
+  const first = new Date(base.getFullYear(), base.getMonth(), 1)
+  first.setMonth(first.getMonth() - months)
+  const daysIn = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
+  first.setDate(Math.min(base.getDate(), daysIn))
+  return first
+}
+
+/** 通过 RangePicker 预设选择时间窗口并确定 */
+function pickPresetRange(label: string) {
+  fireEvent.click(screen.getByRole('button', { name: '回测时间范围' }))
+  fireEvent.click(screen.getByRole('button', { name: label }))
+  fireEvent.click(screen.getByRole('button', { name: '确定' }))
+}
+
 async function renderWithCatalog(props?: Partial<Parameters<typeof BacktestPanel>[0]>) {
   render(
     <BacktestPanel
@@ -88,8 +112,7 @@ describe('BacktestPanel 表单', () => {
     expect(screen.getByLabelText('每手股数')).toHaveValue(200)
     expect(screen.getByLabelText('持有期（根）')).toHaveAttribute('placeholder', '策略默认 10')
 
-    fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-01-01' } })
-    fireEvent.change(screen.getByLabelText('结束日期'), { target: { value: '2026-06-01' } })
+    pickPresetRange('近 1 月')
     fireEvent.click(screen.getByRole('button', { name: '发起回测' }))
 
     await vi.waitFor(() => expect(onRunIdChange).toHaveBeenCalledWith('bt-1'))
@@ -98,8 +121,8 @@ describe('BacktestPanel 表单', () => {
       strategy: 'daily_b1_buy',
       strategy_version: '1',
       idempotency_key: 'bt-uuid',
-      start: '2026-01-01T00:00:00Z',
-      end: '2026-06-01T00:00:00Z',
+      start: `${fmt(monthsAgo(today(), 1))}T00:00:00Z`,
+      end: `${fmt(today())}T00:00:00Z`,
       parameters: undefined,
       config: {
         initial_cash: 10_000_000_000,      // 100 万元 → 缩放 10000
@@ -115,11 +138,30 @@ describe('BacktestPanel 表单', () => {
     })
   })
 
+  it('高级费用设置默认折叠，展开后可编辑并随提交上送', async () => {
+    vi.mocked(createBacktestRun).mockResolvedValue({ run_id: 'bt-1', status: 'PENDING' })
+    await renderWithCatalog()
+
+    const toggle = screen.getByRole('button', { name: /高级费用设置/ })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByLabelText('佣金（bps）')).toBeNull()
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.change(screen.getByLabelText('佣金（bps）'), { target: { value: '10' } })
+
+    pickPresetRange('近 1 月')
+    fireEvent.click(screen.getByRole('button', { name: '发起回测' }))
+    await vi.waitFor(() => expect(createBacktestRun).toHaveBeenCalled())
+    expect(createBacktestRun).toHaveBeenCalledWith(
+      expect.objectContaining({ config: expect.objectContaining({ commission_bps: 10 }) }),
+    )
+  })
+
   it('越界输入不发出请求', async () => {
     await renderWithCatalog()
     fireEvent.change(screen.getByLabelText('初始资金（元）'), { target: { value: '500' } })
-    fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-01-01' } })
-    fireEvent.change(screen.getByLabelText('结束日期'), { target: { value: '2026-06-01' } })
+    pickPresetRange('近 1 月')
     fireEvent.click(screen.getByRole('button', { name: '发起回测' }))
     expect(screen.getByText('初始资金需在 1 千–10 亿元之间')).toBeVisible()
     expect(createBacktestRun).not.toHaveBeenCalled()
@@ -132,8 +174,7 @@ describe('BacktestPanel 表单', () => {
 
   it('未选择证券时拦截提交', async () => {
     await renderWithCatalog({ selectedSymbol: null })
-    fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-01-01' } })
-    fireEvent.change(screen.getByLabelText('结束日期'), { target: { value: '2026-06-01' } })
+    pickPresetRange('近 1 月')
     fireEvent.click(screen.getByRole('button', { name: '发起回测' }))
     expect(screen.getByText('请选择证券与策略并检查参数')).toBeVisible()
     expect(createBacktestRun).not.toHaveBeenCalled()
@@ -142,10 +183,14 @@ describe('BacktestPanel 表单', () => {
   it('幂等冲突时显示可读提示', async () => {
     vi.mocked(createBacktestRun).mockRejectedValue(new Error('IDEMPOTENCY_CONFLICT'))
     await renderWithCatalog()
-    fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-01-01' } })
-    fireEvent.change(screen.getByLabelText('结束日期'), { target: { value: '2026-06-01' } })
+    pickPresetRange('近 1 月')
     fireEvent.click(screen.getByRole('button', { name: '发起回测' }))
     await screen.findByText('任务输入与已有任务冲突，请重新提交')
+  })
+
+  it('未发起任务时展示空态引导', async () => {
+    await renderWithCatalog()
+    expect(screen.getByText('尚未发起回测')).toBeVisible()
   })
 })
 

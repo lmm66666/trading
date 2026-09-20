@@ -104,32 +104,36 @@ export function StrategyForm({ definitions, loading, error, value, onChange, dis
           {' · '}默认持有 {selected.default_hold_bars} 根
         </p>
       )}
-      {params.map((param) => {
-        const invalid = invalidNames.has(param.name)
-        return (
-          <label className="field" key={param.name}>
-            {param.name}
-            <input
-              type="number"
-              aria-label={`参数 ${param.name}`}
-              aria-invalid={invalid}
-              min={param.min}
-              max={param.max}
-              step={param.integer ? 1 : 'any'}
-              placeholder={`默认 ${param.default}`}
-              value={raw[param.name] ?? ''}
-              disabled={disabled}
-              onChange={(event) => updateParam(param.name, event.target.value)}
-            />
-            {invalid && (
-              <span className="field-error">
-                范围 {param.min}–{param.max}
-                {param.integer ? ' 的整数' : ''}
-              </span>
-            )}
-          </label>
-        )
-      })}
+      {params.length > 0 && (
+        <div className="param-grid">
+          {params.map((param) => {
+            const invalid = invalidNames.has(param.name)
+            return (
+              <label className="field" key={param.name}>
+                {param.name}
+                <input
+                  type="number"
+                  aria-label={`参数 ${param.name}`}
+                  aria-invalid={invalid}
+                  min={param.min}
+                  max={param.max}
+                  step={param.integer ? 1 : 'any'}
+                  placeholder={`默认 ${param.default}`}
+                  value={raw[param.name] ?? ''}
+                  disabled={disabled}
+                  onChange={(event) => updateParam(param.name, event.target.value)}
+                />
+                {invalid && (
+                  <span className="field-error">
+                    范围 {param.min}–{param.max}
+                    {param.integer ? ' 的整数' : ''}
+                  </span>
+                )}
+              </label>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
