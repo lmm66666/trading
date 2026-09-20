@@ -1,6 +1,6 @@
 ---
 id: CHG-2026-09-20-chart-boards
-status: implementing
+status: implemented
 approval_status: approved
 authority: normative
 approved_by: user
