@@ -38,7 +38,11 @@ const SMA_PERIODS = ['5', '20', '60']
 const chartTime = (value: string): Time => value.slice(0, 10) as Time
 
 interface LegendItem {
+  /** React key：series key + component，同一指标的各分量唯一 */
   key: string
+  /** 原始 series key 与分量，用于回查数值（同指标各分量共享 series key） */
+  seriesKey: string
+  component: string
   label: string
   color: string
   signed: boolean
@@ -95,7 +99,14 @@ function buildLegendModel(series: ChartSeries[]): {
     }
     paneIndexByKey.set(item.key, paneIndex)
     if (isOverlay) {
-      overlayItems.push({ key: item.key, label: `${item.kind} ${periodOf(item.key)}`, color, signed: false })
+      overlayItems.push({
+        key: item.key,
+        seriesKey: item.key,
+        component: item.component,
+        label: `${item.kind} ${periodOf(item.key)}`,
+        color,
+        signed: false,
+      })
       return
     }
     let paneGroupIndex = groupIndex.get(groupKey)
@@ -105,8 +116,9 @@ function buildLegendModel(series: ChartSeries[]): {
       groupIndex.set(groupKey, paneGroupIndex)
     }
     paneGroups[paneGroupIndex].items.push({
-      // 同一指标的各分量共享 series key，用 component 区分 React key
       key: `${item.key}#${item.component}`,
+      seriesKey: item.key,
+      component: item.component,
       label: componentLabels[item.component] ?? item.component.toUpperCase(),
       color,
       signed: item.component === 'histogram',
@@ -480,8 +492,11 @@ export function FinancialChart({
     selectedBar && prevClose !== undefined && prevClose > 0
       ? ((selectedBar.close - prevClose) / prevClose) * 100
       : null
-  const pointValue = (key: string) =>
-    series.find((item) => item.key === key)?.points.find((p) => p.time.slice(0, 10) === hoverDate)?.value
+  // 同一指标的各分量（DIF/DEA/柱…）共享 series key，需同时按 component 精确匹配
+  const pointValue = (seriesKey: string, component: string) =>
+    series
+      .find((item) => item.key === seriesKey && item.component === component)
+      ?.points.find((p) => p.time.slice(0, 10) === hoverDate)?.value
   const compactVolume = (value: number) =>
     value >= 1e8 ? `${(value / 1e8).toFixed(2)}亿` : value >= 1e4 ? `${(value / 1e4).toFixed(2)}万` : `${value}`
   const comparisonPoint = comparison?.find(
@@ -491,7 +506,8 @@ export function FinancialChart({
     comparisonPoint && basis?.comparison && comparisonPoint.close > 0
       ? percent(comparisonPoint.close, basis.comparison)
       : null
-  const renderLegendItem = (item: LegendItem, value: number | undefined) => {
+  const renderLegendItem = (item: LegendItem) => {
+    const value = pointValue(item.seriesKey, item.component)
     const signClass =
       item.signed && value !== undefined ? (value >= 0 ? 'legend-up' : 'legend-down') : undefined
     return (
@@ -541,7 +557,7 @@ export function FinancialChart({
         )}
         {legendModel.overlay && (
           <div className="chart-legend-row">
-            {legendModel.overlay.items.map((item) => renderLegendItem(item, pointValue(item.key)))}
+            {legendModel.overlay.items.map((item) => renderLegendItem(item))}
           </div>
         )}
         {comparisonLabel && (
@@ -563,7 +579,7 @@ export function FinancialChart({
         >
           <div className="chart-legend-row">
             <span className="legend-muted">{group.title}</span>
-            {group.items.map((item) => renderLegendItem(item, pointValue(item.key)))}
+            {group.items.map((item) => renderLegendItem(item))}
           </div>
         </div>
       ))}

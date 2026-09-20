@@ -229,6 +229,9 @@ describe('FinancialChart', () => {
     const paneLegend = legends[1] as HTMLElement
     expect(paneLegend.style.top).toBe('206px')
     expect(paneLegend.textContent).toContain('DIF')
+    // 各分量显示自己的数值：DIF 0.10、柱 -0.20
+    expect(paneLegend.textContent).toContain('0.10')
+    expect(paneLegend.textContent).toContain('-0.20')
 
     // 十字光标移到 09-10：图例切到该 K 线的值
     const hover = mocks.chart.subscribeCrosshairMove.mock.calls[0][0] as (p: { time?: string }) => void
