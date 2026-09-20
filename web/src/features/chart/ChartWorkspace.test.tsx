@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChartResult } from '../../api/client'
 import { ChartWorkspace } from './ChartWorkspace'
 
@@ -7,20 +7,37 @@ vi.mock('./FinancialChart', () => ({
   FinancialChart: ({ bars, onLoadMore }: { bars: unknown[]; onLoadMore: () => void }) => (
     <div>
       <div data-testid="financial-chart">{bars.length} bars</div>
-      <button onClick={onLoadMore} type="button">触发自动加载</button>
+      <button onClick={onLoadMore} type="button">
+        触发自动加载
+      </button>
     </div>
   ),
 }))
 
 const response: ChartResult = {
   instrument: {
-    instrument: 'SZSE:002415', code: '002415', name: '海康威视', exchange: 'SZSE', board: 'MAIN', lot_size: 100,
+    instrument: 'SZSE:002415',
+    code: '002415',
+    name: '海康威视',
+    exchange: 'SZSE',
+    board: 'MAIN',
+    lot_size: 100,
   },
   timeframe: 'DAY',
   price_view: 'QFQ',
   data_version: 17,
   bars: [
-    { open_time: '2026-09-11T00:00:00Z', close_time: '2026-09-11T07:00:00Z', open: 33, high: 34, low: 32.8, close: 33.25, volume: 43390000, amount: 1440000000, trading_status: 0 },
+    {
+      open_time: '2026-09-11T00:00:00Z',
+      close_time: '2026-09-11T07:00:00Z',
+      open: 33,
+      high: 34,
+      low: 32.8,
+      close: 33.25,
+      volume: 43390000,
+      amount: 1440000000,
+      trading_status: 0,
+    },
   ],
   series: [],
   has_more: false,
@@ -28,6 +45,7 @@ const response: ChartResult = {
 }
 
 describe('ChartWorkspace', () => {
+  beforeEach(() => localStorage.clear())
   it('加载默认均线并允许切换周期', async () => {
     const query = vi.fn().mockResolvedValue(response)
     render(
@@ -42,15 +60,31 @@ describe('ChartWorkspace', () => {
       />,
     )
 
-    await waitFor(() => expect(query).toHaveBeenCalledWith(expect.objectContaining({
-      instrument: 'SZSE:002415', timeframe: 'DAY', price_view: 'QFQ',
-      indicators: [{ kind: 'SMA', period: 5 }, { kind: 'SMA', period: 20 }, { kind: 'SMA', period: 60 }],
-    }), expect.any(AbortSignal)))
+    await waitFor(() =>
+      expect(query).toHaveBeenCalledWith(
+        expect.objectContaining({
+          instrument: 'SZSE:002415',
+          timeframe: 'DAY',
+          price_view: 'QFQ',
+          indicators: [
+            { kind: 'SMA', period: 5 },
+            { kind: 'SMA', period: 20 },
+            { kind: 'SMA', period: 60 },
+          ],
+        }),
+        expect.any(AbortSignal),
+      ),
+    )
     expect(await screen.findByText('海康威视')).toBeVisible()
     expect(screen.getByTestId('financial-chart')).toHaveTextContent('1 bars')
 
     fireEvent.click(screen.getByRole('button', { name: '周线' }))
-    await waitFor(() => expect(query).toHaveBeenLastCalledWith(expect.objectContaining({ timeframe: 'WEEK' }), expect.any(AbortSignal)))
+    await waitFor(() =>
+      expect(query).toHaveBeenLastCalledWith(
+        expect.objectContaining({ timeframe: 'WEEK' }),
+        expect.any(AbortSignal),
+      ),
+    )
   })
 
   it('图表头部 ★ 反映自选状态并回调切换', async () => {
@@ -114,18 +148,29 @@ describe('ChartWorkspace', () => {
     )
 
     fireEvent.click(await screen.findByRole('button', { name: '触发自动加载' }))
-    await waitFor(() => expect(query).toHaveBeenLastCalledWith(expect.objectContaining({
-      before: first.next_before, data_version: 17,
-    }), expect.any(AbortSignal)))
+    await waitFor(() =>
+      expect(query).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          before: first.next_before,
+          data_version: 17,
+        }),
+        expect.any(AbortSignal),
+      ),
+    )
     expect(screen.getByTestId('financial-chart')).toHaveTextContent('2 bars')
   })
 
   it('自动加载进行中不重复触发请求', async () => {
     let resolveOlder!: (value: ChartResult) => void
     const first = { ...response, has_more: true, next_before: response.bars[0].close_time }
-    const query = vi.fn()
+    const query = vi
+      .fn()
       .mockResolvedValueOnce(first)
-      .mockReturnValueOnce(new Promise<ChartResult>((resolve) => { resolveOlder = resolve }))
+      .mockReturnValueOnce(
+        new Promise<ChartResult>((resolve) => {
+          resolveOlder = resolve
+        }),
+      )
     render(
       <ChartWorkspace
         instrument="SZSE:002415"
@@ -143,7 +188,14 @@ describe('ChartWorkspace', () => {
     fireEvent.click(trigger)
     expect(query).toHaveBeenCalledTimes(2)
 
-    await act(async () => resolveOlder({ ...response, bars: [{ ...response.bars[0], close_time: '2026-09-10T07:00:00Z' }], has_more: false, next_before: null }))
+    await act(async () =>
+      resolveOlder({
+        ...response,
+        bars: [{ ...response.bars[0], close_time: '2026-09-10T07:00:00Z' }],
+        has_more: false,
+        next_before: null,
+      }),
+    )
     expect(screen.getByTestId('financial-chart')).toHaveTextContent('2 bars')
   })
 
@@ -187,7 +239,9 @@ describe('ChartWorkspace', () => {
 
   it('切换周期后忽略尚未完成的旧分页响应', async () => {
     let resolveOlder!: (value: ChartResult) => void
-    const olderPromise = new Promise<ChartResult>((resolve) => { resolveOlder = resolve })
+    const olderPromise = new Promise<ChartResult>((resolve) => {
+      resolveOlder = resolve
+    })
     const first = { ...response, has_more: true, next_before: response.bars[0].close_time }
     const weekly = { ...response, timeframe: 'WEEK' as const, bars: [{ ...response.bars[0], close: 40 }] }
     const query = vi.fn((input: { before?: string; timeframe: string }) => {
@@ -208,9 +262,65 @@ describe('ChartWorkspace', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '触发自动加载' }))
     fireEvent.click(screen.getByRole('button', { name: '周线' }))
-    await waitFor(() => expect(query).toHaveBeenCalledWith(expect.objectContaining({ timeframe: 'WEEK' }), expect.any(AbortSignal)))
-    await act(async () => resolveOlder({ ...response, bars: [{ ...response.bars[0], close_time: '2026-09-10T07:00:00Z' }] }))
+    await waitFor(() =>
+      expect(query).toHaveBeenCalledWith(
+        expect.objectContaining({ timeframe: 'WEEK' }),
+        expect.any(AbortSignal),
+      ),
+    )
+    await act(async () =>
+      resolveOlder({ ...response, bars: [{ ...response.bars[0], close_time: '2026-09-10T07:00:00Z' }] }),
+    )
 
     expect(screen.getByTestId('financial-chart')).toHaveTextContent('1 bars')
   })
+})
+
+it('keeps configured indicators on stock switch and restores only manual saves', async () => {
+  localStorage.clear()
+  const query = vi.fn().mockResolvedValue(response)
+  const props = {
+    instrument: 'SZSE:002415',
+    initialTimeframe: 'DAY' as const,
+    initialPriceView: 'QFQ' as const,
+    onStateChange: vi.fn(),
+    onToggleWatch: vi.fn(),
+    watched: false,
+    query,
+  }
+  const view = render(<ChartWorkspace {...props} />)
+  await screen.findByTestId('financial-chart')
+  fireEvent.click(screen.getByRole('button', { name: /指标/ }))
+  fireEvent.click(screen.getByRole('button', { name: '添加 MACD 12, 26, 9' }))
+  await waitFor(() =>
+    expect(query).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        indicators: expect.arrayContaining([expect.objectContaining({ kind: 'MACD' })]),
+      }),
+      expect.anything(),
+    ),
+  )
+  fireEvent.click(screen.getByRole('button', { name: '保存' }))
+  view.rerender(<ChartWorkspace {...props} instrument="SSE:600938" />)
+  await waitFor(() =>
+    expect(query).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        instrument: 'SSE:600938',
+        indicators: expect.arrayContaining([expect.objectContaining({ kind: 'MACD' })]),
+      }),
+      expect.anything(),
+    ),
+  )
+  expect(screen.getByText('已保存')).toBeVisible()
+  view.unmount()
+  render(<ChartWorkspace {...props} />)
+  await waitFor(() =>
+    expect(query).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        indicators: expect.arrayContaining([expect.objectContaining({ kind: 'MACD' })]),
+      }),
+      expect.anything(),
+    ),
+  )
+  localStorage.clear()
 })

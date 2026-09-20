@@ -24,6 +24,7 @@ const (
 type IndicatorKind string
 
 const (
+	IndicatorSTD  IndicatorKind = "STD"
 	IndicatorSMA  IndicatorKind = "SMA"
 	IndicatorEMA  IndicatorKind = "EMA"
 	IndicatorMACD IndicatorKind = "MACD"
@@ -209,6 +210,8 @@ func validateChartQuery(query *ChartQuery) error {
 
 func chartIndicatorCost(request IndicatorRequest) int {
 	switch request.Kind {
+	case IndicatorSTD:
+		return request.Period
 	case IndicatorKDJ:
 		return request.Period * 3
 	case IndicatorMACD:
@@ -220,7 +223,7 @@ func chartIndicatorCost(request IndicatorRequest) int {
 
 func validateIndicatorRequest(request IndicatorRequest) error {
 	switch request.Kind {
-	case IndicatorSMA, IndicatorEMA:
+	case IndicatorSMA, IndicatorEMA, IndicatorSTD:
 		if request.Period < 1 || request.Period > MaxIndicatorPeriod || request.Fast != 0 || request.Slow != 0 || request.Signal != 0 {
 			return invalidRequest("invalid moving average parameters")
 		}
@@ -265,8 +268,11 @@ func chartIndicatorRefs(query ChartQuery, requests []IndicatorRequest) ([]indica
 	}
 	for _, request := range requests {
 		switch request.Kind {
-		case IndicatorSMA, IndicatorEMA:
+		case IndicatorSMA, IndicatorEMA, IndicatorSTD:
 			kind := indicator.SMAKind
+			if request.Kind == IndicatorSTD {
+				kind = indicator.STDKind
+			}
 			if request.Kind == IndicatorEMA {
 				kind = indicator.EMAKind
 			}

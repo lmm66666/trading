@@ -109,3 +109,8 @@ go vet ./...
 - [行情领域设计](market.md)
 - [MySQL 适配器设计](infrastructure/mysql.md)
 - [Broker 设计](../pkg/broker.md)
+
+
+## 图表标准差扩展
+
+ChartQueryService 接受 STD(period)，周期1–500，fast/slow/signal必须为0；映射 STDKind + Close 引用，成本按period纳入2000预算。沿用完整历史构建后裁页、正版本固定、取消与16指标上限；总体标准差口径见[指标设计](indicator.md)。

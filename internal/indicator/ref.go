@@ -13,6 +13,7 @@ type Kind string
 
 const (
 	OHLC     Kind = "ohlc"
+	STDKind  Kind = "std"
 	SMAKind  Kind = "sma"
 	EMAKind  Kind = "ema"
 	VolumeMA Kind = "volume_ma"
@@ -57,7 +58,7 @@ func (r Ref) Validate() error {
 		if !isOHLC(r.Field) || r.hasParameters() {
 			return ErrInvalidRef
 		}
-	case SMAKind, EMAKind:
+	case SMAKind, EMAKind, STDKind:
 		if !isOHLC(r.Field) || r.Period <= 0 || r.Fast != 0 || r.Slow != 0 || r.Signal != 0 {
 			return ErrInvalidRef
 		}
@@ -89,7 +90,7 @@ func (r Ref) Key() string {
 	}
 	base := fmt.Sprintf("%s/%s/%s/%s", r.Kind, timeframeKey(r.Timeframe), priceViewKey(r.PriceView), r.Field)
 	switch r.Kind {
-	case SMAKind, EMAKind, VolumeMA, KDJKind:
+	case SMAKind, EMAKind, STDKind, VolumeMA, KDJKind:
 		return fmt.Sprintf("%s/p=%d", base, r.Period)
 	case MACDKind:
 		return fmt.Sprintf("%s/f=%d/s=%d/sig=%d", base, r.Fast, r.Slow, r.Signal)

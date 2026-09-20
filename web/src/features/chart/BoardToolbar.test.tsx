@@ -1,0 +1,93 @@
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import { beforeEach, expect, it } from 'vitest'
+import { BoardToolbar } from './BoardToolbar'
+import { useBoards } from './useBoards'
+import { readBoards, BOARDS_KEY } from './boards'
+function Harness() {
+  const board = useBoards({ defaultSymbol: 'SSE:600938' })
+  return <BoardToolbar board={board} instrument="SSE:601857" />
+}
+beforeEach(() => localStorage.clear())
+const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }))
+const nameBoard = (value: string) => {
+  fireEvent.change(screen.getByRole('textbox', { name: '看板名称' }), { target: { value } })
+  click('确认')
+}
+it('manually saves and manages independent named boards', () => {
+  render(<Harness />)
+  fireEvent.change(screen.getByRole('combobox', { name: '同图叠加' }), { target: { value: 'INE:SC.MAIN' } })
+  expect(localStorage.getItem(BOARDS_KEY)).toBeNull()
+  click('保存')
+  expect(screen.getByRole('status')).toHaveTextContent('已保存')
+  fireEvent.click(screen.getByText('更多'))
+  click('重命名')
+  nameBoard('油价看板')
+  expect(readBoards().data.boards[0].name).toBe('油价看板')
+  click('另存为新看板')
+  nameBoard('油价副本')
+  expect(readBoards().data.boards).toHaveLength(2)
+  click('设为默认股票')
+  expect(screen.getByRole('status')).toHaveTextContent('未保存')
+  click('恢复已保存版本')
+  expect(screen.getByRole('status')).toHaveTextContent('已保存')
+  click('新建看板')
+  nameBoard('空白看板')
+  expect(screen.getByRole('combobox', { name: '同图叠加' })).toHaveValue('')
+  click('删除看板')
+  click('取消')
+  click('删除看板')
+  click('确认删除')
+  expect(readBoards().data.boards).toHaveLength(2)
+})
+it('allows cancel, discard, or save when switching a dirty board', () => {
+  render(<Harness />)
+  click('保存')
+  fireEvent.click(screen.getByText('更多'))
+  click('另存为新看板')
+  nameBoard('第二看板')
+  const second = readBoards().data.activeId
+  fireEvent.change(screen.getByRole('combobox', { name: '同图叠加' }), { target: { value: 'INE:SC.MAIN' } })
+  const select = () =>
+    fireEvent.change(screen.getByRole('combobox', { name: '当前看板' }), { target: { value: 'default' } })
+  select()
+  click('取消')
+  expect(screen.getByRole('combobox', { name: '当前看板' })).toHaveValue(second)
+  select()
+  click('保存并切换')
+  expect(readBoards().data.boards[1].config.comparison).toBe('INE:SC.MAIN')
+  fireEvent.change(screen.getByRole('combobox', { name: '同图叠加' }), { target: { value: 'SHFE:AU.MAIN' } })
+  fireEvent.change(screen.getByRole('combobox', { name: '当前看板' }), { target: { value: second } })
+  click('放弃修改并切换')
+  expect(readBoards().data.boards[0].config.comparison).toBeNull()
+  fireEvent.change(screen.getByRole('combobox', { name: '当前看板' }), { target: { value: 'default' } })
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+it('keeps switching dialog open when saving fails', () => {
+  render(<Harness />)
+  click('保存')
+  fireEvent.click(screen.getByText('更多'))
+  click('另存为新看板')
+  nameBoard('第二看板')
+  fireEvent.change(screen.getByRole('combobox', { name: '同图叠加' }), { target: { value: 'INE:SC.MAIN' } })
+  localStorage.setItem(BOARDS_KEY, 'changed by another tab')
+  fireEvent.change(screen.getByRole('combobox', { name: '当前看板' }), { target: { value: 'default' } })
+  click('保存并切换')
+  expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent('其他页面')
+})
+
+it('keeps keyboard focus in the dialog and Escape cancels without a write', () => {
+  render(<Harness />)
+  click('保存')
+  fireEvent.click(screen.getByText('更多'))
+  click('另存为新看板')
+  const dialog = screen.getByRole('dialog')
+  const cancel = within(dialog).getByRole('button', { name: '取消' })
+  cancel.focus()
+  fireEvent.keyDown(cancel, { key: 'Tab' })
+  expect(screen.getByRole('textbox', { name: '看板名称' })).toHaveFocus()
+  fireEvent.keyDown(document.activeElement!, { key: 'Tab', shiftKey: true })
+  expect(cancel).toHaveFocus()
+  fireEvent.keyDown(cancel, { key: 'Escape' })
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(readBoards().data.boards).toHaveLength(1)
+})

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import {
   addWatchlistItem,
   listWatchlist,
@@ -13,6 +13,7 @@ import { ChartWorkspace } from './features/chart/ChartWorkspace'
 import { readWorkbenchState, writeWorkbenchState, type WorkbenchView } from './features/chart/chartData'
 import { ScanPanel } from './features/scan/ScanPanel'
 import { InstrumentSearch } from './features/search/InstrumentSearch'
+import { readBoards } from './features/chart/boards'
 import { WatchlistPanel } from './features/watchlist/WatchlistPanel'
 
 export type RunKindStore = 'scan' | 'backtest'
@@ -47,7 +48,10 @@ const VIEW_TABS: ReadonlyArray<{ key: WorkbenchView; label: string }> = [
 
 export default function App() {
   const initial = readWorkbenchState(window.location.search)
-  const [symbol, setSymbol] = useState(initial.symbol)
+  const [symbol, setSymbol] = useState(() => {
+    const saved = readBoards().data
+    return initial.symbol ?? saved.boards.find((b) => b.id === saved.activeId)!.config.defaultSymbol
+  })
   const [timeframe, setTimeframe] = useState<Timeframe>(initial.timeframe)
   const [priceView, setPriceView] = useState<PriceView>(initial.priceView)
   const [view, setView] = useState<WorkbenchView>(initial.view)
@@ -55,8 +59,13 @@ export default function App() {
   const [scanRunId, setScanRunId] = useState<string | null>(() => readStoredRunId('scan'))
   const [backtestRunId, setBacktestRunId] = useState<string | null>(() => readStoredRunId('backtest'))
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarWidth, setSidebarWidth] = useState(260)
   const [watchlistOpen, setWatchlistOpen] = useState(false)
-  const [watchlist, setWatchlist] = useState<{ items: WatchlistItem[]; status: 'loading' | 'ready' | 'error' }>({
+  const [watchlist, setWatchlist] = useState<{
+    items: WatchlistItem[]
+    status: 'loading' | 'ready' | 'error'
+  }>({
     items: [],
     status: 'loading',
   })
@@ -89,18 +98,21 @@ export default function App() {
   }, [])
 
   /** 在列表中则移除、不在则添加；成功以服务端返回的完整列表替换本地状态，失败保留原列表 */
-  const toggleWatch = useCallback((instrument: string) => {
-    const exists = watchlist.items.some((item) => item.instrument === instrument)
-    const request = exists ? removeWatchlistItem(instrument) : addWatchlistItem(instrument)
-    request
-      .then((items) => {
-        setWatchlist({ items, status: 'ready' })
-        setWatchActionError(null)
-      })
-      .catch((reason: unknown) => {
-        setWatchActionError(reason instanceof Error ? reason.message : '更新自选失败')
-      })
-  }, [watchlist.items])
+  const toggleWatch = useCallback(
+    (instrument: string) => {
+      const exists = watchlist.items.some((item) => item.instrument === instrument)
+      const request = exists ? removeWatchlistItem(instrument) : addWatchlistItem(instrument)
+      request
+        .then((items) => {
+          setWatchlist({ items, status: 'ready' })
+          setWatchActionError(null)
+        })
+        .catch((reason: unknown) => {
+          setWatchActionError(reason instanceof Error ? reason.message : '更新自选失败')
+        })
+    },
+    [watchlist.items],
+  )
 
   const syncState = (
     nextSymbol: string | null,
@@ -108,7 +120,12 @@ export default function App() {
     nextPriceView: PriceView,
     nextView: WorkbenchView,
   ) => {
-    writeWorkbenchState({ symbol: nextSymbol, timeframe: nextTimeframe, priceView: nextPriceView, view: nextView })
+    writeWorkbenchState({
+      symbol: nextSymbol,
+      timeframe: nextTimeframe,
+      priceView: nextPriceView,
+      view: nextView,
+    })
   }
 
   const selectInstrument = (instrument: InstrumentSummary) => {
@@ -147,10 +164,30 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      style={{ '--sidebar-width': `${sidebarCollapsed ? 0 : sidebarWidth}px` } as CSSProperties}
+    >
       <header className="topbar">
-        <button className="mobile-menu-trigger" aria-label="打开自选清单" onClick={() => setWatchlistOpen(true)} type="button">☰</button>
-        <div className="brand"><span aria-hidden="true">◆</span>Trading</div>
+        <button
+          className="mobile-menu-trigger"
+          aria-label="打开自选清单"
+          onClick={() => setWatchlistOpen(true)}
+          type="button"
+        >
+          ☰
+        </button>
+        <button
+          className="sidebar-toggle"
+          aria-label={sidebarCollapsed ? '展开自选' : '收起自选'}
+          onClick={() => setSidebarCollapsed((v) => !v)}
+          type="button"
+        >
+          ☰
+        </button>
+        <div className="brand">
+          <span aria-hidden="true">◆</span>Trading
+        </div>
         <nav className="view-tabs" aria-label="工作台视图">
           {VIEW_TABS.map((tab) => (
             <button
@@ -166,31 +203,79 @@ export default function App() {
           ))}
         </nav>
         <div className={mobileSearchOpen ? 'search-overlay open' : 'search-overlay'}>
-          <button className="mobile-close" aria-label="关闭股票搜索" onClick={() => setMobileSearchOpen(false)} type="button">×</button>
+          <button
+            className="mobile-close"
+            aria-label="关闭股票搜索"
+            onClick={() => setMobileSearchOpen(false)}
+            type="button"
+          >
+            ×
+          </button>
           <InstrumentSearch onSelect={selectInstrument} />
         </div>
-        <button className="mobile-search-trigger" aria-label="打开股票搜索" onClick={() => setMobileSearchOpen(true)} type="button">⌕</button>
+        <button
+          className="mobile-search-trigger"
+          aria-label="打开股票搜索"
+          onClick={() => setMobileSearchOpen(true)}
+          type="button"
+        >
+          ⌕
+        </button>
       </header>
-      {watchlistOpen && <button className="sidebar-scrim" aria-label="关闭自选清单" onClick={() => setWatchlistOpen(false)} type="button" />}
-      <aside className={watchlistOpen ? 'watchlist-aside open' : 'watchlist-aside'}>
+      {watchlistOpen && (
+        <button
+          className="sidebar-scrim"
+          aria-label="关闭自选清单"
+          onClick={() => setWatchlistOpen(false)}
+          type="button"
+        />
+      )}
+      <aside
+        className={`watchlist-aside${watchlistOpen ? ' open' : ''}${sidebarCollapsed ? ' collapsed' : ''}`}
+      >
         <WatchlistPanel
           actionError={watchActionError}
           currentInstrument={symbol}
           items={watchlist.items}
+          onAdd={() => {
+            setMobileSearchOpen(true)
+            document.querySelector<HTMLInputElement>('.topbar input[aria-label="搜索股票"]')?.focus()
+          }}
           onRefresh={refreshWatchlist}
           onSelect={(item) => selectSymbol(item.instrument, 'chart', item)}
           onToggle={toggleWatch}
           status={watchlist.status}
         />
+        <div
+          className="sidebar-resizer"
+          role="separator"
+          aria-label="调整自选宽度"
+          aria-orientation="vertical"
+          tabIndex={0}
+          aria-valuenow={sidebarWidth}
+          aria-valuemin={220}
+          aria-valuemax={360}
+          onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
+          onPointerMove={(e) => {
+            if (e.currentTarget.hasPointerCapture(e.pointerId))
+              setSidebarWidth(Math.max(220, Math.min(360, e.clientX)))
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+              e.preventDefault()
+              setSidebarWidth((w) => Math.max(220, Math.min(360, w + (e.key === 'ArrowRight' ? 10 : -10))))
+            }
+          }}
+        />
       </aside>
       <main className="workspace">
-        {view === 'chart' ? (
-          symbol ? (
+        <div className="chart-view" hidden={view !== 'chart'}>
+          {symbol ? (
             <ChartWorkspace
               instrument={symbol}
               initialPriceView={priceView}
               initialTimeframe={timeframe}
-              key={symbol}
+              onSelectSymbol={(next) => selectSymbol(next, 'chart')}
               onStateChange={changeChartState}
               onToggleWatch={() => toggleWatch(symbol)}
               watched={watchlist.items.some((item) => item.instrument === symbol)}
@@ -200,26 +285,46 @@ export default function App() {
               <div className="welcome-grid" aria-hidden="true" />
               <div className="welcome-card">
                 <span className="eyebrow">TRADING WORKBENCH</span>
-                <h2>选择一只证券<br />开始观察市场</h2>
-                <p>按 <kbd>/</kbd> 或点击右上角搜索，输入代码或名称打开图表。</p>
+                <h2>
+                  选择一只证券
+                  <br />
+                  开始观察市场
+                </h2>
+                <p>
+                  按 <kbd>/</kbd> 或点击右上角搜索，输入代码或名称打开图表。
+                </p>
                 <ul className="welcome-views">
-                  <li><strong>图表</strong><span>K 线、成交量与技术指标</span></li>
-                  <li><strong>扫描</strong><span>按策略筛选当前满足条件的证券</span></li>
-                  <li><strong>回测</strong><span>用历史行情模拟策略表现</span></li>
+                  <li>
+                    <strong>图表</strong>
+                    <span>K 线、成交量与技术指标</span>
+                  </li>
+                  <li>
+                    <strong>扫描</strong>
+                    <span>按策略筛选当前满足条件的证券</span>
+                  </li>
+                  <li>
+                    <strong>回测</strong>
+                    <span>用历史行情模拟策略表现</span>
+                  </li>
                 </ul>
               </div>
             </section>
-          )
-        ) : view === 'scan' ? (
-          <ScanPanel runId={scanRunId} onRunIdChange={changeScanRunId} onSelectInstrument={(instrument) => selectSymbol(instrument, 'chart')} />
-        ) : (
+          )}
+        </div>
+        {view === 'scan' ? (
+          <ScanPanel
+            runId={scanRunId}
+            onRunIdChange={changeScanRunId}
+            onSelectInstrument={(instrument) => selectSymbol(instrument, 'chart')}
+          />
+        ) : view === 'backtest' ? (
           <BacktestPanel
             runId={backtestRunId}
             onRunIdChange={changeBacktestRunId}
             selectedSymbol={symbol}
             defaultLotSize={instrumentInfo?.lot_size}
           />
-        )}
+        ) : null}
       </main>
     </div>
   )

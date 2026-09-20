@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  queryChart,
-  type ChartResult,
-  type IndicatorRequest,
-  type PriceView,
-  type Timeframe,
-} from '../../api/client'
+import { queryChart, type ChartResult, type PriceView, type Timeframe } from '../../api/client'
 import { IndicatorManager } from '../indicators/IndicatorManager'
-import { defaultIndicators, mergeBars, mergeSeries } from './chartData'
+import { mergeBars, mergeSeries } from './chartData'
 import { FinancialChart } from './FinancialChart'
+import { useBoards } from './useBoards'
+import { BoardToolbar } from './BoardToolbar'
+import { useComparison } from './useComparison'
+import { comparisonOptions, type BoardConfig } from './boards'
 
 interface ChartWorkspaceProps {
   instrument: string
@@ -18,6 +16,7 @@ interface ChartWorkspaceProps {
   watched: boolean
   onToggleWatch: () => void
   onStateChange: (timeframe: Timeframe, priceView: PriceView) => void
+  onSelectSymbol?: (symbol: string) => void
   query?: typeof queryChart
 }
 
@@ -29,21 +28,28 @@ export function ChartWorkspace({
   onToggleWatch,
   onStateChange,
   query = queryChart,
+  onSelectSymbol,
 }: ChartWorkspaceProps) {
-  const [timeframe, setTimeframe] = useState(initialTimeframe)
-  const [priceView, setPriceView] = useState(initialPriceView)
-  const [indicators, setIndicators] = useState<IndicatorRequest[]>(defaultIndicators)
+  const captureLayout = useRef<(() => Pick<BoardConfig, 'paneWeights' | 'visibleBars'>) | null>(null)
+  const registerCapture = useCallback((capture: typeof captureLayout.current) => {
+    captureLayout.current = capture
+  }, [])
+  const board = useBoards(
+    { defaultSymbol: instrument, timeframe: initialTimeframe, priceView: initialPriceView },
+    onSelectSymbol,
+  )
+  const { timeframe, priceView, indicators } = board.config
   const [result, setResult] = useState<ChartResult | null>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState('')
+  const stateChangeRef = useRef(onStateChange)
+  stateChangeRef.current = onStateChange
+  useEffect(() => {
+    stateChangeRef.current(timeframe, priceView)
+  }, [timeframe, priceView, instrument])
   const generationRef = useRef(0)
   const pageControllerRef = useRef<AbortController | null>(null)
-
-  useEffect(() => {
-    setTimeframe(initialTimeframe)
-    setPriceView(initialPriceView)
-  }, [initialPriceView, initialTimeframe])
 
   useEffect(() => {
     const generation = ++generationRef.current
@@ -71,12 +77,10 @@ export function ChartWorkspace({
   }, [indicators, instrument, priceView, query, timeframe])
 
   const changeTimeframe = (value: Timeframe) => {
-    setTimeframe(value)
-    onStateChange(value, priceView)
+    board.setConfig((c) => ({ ...c, timeframe: value }))
   }
   const changePriceView = (value: PriceView) => {
-    setPriceView(value)
-    onStateChange(timeframe, value)
+    board.setConfig((c) => ({ ...c, priceView: value }))
   }
 
   const loadMore = useCallback(() => {
@@ -86,19 +90,29 @@ export function ChartWorkspace({
     pageControllerRef.current?.abort()
     pageControllerRef.current = controller
     setLoadingMore(true)
-    query({
-      instrument,
-      timeframe,
-      price_view: priceView,
-      before: result.next_before,
-      limit: 400,
-      data_version: result.data_version,
-      indicators,
-    }, controller.signal)
+    query(
+      {
+        instrument,
+        timeframe,
+        price_view: priceView,
+        before: result.next_before,
+        limit: 400,
+        data_version: result.data_version,
+        indicators,
+      },
+      controller.signal,
+    )
       .then((older) => {
         if (controller.signal.aborted || generation !== generationRef.current) return
         setResult((current) => {
-          if (!current || older.instrument.instrument !== instrument || older.timeframe !== timeframe || older.price_view !== priceView || older.data_version !== current.data_version) return current
+          if (
+            !current ||
+            older.instrument.instrument !== instrument ||
+            older.timeframe !== timeframe ||
+            older.price_view !== priceView ||
+            older.data_version !== current.data_version
+          )
+            return current
           return {
             ...current,
             bars: mergeBars(current.bars, older.bars),
@@ -118,11 +132,13 @@ export function ChartWorkspace({
       })
   }, [indicators, instrument, loadingMore, priceView, query, result, timeframe])
 
+  const comparison = useComparison(board.config.comparison, result, timeframe)
+
   const quote = useMemo(() => {
     const latest = result?.bars.at(-1)
     if (!latest) return null
     const change = latest.close - latest.open
-    const changePercent = latest.open === 0 ? 0 : change / latest.open * 100
+    const changePercent = latest.open === 0 ? 0 : (change / latest.open) * 100
     return { latest, change, changePercent }
   }, [result])
 
@@ -133,7 +149,10 @@ export function ChartWorkspace({
           <span className="security-code">{result?.instrument.code ?? instrument.split(':')[1]}</span>
           <div>
             <h2>{result?.instrument.name ?? '正在读取证券信息'}</h2>
-            <p>{instrument} · {timeframe === 'DAY' ? '日线' : '周线'} · {priceView === 'QFQ' ? '前复权' : '不复权'}</p>
+            <p>
+              {instrument} · {timeframe === 'DAY' ? '日线' : '周线'} ·{' '}
+              {priceView === 'QFQ' ? '前复权' : '不复权'}
+            </p>
           </div>
           <button
             aria-label={watched ? '移除自选' : '添加自选'}
@@ -149,36 +168,93 @@ export function ChartWorkspace({
         {quote && (
           <div className={quote.change >= 0 ? 'quote-up' : 'quote-down'} aria-label="最新行情">
             <strong>{quote.latest.close.toFixed(2)}</strong>
-            <span>{quote.change >= 0 ? '+' : ''}{quote.change.toFixed(2)} · {quote.changePercent >= 0 ? '+' : ''}{quote.changePercent.toFixed(2)}%</span>
+            <span>
+              {quote.change >= 0 ? '+' : ''}
+              {quote.change.toFixed(2)} · {quote.changePercent >= 0 ? '+' : ''}
+              {quote.changePercent.toFixed(2)}%
+            </span>
           </div>
         )}
       </header>
       <nav className="chart-toolbar" aria-label="图表工具栏">
         <div className="segmented-control" aria-label="周期">
-          <button aria-label="日线" aria-pressed={timeframe === 'DAY'} onClick={() => changeTimeframe('DAY')} type="button">日</button>
-          <button aria-label="周线" aria-pressed={timeframe === 'WEEK'} onClick={() => changeTimeframe('WEEK')} type="button">周</button>
+          <button
+            aria-label="日线"
+            aria-pressed={timeframe === 'DAY'}
+            onClick={() => changeTimeframe('DAY')}
+            type="button"
+          >
+            日
+          </button>
+          <button
+            aria-label="周线"
+            aria-pressed={timeframe === 'WEEK'}
+            onClick={() => changeTimeframe('WEEK')}
+            type="button"
+          >
+            周
+          </button>
         </div>
         <div className="toolbar-divider" />
         <div className="segmented-control price-view" aria-label="复权方式">
-          <button aria-pressed={priceView === 'QFQ'} onClick={() => changePriceView('QFQ')} type="button">前复权</button>
-          <button aria-pressed={priceView === 'RAW'} onClick={() => changePriceView('RAW')} type="button">不复权</button>
+          <button aria-pressed={priceView === 'QFQ'} onClick={() => changePriceView('QFQ')} type="button">
+            前复权
+          </button>
+          <button aria-pressed={priceView === 'RAW'} onClick={() => changePriceView('RAW')} type="button">
+            不复权
+          </button>
         </div>
         <div className="toolbar-divider" />
-        <IndicatorManager indicators={indicators} onChange={setIndicators} />
+        <IndicatorManager
+          indicators={indicators}
+          onChange={(next) => board.setConfig((c) => ({ ...c, indicators: next }))}
+        />
+        <BoardToolbar board={board} instrument={instrument} captureLayout={() => captureLayout.current?.()} />
         <span className="version-chip">快照 v{result?.data_version ?? '—'}</span>
       </nav>
       <section className="chart-stage" aria-live="polite">
         {status === 'loading' && (
-          <div className="chart-loading"><span className="loading-orbit" /><strong>正在构建行情图</strong><span>读取固定版本行情与指标</span></div>
+          <div className="chart-loading">
+            <span className="loading-orbit" />
+            <strong>正在构建行情图</strong>
+            <span>读取固定版本行情与指标</span>
+          </div>
         )}
         {status === 'error' && (
-          <div className="chart-error"><strong>行情暂时无法加载</strong><span>{error}</span></div>
+          <div className="chart-error">
+            <strong>行情暂时无法加载</strong>
+            <span>{error}</span>
+          </div>
         )}
         {status === 'ready' && result && result.bars.length === 0 && (
-          <div className="chart-error"><strong>暂无行情数据</strong><span>该证券在当前周期没有可展示的 K 线。</span></div>
+          <div className="chart-error">
+            <strong>暂无行情数据</strong>
+            <span>该证券在当前周期没有可展示的 K 线。</span>
+          </div>
         )}
         {status === 'ready' && result && result.bars.length > 0 && (
-          <FinancialChart bars={result.bars} onLoadMore={loadMore} series={result.series} />
+          <FinancialChart
+            key={`${instrument}:${timeframe}:${priceView}:${board.config.comparison}`}
+            bars={result.bars}
+            onLoadMore={loadMore}
+            series={result.series}
+            comparison={comparison.bars.length ? comparison.bars : undefined}
+            comparisonLabel={comparisonOptions.find(([id]) => id === board.config.comparison)?.[1]}
+            timeframe={timeframe}
+            config={board.config}
+            onCaptureLayout={registerCapture}
+            onLayoutChange={(layout) => board.setConfig((c) => ({ ...c, ...layout }))}
+          />
+        )}
+        {board.config.comparison && (comparison.loading || comparison.error) && (
+          <div className="comparison-notice" role="status">
+            {comparison.loading ? '正在加载关联行情…' : comparison.error}
+            {comparison.error && (
+              <button onClick={comparison.retry} type="button">
+                重试关联行情
+              </button>
+            )}
+          </div>
         )}
         {error && status === 'ready' && <div className="chart-toast">{error}</div>}
       </section>

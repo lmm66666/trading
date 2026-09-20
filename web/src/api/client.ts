@@ -29,6 +29,7 @@ export type IndicatorRequest =
   | { kind: 'EMA'; period: number }
   | { kind: 'MACD'; fast: number; slow: number; signal: number }
   | { kind: 'KDJ'; period: number }
+  | { kind: 'STD'; period: number }
 
 export interface ChartPoint {
   time: string
@@ -163,12 +164,7 @@ export type RunKind = 'scan' | 'backtest'
 export type RunResource = 'orders' | 'trades' | 'equity'
 
 export type RunStatusValue =
-  | 'PENDING'
-  | 'RUNNING'
-  | 'SUCCEEDED'
-  | 'PARTIAL_SUCCEEDED'
-  | 'FAILED'
-  | 'CANCELLED'
+  'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'PARTIAL_SUCCEEDED' | 'FAILED' | 'CANCELLED'
 
 export interface RunReference {
   run_id: string
@@ -423,4 +419,30 @@ export function removeWatchlistItem(instrument: string): Promise<WatchlistItem[]
   return request<{ items: WatchlistItem[] }>(`/api/v1/watchlist/${encodeURIComponent(instrument)}`, {
     method: 'DELETE',
   }).then(unwrapItems)
+}
+
+export interface ComparisonQuery {
+  instrument: string
+  timeframe: Timeframe
+  version: number
+  from: string
+  to: string
+}
+export interface ComparisonResult {
+  instrument: string
+  data_version: number
+  bars: ChartBar[]
+}
+/** Fixed-version comparison data uses the existing futures-capable market endpoint. */
+export function queryComparison(input: ComparisonQuery, signal?: AbortSignal): Promise<ComparisonResult> {
+  const params = new URLSearchParams({
+    instrument: input.instrument,
+    timeframe: input.timeframe === 'DAY' ? 'daily' : 'weekly',
+    view: 'raw',
+    version: String(input.version),
+    from: input.from,
+    to: input.to,
+    limit: '5000',
+  })
+  return request<ComparisonResult>(`/api/v1/market/bars?${params}`, { signal })
 }
