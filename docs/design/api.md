@@ -28,8 +28,9 @@ API 不实现指标、策略、扫描、回测、行情版本或数据库规则�
 
 ## 2. 对外能力与使用者
 
-- `/api/v1` 提供证券搜索、策略目录、图表、版本化行情、手动行情刷新、自选清单、回测任务、扫描任务和不可变快照。
+- `/api/v1` 提供证券搜索、策略目录、图表、版本化行情、手动行情刷新、自选清单、行情看板、回测任务、扫描任务和不可变快照。
 - 自选清单 `GET/POST/DELETE /api/v1/watchlist` 由 `WatchlistService` 支撑：变更接口成功后直接返回更新后的完整列表（上限 100 只，超出 409；身份非法 400；未知或非活跃证券 404），不引入二次拉取。
+- 行情看板 `GET/POST /api/v1/chart-boards`、`PUT/DELETE /api/v1/chart-boards/:id`、`POST /api/v1/chart-boards/:id/activate` 由 `ChartBoardService` 支撑：五个接口成功后均返回全量状态（boards 按 id 升序 + active_id）；名称/config 校验 400，未知 id 404，超 20 上限 409 BOARDS_FULL，删除最后一块 409 LAST_BOARD；config 以 `json.RawMessage` 透传应用层严格校验。
 - Web 工作台与外部客户端共享统一 JSON 包装 `{code,message,data}`。
 - 同源静态资源由 `serve_web` 托管，开发模式由 Vite 代理 API。
 
@@ -88,7 +89,7 @@ HTTP 请求
 
 ## 8. 测试与验收证据
 
-测试覆盖严格 JSON、请求限制、错误脱敏、context 传播、身份解析、幂等冲突、固定版本图表、快照分页、自选三接口的校验/幂等/上限/响应结构、手动刷新的两种语义与前端托管。
+测试覆盖严格 JSON（含嵌套 config 未知字段与尾随 JSON）、请求限制、错误脱敏、context 传播、身份解析、幂等冲突、固定版本图表、快照分页、自选三接口的校验/幂等/上限/响应结构、看板五接口的校验/上限/末板/NotFound/全量状态信封、手动刷新的两种语义与前端托管。
 
 ```bash
 go test ./api -cover

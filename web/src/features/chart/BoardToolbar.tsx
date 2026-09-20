@@ -11,7 +11,7 @@ export function BoardToolbar({
   instrument: string
   captureLayout?: () => Partial<BoardConfig> | undefined
 }) {
-  const [pending, setPending] = useState<string | null>(null)
+  const [pending, setPending] = useState<number | null>(null)
   const [action, setAction] = useState<'new' | 'copy' | 'rename' | 'delete' | null>(null)
   const [name, setName] = useState('')
   const dialogRef = useRef<HTMLElement>(null)
@@ -53,14 +53,20 @@ export function BoardToolbar({
       previous?.focus()
     }
   }, [pending, action])
+  if (!board.active || !board.config) return null
   const requestName = (next: 'new' | 'copy' | 'rename') => {
-    setName(next === 'rename' ? board.active.name : '')
+    setName(next === 'rename' ? board.active!.name : '')
     setAction(next)
   }
-  const submit = () => {
+  const submit = async () => {
     const ok =
-      action === 'rename' ? board.rename(name) : board.create(name, action === 'copy', captureLayout?.())
+      action === 'rename'
+        ? await board.rename(name)
+        : await board.create(name, action === 'copy', captureLayout?.())
     if (ok) setAction(null)
+  }
+  const confirmDelete = async () => {
+    if (await board.remove()) setAction(null)
   }
   return (
     <>
@@ -68,6 +74,7 @@ export function BoardToolbar({
         同图叠加
         <select
           aria-label="同图叠加"
+          disabled={board.busy}
           value={board.config.comparison ?? ''}
           onChange={(e) => board.setConfig((c) => ({ ...c, comparison: e.target.value || null }))}
         >
@@ -82,17 +89,27 @@ export function BoardToolbar({
       <div className="board-toolbar">
         <select
           aria-label="当前看板"
+          disabled={board.busy}
           value={board.active.id}
-          onChange={(e) => (board.dirty ? setPending(e.target.value) : board.select(e.target.value))}
+          onChange={(e) => {
+            const id = Number(e.target.value)
+            if (board.dirty) setPending(id)
+            else void board.select(id)
+          }}
         >
-          {board.store.boards.map((b) => (
+          {board.boards.map((b) => (
             <option key={b.id} value={b.id}>
               {b.name}
             </option>
           ))}
         </select>
-        <span role="status">{board.dirty ? '未保存' : '已保存'}</span>
-        <button className="primary-button" onClick={() => board.save(captureLayout?.())} type="button">
+        <span role="status">{board.busy ? '保存中…' : board.dirty ? '未保存' : '已保存'}</span>
+        <button
+          className="primary-button"
+          disabled={board.busy}
+          onClick={() => void board.save(captureLayout?.())}
+          type="button"
+        >
           保存
         </button>
         <details className="board-menu">
@@ -100,38 +117,39 @@ export function BoardToolbar({
           <div>
             <button
               onClick={() => requestName('new')}
-              disabled={board.store.boards.length >= 20 || board.dirty}
+              disabled={board.busy || board.boards.length >= 20 || board.dirty}
               type="button"
             >
               新建看板
             </button>
             <button
               onClick={() => requestName('copy')}
-              disabled={board.store.boards.length >= 20}
+              disabled={board.busy || board.boards.length >= 20}
               type="button"
             >
               另存为新看板
             </button>
-            <button onClick={() => requestName('rename')} type="button">
+            <button onClick={() => requestName('rename')} disabled={board.busy} type="button">
               重命名
             </button>
             <button
               onClick={() => board.setConfig((c) => ({ ...c, defaultSymbol: instrument }))}
+              disabled={board.busy}
               type="button"
             >
               设为默认股票
             </button>
-            <button onClick={board.restore} disabled={!board.dirty} type="button">
+            <button onClick={board.restore} disabled={board.busy || !board.dirty} type="button">
               恢复已保存版本
             </button>
             <button
               onClick={() => setAction('delete')}
-              disabled={board.store.boards.length <= 1}
+              disabled={board.busy || board.boards.length <= 1}
               type="button"
             >
               删除看板
             </button>
-            <small>看板保存在当前浏览器。新建前请保存或恢复当前修改。</small>
+            <small>看板保存在服务端。新建前请保存或恢复当前修改。</small>
           </div>
         </details>
       </div>
@@ -140,7 +158,7 @@ export function BoardToolbar({
           {board.error}
         </p>
       )}
-      {pending && (
+      {pending !== null && (
         <div className="board-dialog-backdrop">
           <section
             ref={dialogRef}
@@ -152,17 +170,15 @@ export function BoardToolbar({
             <h3>当前看板有未保存修改</h3>
             <p>切换前如何处理这些修改？</p>
             <button
-              onClick={() => {
-                if (board.select(pending, true)) setPending(null)
-              }}
+              disabled={board.busy}
+              onClick={() => void board.select(pending, true).then((ok) => ok && setPending(null))}
               type="button"
             >
               保存并切换
             </button>
             <button
-              onClick={() => {
-                if (board.select(pending)) setPending(null)
-              }}
+              disabled={board.busy}
+              onClick={() => void board.select(pending).then((ok) => ok && setPending(null))}
               type="button"
             >
               放弃修改并切换
@@ -187,12 +203,7 @@ export function BoardToolbar({
               <>
                 <h3>删除「{board.active.name}」？</h3>
                 <p>已保存配置和当前修改都会删除。</p>
-                <button
-                  onClick={() => {
-                    if (board.remove()) setAction(null)
-                  }}
-                  type="button"
-                >
+                <button disabled={board.busy} onClick={() => void confirmDelete()} type="button">
                   确认删除
                 </button>
               </>
@@ -200,7 +211,7 @@ export function BoardToolbar({
               <form
                 onSubmit={(e) => {
                   e.preventDefault()
-                  submit()
+                  void submit()
                 }}
               >
                 <label>
@@ -214,7 +225,7 @@ export function BoardToolbar({
                     onChange={(e) => setName(e.target.value)}
                   />
                 </label>
-                <button disabled={!name.trim()} type="submit">
+                <button disabled={!name.trim() || board.busy} type="submit">
                   确认
                 </button>
               </form>

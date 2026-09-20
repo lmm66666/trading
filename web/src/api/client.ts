@@ -421,6 +421,64 @@ export function removeWatchlistItem(instrument: string): Promise<WatchlistItem[]
   }).then(unwrapItems)
 }
 
+// ---- 行情看板（服务端持久化，无 mock 回退：后端不可用时呈现错误态）----
+
+export interface BoardConfig {
+  defaultSymbol: string | null
+  timeframe: Timeframe
+  priceView: PriceView
+  indicators: IndicatorRequest[]
+  comparison: string | null
+  paneWeights: Record<string, number>
+  visibleBars: number
+}
+
+export interface ChartBoard {
+  id: number
+  name: string
+  config: BoardConfig
+}
+
+export interface ChartBoardState {
+  boards: ChartBoard[]
+  active_id: number
+}
+
+export function listChartBoards(): Promise<ChartBoardState> {
+  return request<ChartBoardState>('/api/v1/chart-boards')
+}
+
+export function createChartBoard(name: string, config: BoardConfig): Promise<ChartBoardState> {
+  return request<ChartBoardState>('/api/v1/chart-boards', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, config }),
+  })
+}
+
+export function updateChartBoard(
+  id: number,
+  changes: { name?: string; config?: BoardConfig },
+): Promise<ChartBoardState> {
+  return request<ChartBoardState>(`/api/v1/chart-boards/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(changes),
+  })
+}
+
+export function activateChartBoard(id: number): Promise<ChartBoardState> {
+  return request<ChartBoardState>(`/api/v1/chart-boards/${id}/activate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  })
+}
+
+export function deleteChartBoard(id: number): Promise<ChartBoardState> {
+  return request<ChartBoardState>(`/api/v1/chart-boards/${id}`, { method: 'DELETE' })
+}
+
 export interface ComparisonQuery {
   instrument: string
   timeframe: Timeframe

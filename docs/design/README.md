@@ -70,11 +70,11 @@ related: []
 | `internal/indicator` | 带有效位的指标序列与计算图 | market、Go 标准库 | [指标设计](internal/indicator.md) |
 | `internal/strategy` | 策略定义、注册、实例和时间线回放 | market、indicator | [策略设计](internal/strategy.md) |
 | `internal/backtest` | 账户、撮合、费用、公司行动、结果和指标 | market、indicator、strategy | [回测设计](internal/backtest.md) |
-| `internal/application` | 行情、图表、证券搜索、自选清单、扫描、回测和 Worker 用例编排 | port、market、indicator、strategy、backtest | [应用层设计](internal/application.md) |
+| `internal/application` | 行情、图表、证券搜索、自选清单、行情看板、扫描、回测和 Worker 用例编排 | port、market、indicator、strategy、backtest | [应用层设计](internal/application.md) |
 | `internal/port` | 应用所需的存储、数据源、任务与遥测边界 | market、backtest、标准库 | [端口设计](internal/port.md) |
-| `internal/infrastructure/mysql` | 版本化行情、证券目录、自选清单、任务、租约、结果和迁移持久化 | port、market、backtest、兼容 model、GORM/MySQL | [MySQL 设计](internal/infrastructure/mysql.md) |
+| `internal/infrastructure/mysql` | 版本化行情、证券目录、自选清单、行情看板、任务、租约、结果和迁移持久化 | port、market、backtest、兼容 model、GORM/MySQL | [MySQL 设计](internal/infrastructure/mysql.md) |
 | `pkg/broker` | 新浪外部数据源适配 | port、market、HTTP | [Broker 设计](pkg/broker.md) |
-| `web` | React 行情工作台（图表、扫描、回测、自选）和 API 客户端状态 | React、Lightweight Charts、HTTP API | [前端设计](web.md) |
+| `web` | React 行情工作台（图表、服务端看板、扫描、回测、自选）和 API 客户端状态 | React、Lightweight Charts、HTTP API | [前端设计](web.md) |
 | `cmd/migrate-strategy-kernel` | 旧行情到版本化内核的一次性迁移 | config、MySQL adapter、GORM | [迁移设计](cmd/migrate-strategy-kernel.md) |
 | `scripts` | 验证门禁 | CLI 工具 | [工程标准](../standards/engineering.md) |
 
@@ -117,7 +117,7 @@ internal/
   strategy/                     # 策略契约、Registry、Replay
     builtin/                    # 版本化内置策略，归 strategy
   backtest/                     # 账户、撮合、成本和回测结果
-  application/                  # 查询、采集、扫描、回测和 Worker 用例
+  application/                  # 查询、采集、看板、扫描、回测和 Worker 用例
   port/                         # 应用的存储、来源、任务与遥测边界
   infrastructure/mysql/         # 数据模型、迁移、队列与持久化
     dbtest/                     # 远端随机隔离数据库测试夹具，归 MySQL
@@ -127,7 +127,7 @@ cmd/migrate-strategy-kernel/     # 离线旧行情迁移入口
 web/
   src/api/                      # HTTP 客户端与 DTO
   src/features/search/          # 证券搜索交互
-  src/features/chart/           # 行情图表与分页状态
+  src/features/chart/           # 行情图表、服务端看板与分页状态
   src/features/indicators/      # 指标参数交互
   src/features/strategy/        # 策略表单、任务轮询与状态条
   src/features/scan/            # 扫描任务表单与入选名单

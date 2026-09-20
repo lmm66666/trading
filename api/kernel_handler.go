@@ -47,6 +47,13 @@ type Watchlist interface {
 	Add(context.Context, market.InstrumentID) ([]application.WatchlistItem, error)
 	Remove(context.Context, market.InstrumentID) ([]application.WatchlistItem, error)
 }
+type ChartBoards interface {
+	List(context.Context) (port.ChartBoardState, error)
+	Create(context.Context, string, json.RawMessage) (port.ChartBoardState, error)
+	Update(context.Context, uint64, *string, json.RawMessage) (port.ChartBoardState, error)
+	Activate(context.Context, uint64) (port.ChartBoardState, error)
+	Delete(context.Context, uint64) (port.ChartBoardState, error)
+}
 
 // KernelServices 显式注入持久化用例；旧接口不再回退到旧技术策略引擎。
 type KernelServices struct {
@@ -62,6 +69,7 @@ type KernelServices struct {
 	InstrumentCatalog InstrumentQueries
 	ChartQueries      ChartQueries
 	Watchlist         Watchlist
+	ChartBoards       ChartBoards
 	MarketWorkers     int
 	SyncWaitTimeout   time.Duration
 	PollInterval      time.Duration
@@ -74,6 +82,10 @@ func writeApplicationError(c *gin.Context, op string, err error) {
 		respondError(c, 409, "IDEMPOTENCY_CONFLICT")
 	case errors.Is(err, application.ErrWatchlistFull):
 		respondError(c, 409, "WATCHLIST_FULL")
+	case errors.Is(err, application.ErrBoardsFull):
+		respondError(c, 409, "BOARDS_FULL")
+	case errors.Is(err, application.ErrLastBoard):
+		respondError(c, 409, "LAST_BOARD")
 	case errors.Is(err, port.ErrSnapshotNotReady):
 		respondError(c, 409, "SIGNAL_SNAPSHOT_NOT_READY")
 	case errors.Is(err, errRunNotReady):
@@ -84,7 +96,7 @@ func writeApplicationError(c *gin.Context, op string, err error) {
 		respondError(c, 429, "MARKET_REFRESH_ALREADY_RUNNING")
 	case errors.Is(err, application.ErrInvalidRequest), errors.Is(err, application.ErrDateRangeTooLarge), errors.Is(err, port.ErrInvalidPortValue), errors.Is(err, strategy.ErrInvalidParameter), errors.Is(err, strategy.ErrUnknownParameter), errors.Is(err, market.ErrInvalidInstrument), errors.Is(err, market.ErrExchangeRequired), errors.Is(err, backtest.ErrInvalidConfig):
 		respondError(c, 400, "INVALID_REQUEST")
-	case errors.Is(err, strategy.ErrUnknownStrategy), errors.Is(err, port.ErrRunNotFound), errors.Is(err, port.ErrMarketDataNotFound):
+	case errors.Is(err, strategy.ErrUnknownStrategy), errors.Is(err, port.ErrRunNotFound), errors.Is(err, port.ErrMarketDataNotFound), errors.Is(err, port.ErrChartBoardNotFound):
 		respondError(c, 404, "NOT_FOUND")
 	default:
 		respondInternalError(c, op, err)

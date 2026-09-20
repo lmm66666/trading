@@ -33,6 +33,7 @@ var migrationModels = []struct {
 	{&SignalSnapshotRowModel{}, []string{"uq_snapshot_instrument", "uq_snapshot_sequence"}},
 	{&OutboxEventModel{}, []string{"uq_outbox_event", "idx_outbox_pending"}},
 	{&WatchlistModel{}, []string{"uq_watchlist"}},
+	{&ChartBoardModel{}, nil},
 }
 
 // Migrate creates tables in dependency order without dropping legacy tables.
