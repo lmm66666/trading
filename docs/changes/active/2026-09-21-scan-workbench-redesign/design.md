@@ -3,8 +3,8 @@ id: CHG-2026-09-21-scan-workbench-redesign-DESIGN
 approval_status: approved
 authority: proposed
 approved_by: user
-approved_at: "2026-09-21T16:53:22+08:00"
-approved_revision: "4f9789a"
+approved_at: "2026-09-21T17:07:35+08:00"
+approved_revision: "4c2217b"
 approved_scope: ["REQ-SCAN-UI-001–006", "design.md 全部章节"]
 ---
 
@@ -85,4 +85,4 @@ t_signal_snapshot_rows（instrument_id） 读取分页
 
 ## Approval scope and evidence
 
-用户于 2026-09-21T16:53:22+08:00 批准，批准内容版本 `4f9789a`，范围为 REQ-SCAN-UI-001–006 与 design.md 全部章节。
+用户于 2026-09-21T17:07:35+08:00 批准，批准内容版本 `4c2217b`，范围为 REQ-SCAN-UI-001–006 与 design.md 全部章节。本次批准取代首次批准（2026-09-21T16:53:22+08:00，版本 `4f9789a`），差异为 REQ-001 状态条缩减为契约已有字段。

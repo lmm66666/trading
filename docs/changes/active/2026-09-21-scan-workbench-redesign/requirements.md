@@ -4,8 +4,8 @@ status: approved
 approval_status: approved
 authority: proposed
 approved_by: user
-approved_at: "2026-09-21T16:53:22+08:00"
-approved_revision: "4f9789a"
+approved_at: "2026-09-21T17:07:35+08:00"
+approved_revision: "4c2217b"
 approved_scope: ["REQ-SCAN-UI-001–006", "design.md 全部章节"]
 ---
 
@@ -70,4 +70,4 @@ approved_scope: ["REQ-SCAN-UI-001–006", "design.md 全部章节"]
 
 ## Approval scope and evidence
 
-用户于 2026-09-21T16:53:22+08:00 批准，批准内容版本 `4f9789a`，范围为 REQ-SCAN-UI-001–006 与 design.md 全部章节。批准前用户裁决：策略参数保持英文参数名作 label（撤销中文 label 需求）；确认一次扫描每只股票最多一个信号行。
+用户于 2026-09-21T17:07:35+08:00 批准，批准内容版本 `4c2217b`，范围为 REQ-SCAN-UI-001–006 与 design.md 全部章节。批准前用户裁决：策略参数保持英文参数名作 label（撤销中文 label 需求）；确认一次扫描每只股票最多一个信号行；状态条缩减为契约已有字段（不显示扫描时间范围与完成时间，不扩展 RunStatus 契约）。首次批准（2026-09-21T16:53:22+08:00，版本 `4f9789a`）因 REQ-001 语义修订被本次批准取代。
