@@ -1,3 +1,4 @@
+import styles from '../../styles.css?raw'
 import { act, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FinancialChart, computeBarSpacingLimits } from './FinancialChart'
@@ -579,4 +580,28 @@ it('detects wheel zoom before the chart child handles the bubbling event', () =>
   unmount()
   vi.useRealTimers()
   mocks.timeScale.getVisibleLogicalRange.mockImplementation(() => ({ from: 10, to: 30 }))
+})
+
+
+it.each([
+  [34, 'legend-up', 'var(--up)'],
+  [28, 'legend-down', 'var(--down)'],
+  [30, 'legend-flat', 'var(--muted)'],
+])('图例收盘 %s 的涨跌显示实际语义颜色', (close, tone, color) => {
+  const style = document.createElement('style')
+  style.textContent = styles
+  document.head.append(style)
+  try {
+    const bar = { open_time: '2026-09-10T00:00:00Z', open: 31, high: 35, low: 27, volume: 100, amount: 3000, trading_status: 0 }
+    const bars = [
+      { ...bar, close_time: '2026-09-10T07:00:00Z', close: 30 },
+      { ...bar, close_time: '2026-09-11T07:00:00Z', close },
+    ]
+    const { container } = render(<FinancialChart bars={bars} series={[]} onLoadMore={vi.fn()} />)
+    const change = Array.from(container.querySelectorAll('.chart-legend-main b')).find((node) => node.textContent?.includes('%'))!
+    expect(change).toHaveClass(tone)
+    expect(getComputedStyle(change).color).toBe(color)
+  } finally {
+    style.remove()
+  }
 })

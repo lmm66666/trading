@@ -136,8 +136,9 @@ export function ChartWorkspace({
   const quote = useMemo(() => {
     const latest = result?.bars.at(-1)
     if (!latest) return null
-    const change = latest.close - latest.open
-    const changePercent = latest.open === 0 ? 0 : (change / latest.open) * 100
+    const previousClose = result?.bars.at(-2)?.close
+    const change = previousClose !== undefined && previousClose > 0 ? latest.close - previousClose : null
+    const changePercent = change !== null && previousClose !== undefined ? (change / previousClose) * 100 : null
     return { latest, change, changePercent }
   }, [result])
 
@@ -147,35 +148,40 @@ export function ChartWorkspace({
     <main className="chart-workspace">
       <header className="chart-header">
         <div className="security-title">
-          <span className="security-code">{result?.instrument.code ?? instrument.split(':')[1]}</span>
-          <div>
-            <h2>{result?.instrument.name ?? '正在读取证券信息'}</h2>
+          <div className="security-heading">
+            <div className="security-name">
+              <h2>{result?.instrument.name ?? '正在读取证券信息'}</h2>
+              <button
+                aria-label={watched ? '移除自选' : '添加自选'}
+                aria-pressed={watched}
+                className={watched ? 'watch-toggle active' : 'watch-toggle'}
+                onClick={onToggleWatch}
+                title={watched ? '移除自选' : '添加自选'}
+                type="button"
+              >
+                {watched ? '★' : '☆'}
+              </button>
+            </div>
+            {quote && (
+              <div className={`chart-quote ${quote.change === null || quote.change === 0 ? 'quote-flat' : quote.change > 0 ? 'quote-up' : 'quote-down'}`} aria-label="最新行情">
+                <strong>{quote.latest.close.toFixed(2)}</strong>
+                <span>
+                  <small>{config.timeframe === 'DAY' ? '日涨跌' : '周涨跌'}</small>{' '}
+                  {quote.change !== null && quote.changePercent !== null ? (
+                    <>{quote.change > 0 ? '+' : ''}{quote.change.toFixed(2)} ({quote.change > 0 ? '+' : ''}{quote.changePercent.toFixed(2)}%)</>
+                  ) : '—'}
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="security-meta">
             <p>
-              {instrument} · {config.timeframe === 'DAY' ? '日线' : '周线'} ·{' '}
+              {result?.instrument.code ?? instrument.split(':')[1]} · {result?.instrument.exchange ?? instrument.split(':')[0]} · {config.timeframe === 'DAY' ? '日线' : '周线'} ·{' '}
               {config.priceView === 'QFQ' ? '前复权' : '不复权'}
             </p>
+            <span className="version-chip">快照 v{result?.data_version ?? '—'}</span>
           </div>
-          <button
-            aria-label={watched ? '移除自选' : '添加自选'}
-            aria-pressed={watched}
-            className={watched ? 'watch-toggle active' : 'watch-toggle'}
-            onClick={onToggleWatch}
-            title={watched ? '移除自选' : '添加自选'}
-            type="button"
-          >
-            {watched ? '★' : '☆'}
-          </button>
         </div>
-        {quote && (
-          <div className={quote.change >= 0 ? 'quote-up' : 'quote-down'} aria-label="最新行情">
-            <strong>{quote.latest.close.toFixed(2)}</strong>
-            <span>
-              {quote.change >= 0 ? '+' : ''}
-              {quote.change.toFixed(2)} · {quote.changePercent >= 0 ? '+' : ''}
-              {quote.changePercent.toFixed(2)}%
-            </span>
-          </div>
-        )}
       </header>
       <nav className="chart-toolbar" aria-label="图表工具栏">
         <div className="segmented-control" aria-label="周期">
@@ -219,7 +225,6 @@ export function ChartWorkspace({
           onChange={(next) => board.setConfig((c) => ({ ...c, indicators: next }))}
         />
         <BoardToolbar board={board} instrument={instrument} captureLayout={() => captureLayout.current?.()} />
-        <span className="version-chip">快照 v{result?.data_version ?? '—'}</span>
       </nav>
       <section className="chart-stage" aria-live="polite">
         {status === 'loading' && (

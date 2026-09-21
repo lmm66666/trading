@@ -186,8 +186,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 
 /* ---- 图表工作区 ---- */
 .chart-workspace { display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--bg); }
-.chart-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 60px; padding: 9px 20px; }
-.security-title { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.chart-header { display: flex; align-items: center; gap: 16px; min-height: 60px; padding: 9px 20px; }
+.security-title { display: grid; gap: 4px; min-width: 0; }
+.security-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; min-width: 0; }
+.security-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.security-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.security-meta .version-chip { margin-left: 0; }
 .watch-toggle {
   display: grid;
   place-items: center;
@@ -205,14 +209,15 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 }
 .watch-toggle:hover { color: var(--star); background: var(--hover); }
 .watch-toggle.active { color: var(--star); animation: star-pulse .14s ease; }
-.security-code { display: grid; place-items: center; min-width: 52px; height: 30px; padding: 0 8px; color: var(--muted); background: var(--panel); border-radius: 5px; font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .security-title h2 { overflow: hidden; margin: 0; font-size: 15px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .security-title p { margin: 2px 0 0; color: var(--faint); font-size: 11px; letter-spacing: .02em; white-space: nowrap; }
-.quote-up, .quote-down { display: flex; gap: 10px; align-items: baseline; text-align: right; white-space: nowrap; }
-.quote-up strong, .quote-down strong { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.quote-up span, .quote-down span { font-size: 12px; font-variant-numeric: tabular-nums; }
+.chart-quote { display: flex; gap: 10px; align-items: baseline; white-space: nowrap; }
+.chart-quote strong { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.chart-quote span { font-size: 14px; font-variant-numeric: tabular-nums; }
 .quote-up { color: var(--up); }
 .quote-down { color: var(--down); }
+.quote-flat { color: var(--muted); }
+.chart-quote small { color: var(--muted); font-size: 11px; }
 .chart-toolbar {
   position: relative;
   z-index: 10;
@@ -517,10 +522,11 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .watchlist-aside { position: fixed; top: 0; bottom: 0; left: 0; z-index: 45; width: min(84vw, 300px); transform: translateX(-102%); transition: transform .2s ease; box-shadow: 18px 0 50px rgba(0, 0, 0, .45); }
   .watchlist-aside.open { transform: translateX(0); }
   .chart-header { min-height: 52px; padding: 8px 12px; }
-  .security-code { display: none; }
   .security-title h2 { font-size: 14px; }
   .security-title p { font-size: 9px; }
-  .quote-up strong, .quote-down strong { font-size: 16px; }
+  .chart-quote strong { font-size: 20px; }
+  .chart-quote span { font-size: 12px; }
+  .security-heading { flex-direction: column; align-items: flex-start; }
   .chart-toolbar { gap: 7px; padding: 0 10px; }
   .toolbar-divider { display: none; }
   .version-chip { display: none; }
@@ -573,8 +579,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .chart-legend-row em { font-style:normal; color:var(--muted); margin-right:3px; }
 .chart-legend-row b { font-weight:600; color:var(--text); }
 .legend-muted { font-style:normal; color:var(--faint); }
-.legend-up { color:var(--up); }
-.legend-down { color:var(--down); }
+.chart-legend-row .legend-up { color:var(--up); }
+.chart-legend-row .legend-down { color:var(--down); }
+.chart-legend-row .legend-flat { color:var(--muted); }
 .comparison-notice { position:absolute; bottom:30px; left:12px; z-index:3; padding:6px 12px; background:#182334ee; color:#f1d58a; font-size:12px; }
 .comparison-notice button { margin-left:10px; }
 .indicator-popover { max-height:min(78vh,700px); overflow:auto; width:min(500px,90vw); }

@@ -543,9 +543,9 @@ export function FinancialChart({
             </span>
             {change !== null && changePct !== null && (
               <span>
-                <b className={change >= 0 ? 'legend-up' : 'legend-down'}>
-                  {change >= 0 ? '+' : ''}
-                  {change.toFixed(2)} ({change >= 0 ? '+' : ''}
+                <b className={change === 0 ? 'legend-flat' : change > 0 ? 'legend-up' : 'legend-down'}>
+                  {change > 0 ? '+' : ''}
+                  {change.toFixed(2)} ({change > 0 ? '+' : ''}
                   {changePct.toFixed(2)}%)
                 </b>
               </span>

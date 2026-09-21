@@ -316,3 +316,36 @@ it('keeps configured indicators on stock switch and restores only manual saves',
     ),
   )
 })
+
+
+it.each([
+  [100, 110, 'quote-up', '+10.00 (+10.00%)'],
+  [100, 90, 'quote-down', '-10.00 (-10.00%)'],
+  [100, 100, 'quote-flat', '0.00 (0.00%)'],
+  [0, 100, 'quote-flat', '—'],
+  [null, 100, 'quote-flat', '—'],
+])('顶部报价以前收盘 %s 计算最新收盘 %s 的涨跌', async (previous, close, tone, text) => {
+  const latest = { ...response.bars[0], open: 120, close }
+  const bars = previous === null ? [latest] : [
+    { ...latest, close_time: '2026-09-10T07:00:00Z', close: previous }, latest,
+  ]
+  render(<Harness {...baseProps} query={vi.fn().mockResolvedValue({ ...response, bars })} />)
+  const quote = await screen.findByLabelText('最新行情')
+  expect(quote).toHaveClass(tone)
+  expect(quote).toHaveTextContent(text)
+  expect(quote.closest('.security-heading')).toContainElement(screen.getByText('海康威视'))
+  expect(quote).toHaveTextContent('日涨跌')
+})
+
+
+it('周线报价按前一周收盘计算并标注周涨跌', async () => {
+  const bars = [
+    { ...response.bars[0], close_time: '2026-09-04T07:00:00Z', close: 100 },
+    { ...response.bars[0], open: 120, close: 110 },
+  ]
+  render(<Harness {...baseProps} query={vi.fn().mockResolvedValue({ ...response, bars })} />)
+  await screen.findByLabelText('最新行情')
+  fireEvent.click(screen.getByRole('button', { name: '周线' }))
+  const quote = await screen.findByLabelText('最新行情')
+  expect(quote).toHaveTextContent('周涨跌 +10.00 (+10.00%)')
+})
