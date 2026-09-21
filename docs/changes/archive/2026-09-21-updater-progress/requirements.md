@@ -1,6 +1,6 @@
 ---
 id: CHG-2026-09-21-UPDATER-PROGRESS
-status: implementing
+status: implemented
 approval_status: approved
 authority: proposed
 approved_by: user
