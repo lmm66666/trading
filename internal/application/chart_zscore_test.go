@@ -20,6 +20,9 @@ type pairData struct {
 
 func (f *pairData) LatestCompleteVersion(context.Context) (market.DataVersion, error) { return 7, nil }
 func (f *pairData) Dataset(ctx context.Context, id market.InstrumentID, tf market.Timeframe, from, to time.Time, v market.DataVersion) (market.Dataset, []market.AdjustmentFactor, []market.CorporateAction, error) {
+	if err := (port.BatchRequest{PrimaryTimeframe: tf, From: from, To: to, Version: v}).Validate(); err != nil {
+		return market.Dataset{}, nil, nil, err
+	}
 	f.versions = append(f.versions, v)
 	if id != marketID && f.err != nil {
 		return market.Dataset{}, nil, nil, f.err
@@ -175,7 +178,7 @@ func TestZScoreStatesAndBounds(t *testing.T) {
 func TestZScorePaginationKeepsTwentyYearOrigin(t *testing.T) {
 	s, f, q := newPair(t)
 	s.clock = func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) }
-	origin := time.Date(2006, 1, 1, 0, 0, 0, 0, time.UTC)
+	origin := time.Date(2006, 1, 2, 0, 0, 0, 0, time.UTC)
 	for id, bars := range f.bars {
 		for i := range bars {
 			bars[i].CloseTime = bars[i].CloseTime.AddDate(-19, 0, -10)
@@ -201,9 +204,31 @@ func TestZScorePaginationKeepsTwentyYearOrigin(t *testing.T) {
 	for _, p := range older.Series[1].Points {
 		require.InDelta(t, expected[p.Time], p.Value, 1e-12)
 	}
-	q.Before = origin
+	q.Before = origin.Add(-12 * time.Hour)
 	empty, err := s.Query(context.Background(), q)
 	require.NoError(t, err)
 	require.Empty(t, empty.Bars)
 	require.False(t, empty.HasMore)
+}
+
+func TestChartQueryWindowRespectsPortBounds(t *testing.T) {
+	for _, at := range []time.Time{time.Date(2026, 9, 21, 14, 37, 12, 123000, time.UTC), time.Date(2024, 2, 29, 12, 0, 0, 0, time.UTC)} {
+		for _, cursor := range []time.Time{{}, at.AddDate(0, 0, 1), at.AddDate(0, -1, 0)} {
+			s, _, q := newPair(t)
+			s.clock = func() time.Time { return at }
+			q.Before = cursor
+			q.Comparison = ""
+			_, err := s.Query(context.Background(), q)
+			require.NoError(t, err)
+		}
+	}
+}
+
+func TestZScoreMissingCommodityIsNotRetryableReadFailure(t *testing.T) {
+	s, f, q := newPair(t)
+	f.err = port.ErrMarketDataNotFound
+	result, err := s.Query(context.Background(), q)
+	require.NoError(t, err)
+	require.NotEmpty(t, result.Bars)
+	require.Equal(t, "关联期货暂无历史数据", result.ZScores[0].Warning)
 }

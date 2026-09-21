@@ -92,3 +92,19 @@ func TestQueryChartZSCORETransport(t *testing.T) {
 	queries.err = application.ErrInvalidRequest
 	require.Equal(t, 400, kernelRequest(t, f, "POST", "/api/v1/chart-queries", body).Code)
 }
+
+func TestQueryChartAllowsUnselectedComparison(t *testing.T) {
+	// Omitted, empty and null comparison all represent an unselected board.
+	// Real application behavior is covered by TestZScoreFailureIsolation/missing.
+	for _, comparison := range []string{"", `,"comparison":""`, `,"comparison":null`} {
+		f := newKernelFixture(t)
+		queries := &apiChartQueries{result: application.ChartResult{Timeframe: market.Day, View: market.Raw, ZScores: []application.ZScoreDiagnostic{{Warning: "请选择看板关联期货后计算 Z-score"}}}}
+		f.services.ChartQueries = queries
+		f.router = NewRouter(f.services)
+		body := `{"instrument":"SZSE:300750","timeframe":"DAY","price_view":"RAW","indicators":[{"kind":"ZSCORE","period":126,"smooth":5,"regime":252}]` + comparison + `}`
+		w := kernelRequest(t, f, "POST", "/api/v1/chart-queries", body)
+		require.Equal(t, 200, w.Code, w.Body.String())
+		require.Empty(t, queries.query.Comparison)
+		require.Contains(t, w.Body.String(), "请选择看板关联期货")
+	}
+}

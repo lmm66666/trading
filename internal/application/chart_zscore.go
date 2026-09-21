@@ -8,6 +8,7 @@ import (
 	"time"
 	"trading/internal/indicator"
 	"trading/internal/market"
+	"trading/internal/port"
 )
 
 type ZScoreDiagnostic struct {
@@ -53,6 +54,8 @@ func (s *ChartQueryService) addZScores(ctx context.Context, q ChartQuery, stock 
 			return err
 		}
 		switch {
+		case errors.Is(err, port.ErrMarketDataNotFound):
+			warning = "关联期货暂无历史数据"
 		case err != nil:
 			warning = "关联期货读取失败，请重试"
 		case commodity.Instrument() != id || commodity.Timeframe() != market.Day || commodity.Version() != q.DataVersion:

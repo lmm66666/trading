@@ -121,7 +121,7 @@ go vet ./...
 
 ## 双价格 Z-score
 
-ChartQueryService 的 comparison 限已有八项国内期货。`ZSCORE(period,smooth,regime,lag)` 在相同正版本读取股票、商品完整历史，商品仅读取一次。按UTC日期取不晚于股票日期的最近已知商品Bar，再滞后lag根商品Bar；股票RAW/QFQ、商品RAW，计算后按股票页裁剪。历史下界固定为服务UTC当天向前20年，不随分页before移动；边界之前返回空页。
+ChartQueryService 的 comparison 限已有八项国内期货。`ZSCORE(period,smooth,regime,lag)` 在相同正版本读取股票、商品完整历史，商品仅读取一次。按UTC日期取不晚于股票日期的最近已知商品Bar，再滞后lag根商品Bar；股票RAW/QFQ、商品RAW，计算后按股票页裁剪。历史下界固定为服务UTC当前时刻向前20年，不随分页before移动；边界之前返回空页。
 
 参数 band2–500、smooth1–500、regime>band且≤500、lag0–5；其他类型不得带smooth/regime/lag。成本 `2*period+regime+68` 含诊断，仍受2000/16/并发4约束。三分量与其他指标按请求顺序返回；key包含两腿身份、复权及所有参数。
 

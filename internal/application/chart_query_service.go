@@ -116,14 +116,14 @@ func (s *ChartQueryService) Query(ctx context.Context, query ChartQuery) (ChartR
 	}
 	now := s.clock().UTC().Truncate(time.Microsecond)
 	to := query.Before
-	if to.IsZero() {
+	if to.IsZero() || to.After(now) {
 		to = now
 	} else {
 		to = to.Add(-time.Microsecond)
 	}
 	// Keep the history origin independent of the page cursor. Otherwise each
 	// older page would re-seed EMA with additional, previously excluded history.
-	from := now.Truncate(24*time.Hour).AddDate(-MaxBacktestRangeYears, 0, 0)
+	from := now.AddDate(-MaxBacktestRangeYears, 0, 0)
 	if to.Before(from) {
 		return ChartResult{Instrument: instrument, Timeframe: query.Timeframe, View: query.View, DataVersion: query.DataVersion, Bars: []PriceBar{}, Series: []ChartSeries{}}, nil
 	}

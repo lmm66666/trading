@@ -193,7 +193,7 @@ curl -X DELETE http://localhost:8080/api/v1/chart-boards/2
 
 新增 `zscores` 诊断数组（无该指标时可为null）：每项含key（主柱键）、comparison、period、regime、lag、commodity_date（最近实际用到的商品UTC日期）、z、long_z、relative_performance（63期比价变化百分比）、correlation（5期对数收益在period窗口的相关）、state、可选warning。无有效诊断值为null；state为数据不足、常态区（|z|≤0.75）、偏离观察、股票阶段性偏强/弱（z≥2/≤-2）、长期偏离，核查结构变化（主/长Z同号且绝对值均≥2）。数据在完整固定版本历史计算后裁页，诊断对应该页最新股票点。
 
-响应 Bar 按 close_time 升序。`has_more` 表示当前游标之前、服务UTC当天向前20年的固定查询边界内（不随before移动）是否仍有数据；它不承诺提供20年以前的数据。`has_more=true` 时，使用 `next_before` 和相同 `data_version` 获取更早一页。服务先在完整历史上下文计算指标，再裁剪响应页，避免页边界指标跳变。
+响应 Bar 按 close_time 升序。`has_more` 表示当前游标之前、服务UTC当前时刻向前20年的固定查询边界内（不随before移动）是否仍有数据；它不承诺提供20年以前的数据。`has_more=true` 时，使用 `next_before` 和相同 `data_version` 获取更早一页。服务先在完整历史上下文计算指标，再裁剪响应页，避免页边界指标跳变。
 
 #### 查询版本化行情
 
