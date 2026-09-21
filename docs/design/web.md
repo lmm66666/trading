@@ -6,7 +6,7 @@ approval_provenance: inherited-current-design
 approved_by: null
 approved_at: null
 approved_revision: null
-owns: ["web/", "web/src/", "web/src/api/", "web/src/features/chart/", "web/src/features/indicators/", "web/src/features/search/", "web/src/features/strategy/", "web/src/features/scan/", "web/src/features/backtest/", "web/src/features/watchlist/", "web/src/test/"]
+owns: ["web/", "web/src/", "web/src/api/", "web/src/features/chart/", "web/src/features/indicators/", "web/src/features/search/", "web/src/features/strategy/", "web/src/features/scan/", "web/src/features/backtest/", "web/src/features/watchlist/", "web/src/features/updates/", "web/src/test/"]
 related: []
 ---
 
@@ -140,3 +140,11 @@ npm --prefix web run check
 ### 多参数编辑区布局
 
 MACD、Z-score使用标题、参数、操作三个独立行，避免长名称挤压输入框或让按钮随机折行。MACD参数三列，Z-score参数两列；标签置于输入上方，应用按钮靠左、排序按钮靠右，单周期均线保留紧凑行。弹层桌面宽360px，窄屏按两侧间距自适应并限制滚动高度。仅整理呈现，不改变参数、保存或关联行情契约。
+
+## 数据更新面板
+
+顶栏 RefreshMonitor 入口展示股票或期货运行状态，非模态面板展示两类进度、分页历史和固定任务的失败明细。仅股票提供手动按钮；来源、成功/失败/待完成、已用时间、最近进展和记录时间均有文字说明。没有更新对象、准备中、全部成功、部分成功、失败和中断分开展示，不估算剩余时间。
+
+可见且运行中每5秒查询，收起或无活动任务每30秒；隐藏暂停并取消查询，恢复可见立即查，旧响应不能覆盖当前状态。终态详情停止轮询，顶栏继续发现后续任务。失联保留最后记录，超60秒心跳仅提示状态待确认；过期记录允许显式触发，由服务端 guard 防重。提交失败先查询，不自动重发 POST。关闭面板不取消更新。历史从服务端恢复，界面不保存执行断点。
+
+完成后“加载最新行情”由用户主动重载图表和自选报价，后台不自动改变固定图表版本。自选刷新文案改为刷新报价，仍仅查询已有行情。Escape关闭并归还入口焦点，进度有可访问标签，手机布局单列。

@@ -19,6 +19,7 @@ related: []
 | 我想知道什么 | 先读什么 | 需要深入时 |
 |---|---|---|
 | 系统整体怎样工作，数据经过哪里 | [系统设计](../architecture/system-design.md) | [运行手册](../operations.md)、[Roadmap](../roadmap.md) |
+| NAS 更新进度与失败怎样查看 | [运行手册](../operations.md) | [应用层](internal/application.md)、[API](api.md)、[MySQL](internal/infrastructure/mysql.md) |
 | 行情从哪里来，复权、周线和版本怎样处理 | [行情采集与版本](workflows/market-data.md) | [行情领域](internal/market.md)、[来源适配](pkg/broker.md)、[MySQL](internal/infrastructure/mysql.md) |
 | 扫描为什么选中或漏掉一只证券 | [策略扫描流程](workflows/strategy-scan.md) | [应用层](internal/application.md)、[HTTP 契约](../standards/http-api.md)、[MySQL](internal/infrastructure/mysql.md) |
 | 日线 B1 到底怎么判断 | [日线 B1 规则与例子](strategies/daily-b1.md) | [指标](internal/indicator.md)、[公共策略契约](internal/strategy.md) |

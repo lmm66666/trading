@@ -83,7 +83,7 @@ describe('WatchlistPanel', () => {
     expect(onSelect).toHaveBeenCalledWith(items[0])
     fireEvent.click(screen.getByRole('button', { name: '移除自选 海康威视' }))
     expect(onToggle).toHaveBeenCalledWith('SZSE:002415')
-    fireEvent.click(screen.getByRole('button', { name: '刷新自选' }))
+    fireEvent.click(screen.getByRole('button', { name: '刷新报价' }))
     expect(onRefresh).toHaveBeenCalled()
   })
 

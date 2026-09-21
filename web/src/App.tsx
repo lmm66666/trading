@@ -14,6 +14,7 @@ import { readWorkbenchState, writeWorkbenchState, type WorkbenchView } from './f
 import { ScanPanel } from './features/scan/ScanPanel'
 import { InstrumentSearch } from './features/search/InstrumentSearch'
 import { useBoards } from './features/chart/useBoards'
+import { RefreshMonitor } from './features/updates/RefreshMonitor'
 import { WatchlistPanel } from './features/watchlist/WatchlistPanel'
 
 export type RunKindStore = 'scan' | 'backtest'
@@ -47,6 +48,7 @@ const VIEW_TABS: ReadonlyArray<{ key: WorkbenchView; label: string }> = [
 ]
 
 export default function App() {
+  const [marketReload, setMarketReload] = useState(0)
   const initial = readWorkbenchState(window.location.search)
   const [symbol, setSymbol] = useState<string | null>(initial.symbol)
   const [timeframe, setTimeframe] = useState<Timeframe>(initial.timeframe)
@@ -206,6 +208,7 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <RefreshMonitor onReload={() => { setMarketReload(v => v + 1); refreshWatchlist() }} />
         <div className={mobileSearchOpen ? 'search-overlay open' : 'search-overlay'}>
           <button
             className="mobile-close"
@@ -284,6 +287,7 @@ export default function App() {
         <div className="chart-view" hidden={view !== 'chart'}>
           {symbol && board.config ? (
             <ChartWorkspace
+              key={marketReload}
               board={board}
               instrument={symbol}
               onStateChange={changeChartState}

@@ -506,3 +506,29 @@ export function queryComparison(input: ComparisonQuery, signal?: AbortSignal): P
   })
   return request<ComparisonResult>(`/api/v1/market/bars?${params}`, { signal })
 }
+
+export interface RefreshRun {
+  id: number
+  run_id: string
+  kind: 'STOCK' | 'FUTURES'
+  trigger: string
+  state: string
+  total: number | null
+  succeeded: number
+  failed: number
+  started_at: string
+  finished_at: string | null
+  heartbeat_at: string
+  snapshot_at: string
+  last_progress_at: string | null
+  snapshot_revision: number
+}
+export interface RefreshFailure { id: number; run_id: string; exchange: string; code: string; name?: string; error_code: string; completed_at: string }
+export interface RefreshStatus { stock: RefreshRun | null; futures: RefreshRun | null; futures_enabled: boolean | null }
+export interface RefreshReceipt { status: string; run_id: string; progress_available: boolean }
+const refreshBase = '/api/v1/market/refresh'
+export const getRefreshStatus = (signal?: AbortSignal) => request<RefreshStatus>(`${refreshBase}/status`, { signal })
+export const triggerMarketRefresh = () => request<RefreshReceipt>(refreshBase, { method: 'POST' })
+export const listRefreshRuns = (before = 0, signal?: AbortSignal) => request<{ items: RefreshRun[] }>(`${refreshBase}/runs?limit=20&before_id=${before}`, { signal })
+export const getRefreshRun = (id: string, signal?: AbortSignal) => request<RefreshRun>(`${refreshBase}/runs/${encodeURIComponent(id)}`, { signal })
+export const listRefreshFailures = (id: string, after = 0, signal?: AbortSignal) => request<{ items: RefreshFailure[] }>(`${refreshBase}/runs/${encodeURIComponent(id)}/failures?limit=50&after_id=${after}`, { signal })

@@ -60,7 +60,7 @@ export function WatchlistPanel({
           </button>
         )}
         <button
-          aria-label="刷新自选"
+          aria-label="刷新报价"
           className="watchlist-refresh"
           disabled={status === 'loading'}
           onClick={onRefresh}
