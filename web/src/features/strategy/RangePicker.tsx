@@ -256,12 +256,16 @@ export function RangePicker({ ariaLabel = '时间范围', from, to, onChange }: 
         aria-expanded={open}
         onClick={() => (open ? setOpen(false) : openPopover())}
       >
-        <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <rect x="3" y="4" width="18" height="18" rx="2" />
-          <path d="M16 2v4M8 2v4M3 10h18" />
-        </svg>
-        <span className={from && to ? 'range-text' : 'range-text placeholder'}>
-          {from && to ? `${from} → ${to}` : '选择日期范围'}
+        <span className="range-seg">
+          <span className={from ? 'range-seg-value' : 'range-seg-value placeholder'}>{from || '开始日期'}</span>
+        </span>
+        <span className="range-sep" aria-hidden="true">
+          <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 12h14M13 6l6 6-6 6" />
+          </svg>
+        </span>
+        <span className="range-seg">
+          <span className={to ? 'range-seg-value' : 'range-seg-value placeholder'}>{to || '结束日期'}</span>
         </span>
         <svg className="icon chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="m6 9 6 6 6-6" />

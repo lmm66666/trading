@@ -124,7 +124,6 @@ export function IndicatorManager({ indicators, onChange }: IndicatorManagerProps
                 key={indicatorIdentity(indicator)}
                 indicator={indicator}
                 onApply={(next) => apply(indicators.map((item, i) => (i === index ? next : item)))}
-                onRemove={() => apply(indicators.filter((_, i) => i !== index))}
                 onMove={(direction) => {
                   const next = [...indicators]
                   const target = index + direction
@@ -155,12 +154,10 @@ const parameterLabels: Record<string, string> = {
 function IndicatorEditor({
   indicator,
   onApply,
-  onRemove,
   onMove,
 }: {
   indicator: IndicatorRequest
   onApply: (next: IndicatorRequest) => void
-  onRemove: () => void
   onMove: (direction: number) => void
 }) {
   const [draft, setDraft] = useState(indicator)
@@ -205,9 +202,6 @@ function IndicatorEditor({
         </button>
         <button aria-label={`下移 ${label}`} onClick={() => onMove(1)} type="button">
           ↓
-        </button>
-        <button aria-label={`删除 ${label}`} onClick={onRemove} type="button">
-          删除
         </button>
       </div>
     </form>

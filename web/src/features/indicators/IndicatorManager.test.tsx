@@ -63,7 +63,7 @@ it('rejects duplicates and invalid MACD order, supports reorder/removal', () => 
   expect(onChange).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: '下移 SMA 5' }))
   expect(onChange.mock.calls.at(-1)![0][0]).toEqual({ kind: 'SMA', period: 20 })
-  fireEvent.click(screen.getByRole('button', { name: '删除 SMA 20' }))
+  fireEvent.click(screen.getByRole('button', { name: '移除 SMA 20' }))
   expect(onChange.mock.calls.at(-1)![0]).toHaveLength(2)
   fireEvent.click(screen.getByRole('button', { name: '关闭指标管理' }))
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()

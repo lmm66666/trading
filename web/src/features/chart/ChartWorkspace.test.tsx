@@ -284,6 +284,7 @@ it('keeps configured indicators on stock switch and restores only manual saves',
       expect.anything(),
     ),
   )
+  fireEvent.click(screen.getByRole('button', { name: /^看板：/ }))
   fireEvent.click(screen.getByRole('button', { name: '保存' }))
   await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('已保存'))
   expect(updateChartBoard).toHaveBeenCalledWith(

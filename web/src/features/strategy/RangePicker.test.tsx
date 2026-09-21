@@ -65,7 +65,8 @@ describe('RangePicker', () => {
     render(<Harness onChange={vi.fn()} />)
     const trigger = screen.getByRole('button', { name: '时间范围' })
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
-    expect(trigger).toHaveTextContent('选择日期范围')
+    expect(trigger).toHaveTextContent('开始日期')
+    expect(trigger).toHaveTextContent('结束日期')
 
     fireEvent.click(trigger)
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
@@ -89,7 +90,8 @@ describe('RangePicker', () => {
     expect(onChange).toHaveBeenCalledWith(fmt(monthsAgo(today(), 1)), fmt(today()))
     expect(screen.queryByRole('dialog')).toBeNull()
     const trigger = screen.getByRole('button', { name: '时间范围' })
-    expect(trigger).toHaveTextContent(`${fmt(monthsAgo(today(), 1))} → ${fmt(today())}`)
+    expect(trigger).toHaveTextContent(fmt(monthsAgo(today(), 1)))
+    expect(trigger).toHaveTextContent(fmt(today()))
   })
 
   it('预设"今年以来"起点为当年 1 月 1 日', () => {
@@ -163,7 +165,7 @@ describe('RangePicker', () => {
 
     expect(onChange).toHaveBeenLastCalledWith('', '')
     expect(screen.getByRole('button', { name: '确定' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '时间范围' })).toHaveTextContent('选择日期范围')
+    expect(screen.getByRole('button', { name: '时间范围' })).toHaveTextContent('开始日期')
   })
 
   it('Escape 关闭弹层且不回写未确认的选择', () => {

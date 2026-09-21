@@ -11,6 +11,7 @@ export function BoardToolbar({
   instrument: string
   captureLayout?: () => Partial<BoardConfig> | undefined
 }) {
+  const [open, setOpen] = useState(false)
   const [pending, setPending] = useState<number | null>(null)
   const [action, setAction] = useState<'new' | 'copy' | 'rename' | 'delete' | null>(null)
   const [name, setName] = useState('')
@@ -57,6 +58,13 @@ export function BoardToolbar({
   const requestName = (next: 'new' | 'copy' | 'rename') => {
     setName(next === 'rename' ? board.active!.name : '')
     setAction(next)
+    setOpen(false)
+  }
+  const choose = (id: number) => {
+    if (id === board.active!.id) return
+    setOpen(false)
+    if (board.dirty) setPending(id)
+    else void board.select(id)
   }
   const submit = async () => {
     const ok =
@@ -86,72 +94,103 @@ export function BoardToolbar({
           ))}
         </select>
       </label>
-      <div className="board-toolbar">
-        <select
-          aria-label="当前看板"
-          disabled={board.busy}
-          value={board.active.id}
-          onChange={(e) => {
-            const id = Number(e.target.value)
-            if (board.dirty) setPending(id)
-            else void board.select(id)
-          }}
-        >
-          {board.boards.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-        <span role="status">{board.busy ? '保存中…' : board.dirty ? '未保存' : '已保存'}</span>
+      <div className="board-manager">
         <button
-          className="primary-button"
-          disabled={board.busy}
-          onClick={() => void board.save(captureLayout?.())}
+          aria-expanded={open}
+          aria-label={`看板：${board.active.name}`}
+          className={open ? 'toolbar-button active' : 'toolbar-button'}
+          onClick={() => setOpen((value) => !value)}
           type="button"
         >
-          保存
+          <span className="button-glyph">▦</span>
+          {board.active.name}
+          {board.dirty && <span className="board-dirty-dot" title="有未保存修改" />}
         </button>
-        <details className="board-menu">
-          <summary aria-label="看板操作">更多</summary>
-          <div>
-            <button
-              onClick={() => requestName('new')}
-              disabled={board.busy || board.boards.length >= 20 || board.dirty}
-              type="button"
-            >
-              新建看板
-            </button>
-            <button
-              onClick={() => requestName('copy')}
-              disabled={board.busy || board.boards.length >= 20}
-              type="button"
-            >
-              另存为新看板
-            </button>
-            <button onClick={() => requestName('rename')} disabled={board.busy} type="button">
-              重命名
-            </button>
-            <button
-              onClick={() => board.setConfig((c) => ({ ...c, defaultSymbol: instrument }))}
-              disabled={board.busy}
-              type="button"
-            >
-              设为默认股票
-            </button>
-            <button onClick={board.restore} disabled={board.busy || !board.dirty} type="button">
-              恢复已保存版本
-            </button>
-            <button
-              onClick={() => setAction('delete')}
-              disabled={board.busy || board.boards.length <= 1}
-              type="button"
-            >
-              删除看板
-            </button>
-            <small>看板保存在服务端。新建前请保存或恢复当前修改。</small>
+        {open && (
+          <div className="board-popover" role="dialog" aria-label="看板管理">
+            <div className="popover-heading">
+              <div>
+                <span className="eyebrow">BOARDS</span>
+                <h2>看板管理</h2>
+              </div>
+              <button
+                aria-label="关闭看板管理"
+                className="icon-button"
+                onClick={() => setOpen(false)}
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+            <div className="board-list" role="listbox" aria-label="看板列表">
+              {board.boards.map((b) => (
+                <button
+                  aria-selected={b.id === board.active!.id}
+                  className={b.id === board.active!.id ? 'board-option selected' : 'board-option'}
+                  disabled={board.busy}
+                  key={b.id}
+                  onClick={() => choose(b.id)}
+                  role="option"
+                  type="button"
+                >
+                  <span>{b.name}</span>
+                  <span aria-hidden="true">{b.id === board.active!.id ? '✓' : ''}</span>
+                </button>
+              ))}
+            </div>
+            <div className="board-popover-save">
+              <span role="status">{board.busy ? '保存中…' : board.dirty ? '未保存' : '已保存'}</span>
+              <button
+                className="primary-button"
+                disabled={board.busy}
+                onClick={() => void board.save(captureLayout?.())}
+                type="button"
+              >
+                保存
+              </button>
+            </div>
+            <div className="board-popover-menu">
+              <button
+                onClick={() => requestName('new')}
+                disabled={board.busy || board.boards.length >= 20 || board.dirty}
+                type="button"
+              >
+                新建看板
+              </button>
+              <button
+                onClick={() => requestName('copy')}
+                disabled={board.busy || board.boards.length >= 20}
+                type="button"
+              >
+                另存为新看板
+              </button>
+              <button onClick={() => requestName('rename')} disabled={board.busy} type="button">
+                重命名
+              </button>
+              <button
+                onClick={() => board.setConfig((c) => ({ ...c, defaultSymbol: instrument }))}
+                disabled={board.busy}
+                type="button"
+              >
+                设为默认股票
+              </button>
+              <button onClick={board.restore} disabled={board.busy || !board.dirty} type="button">
+                恢复已保存版本
+              </button>
+              <button
+                onClick={() => {
+                  setAction('delete')
+                  setOpen(false)
+                }}
+                disabled={board.busy || board.boards.length <= 1}
+                type="button"
+              >
+                删除看板
+              </button>
+              <small>看板保存在服务端。新建前请保存或恢复当前修改。</small>
+            </div>
           </div>
-        </details>
+        )}
       </div>
       {board.error && (
         <p className="board-error" role="alert">
