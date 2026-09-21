@@ -1,70 +1,59 @@
-import { useEffect, useRef, useState } from 'react'
-import { getRun, type RunKind, type RunStatus, type RunStatusValue } from '../../api/client'
+import { useCallback, useEffect, useState } from 'react'
+import { ApiError, getRun, type RunKind, type RunStatus } from '../../api/client'
 
-const POLL_INTERVAL_MS = 2000
-const MAX_CONSECUTIVE_ERRORS = 3
-
-const TERMINAL_STATUSES: readonly RunStatusValue[] = [
-  'SUCCEEDED',
-  'PARTIAL_SUCCEEDED',
-  'FAILED',
-  'CANCELLED',
-]
-
-export interface RunPollingResult {
+const TERMINAL = new Set(['SUCCEEDED', 'PARTIAL_SUCCEEDED', 'FAILED', 'CANCELLED'])
+interface PollState {
+  key: string
   status: RunStatus | null
-  /** 连续网络错误达到上限后进入错误态，轮询停止 */
   error: string | null
+  missing: boolean
+}
+interface PollOptions {
+  active?: boolean
+  /** 扫描启用错误分类；默认保持回测的既有重试语义。 */
+  classifyErrors?: boolean
 }
 
-/**
- * 以 2 秒固定间隔轮询任务状态：终态停止、卸载停止、连续 3 次网络错误停止。
- * 用世代 ref 防止旧任务的响应污染新任务的状态。
- */
-export function useRunPolling(kind: RunKind, runId: string | null): RunPollingResult {
-  const [status, setStatus] = useState<RunStatus | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const generationRef = useRef(0)
+export function useRunPolling(kind: RunKind, runId: string | null, { active = true, classifyErrors = false }: PollOptions = {}) {
+  const key = `${kind}:${runId ?? ''}`
+  const [state, setState] = useState<PollState | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const retry = useCallback(() => setAttempt((value) => value + 1), [])
 
   useEffect(() => {
-    if (!runId) {
-      setStatus(null)
-      setError(null)
-      return
-    }
-    const generation = ++generationRef.current
-    setStatus(null)
-    setError(null)
+    if (!runId || !active) return
+    let current = true
     let timer: number | undefined
-    let active = true
-    let errorCount = 0
-
+    let errors = 0
+    setState((previous) => ({ key, status: previous?.key === key ? previous.status : null, error: null, missing: false }))
     const poll = async () => {
-      if (!active || generationRef.current !== generation) return
       try {
-        const result = await getRun(kind, runId)
-        if (!active || generationRef.current !== generation) return
-        errorCount = 0
-        setStatus(result)
-        if (TERMINAL_STATUSES.includes(result.status)) return
-        timer = window.setTimeout(poll, POLL_INTERVAL_MS)
+        const status = await getRun(kind, runId)
+        if (!current) return
+        errors = 0
+        setState({ key, status, error: null, missing: false })
+        if (TERMINAL.has(status.status)) return
       } catch (cause) {
-        if (!active || generationRef.current !== generation) return
-        errorCount += 1
-        if (errorCount >= MAX_CONSECUTIVE_ERRORS) {
-          setError(cause instanceof Error ? cause.message : '任务状态轮询失败')
+        if (!current) return
+        errors += 1
+        const businessError = classifyErrors && cause instanceof ApiError && cause.status < 500 && cause.status !== 429
+        if (businessError || errors >= 3) {
+          const missing = businessError && cause.status === 404 && cause.code === 'NOT_FOUND'
+          setState((previous) => ({ key, status: previous?.key === key ? previous.status : null,
+            error: missing ? '上次扫描记录已不可用' : cause instanceof Error ? cause.message : '任务状态读取失败', missing }))
           return
         }
-        timer = window.setTimeout(poll, POLL_INTERVAL_MS)
       }
+      timer = window.setTimeout(poll, 2000)
     }
-
     void poll()
     return () => {
-      active = false
+      current = false
       if (timer !== undefined) window.clearTimeout(timer)
     }
-  }, [kind, runId])
+  }, [kind, runId, key, active, attempt, classifyErrors])
 
-  return { status, error }
+  const current = runId && state?.key === key ? state : null
+  return { status: current?.status ?? null, error: current?.error ?? null, missing: current?.missing ?? false,
+    loading: Boolean(runId && !current?.status && !current?.error), retry }
 }

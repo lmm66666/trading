@@ -91,6 +91,17 @@ export interface ChartQueryInput {
 /** 连接层失败（无法访问后端或响应不可解析），区别于后端返回的业务错误。 */
 export class ConnectivityError extends Error {}
 
+/** 保留传输状态与业务标识，供调用方区分失效资源和可恢复连接故障。 */
+export class ApiError extends Error {
+  readonly status: number
+  readonly code: string
+  constructor(status: number, code: string) {
+    super(code)
+    this.status = status
+    this.code = code
+  }
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let response: Response
   try {
@@ -107,7 +118,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     throw new ConnectivityError(`服务返回了无法解析的响应（HTTP ${response.status}）`)
   }
   if (!response.ok || envelope.code !== 0) {
-    throw new Error(envelope.message || `请求失败（HTTP ${response.status}）`)
+    throw new ApiError(response.status, envelope.message || `请求失败（HTTP ${response.status}）`)
   }
   return envelope.data
 }
