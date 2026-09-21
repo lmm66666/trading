@@ -27,7 +27,7 @@ related: []
 - 字段名使用稳定 snake_case，按需记录 component、operation、run_id、instrument、data_version、duration_ms、attempt、error_code。
 - Debug 用于诊断，Info 用于任务开始/完成和重要状态，Warn 用于可恢复失败，Error 用于本次操作终止或需人工处理。
 - 禁止记录 Token、密码、Cookie、完整配置、请求/响应正文、DSN、路径、堆栈或租约凭据。
-- Docker 镜像不得包含本地配置、凭据、数据库转储或导出包，运行时只读挂载配置。
+- 普通 Docker 镜像不得包含本地配置、凭据、数据库转储或导出包，运行时只读挂载配置。用户于 2026-09-21 明确批准私有 NAS `updater-configured` 目标内置 `config.updater.yaml`：该文件不得提交或进入普通构建上下文，配置副本为 app:app、0400；镜像与 tar 按含凭据文件管理，不公开发布。
 
 ## 3. 数据库与迁移规范
 
@@ -69,3 +69,7 @@ related: []
 ## 双服务镜像验收
 
 Dockerfile 提供 updater/workbench 两个目标；updater 镜像不构建或包含前端，workbench 包含静态产物。两者按 linux/amd64 构建，非 root 运行，只读挂载本地配置。`--image` 必须实际构建两目标，不能只验证默认末阶段。`--mysql` 同时执行 MySQL 模块与 data 的隔离集成测试，以覆盖 workbench 不执行 DDL 的职责。NAS Compose 使用已存在的 MySQL，不声明新的 MySQL 容器或数据卷。
+
+内置配置目标由 `make image-updater-configured` 构建，通过 BuildKit secret 提供输入，并强制该阶段重新执行，避免配置变化命中旧缓存。`--image` 另用示例配置构建此目标并检查文件读取权限与默认命令；真实配置内容仅做一致性校验，不写入日志。
+
+镜像门禁通过 `--no-cache-filter` 重新执行选定服务目标，依赖与编译阶段仍按 Docker 内容缓存失效规则复用；无需强制重新联网下载未变化的依赖。内置配置阶段始终单独失效，且检查默认命令和文件权限。

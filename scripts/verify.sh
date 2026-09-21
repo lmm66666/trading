@@ -102,8 +102,17 @@ if "$verify_image"; then
   fi
   for service in updater workbench; do
     # ${arr[@]+"${arr[@]}"} 写法兼容 bash 3.2（macOS）下 set -u 展开空数组报错
-    docker buildx build --platform linux/amd64 --target "$service" --load --no-cache ${build_proxy_args[@]+"${build_proxy_args[@]}"} -t "trading-$service:verify" .
+    docker buildx build --platform linux/amd64 --target "$service" --load --no-cache-filter "$service" ${build_proxy_args[@]+"${build_proxy_args[@]}"} -t "trading-$service:verify" .
   done
+  docker buildx build --platform linux/amd64 --target updater-configured --load \
+    --no-cache-filter updater-configured \
+    --secret id=updater_config,src=config.updater.example.yaml ${build_proxy_args[@]+"${build_proxy_args[@]}"} \
+    -t trading-updater-configured:verify .
+  configured_metadata="$(docker image inspect trading-updater-configured:verify --format '{{.Os}}/{{.Architecture}} {{.Config.User}} {{json .Config.Entrypoint}} {{json .Config.Cmd}}')"
+  [[ "$configured_metadata" == 'linux/amd64 app ["/app/trading","-service","updater"] ["-config","/app/config.yaml"]' ]]
+  docker run --rm --network none --platform linux/amd64 --entrypoint /bin/sh \
+    trading-updater-configured:verify -c \
+    'test "$(id -un)" = app && test -r /app/config.yaml && test "$(stat -c %a /app/config.yaml)" = 400'
 else
   echo "[10/10] 镜像：未选择（涉及构建或部署时必须使用 --image）"
 fi

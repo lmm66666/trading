@@ -53,7 +53,7 @@
 
 所有开发必须遵守 [工程标准](docs/standards/engineering.md)，其中保留日志脱敏、数据库索引/事务、测试覆盖率和交付要求。总覆盖率不低于 80%，核心行情、指标、策略、回测各不低于 90%；不得用 SQL mock 或只编译替代获批远端 MySQL 8.4/x86_64 随机隔离库验收；应用镜像按 linux/amd64 构建。
 
-快速检查：`npm --prefix web run check && go test ./... && go vet ./...`。默认本地门禁：`bash scripts/verify.sh`。按工程标准的风险触发条件追加 `--mysql`、`--image` 或 `--full`；适用门禁缺配置、Docker 或其他前提时准确报告未完成，不得伪报通过。未触发的外部门禁记录为不适用及理由。`config.yaml` 只在本地保存，不提交，不进入镜像。
+快速检查：`npm --prefix web run check && go test ./... && go vet ./...`。默认本地门禁：`bash scripts/verify.sh`。按工程标准的风险触发条件追加 `--mysql`、`--image` 或 `--full`；适用门禁缺配置、Docker 或其他前提时准确报告未完成，不得伪报通过。未触发的外部门禁记录为不适用及理由。普通配置只在本地保存、不提交、不进入普通镜像；用户批准的私有 NAS `updater-configured` 可内置 `config.updater.yaml`，边界见工程标准。
 
 新代码依赖方向、DDD 边界和已有兼容例外以系统设计和源码地图为准；不得扩大兼容栈。工程标准是详细规则的唯一权威来源，本节只是入口摘要。
 

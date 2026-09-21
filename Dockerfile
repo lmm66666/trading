@@ -47,6 +47,16 @@ EXPOSE 8081
 ENTRYPOINT ["/app/trading", "-service", "updater"]
 CMD ["-config", "/app/config.yaml"]
 
+# Private NAS image: configuration is deliberately retained in the final image.
+# Build with --no-cache-filter updater-configured when supplying a new secret.
+FROM updater AS updater-configured
+USER root
+RUN --mount=type=secret,id=updater_config,required=true \
+    cp /run/secrets/updater_config /app/config.yaml \
+    && chown app:app /app/config.yaml \
+    && chmod 0400 /app/config.yaml
+USER app
+
 FROM runtime AS workbench
 COPY --from=web-builder /src/web/dist /app/web/dist
 EXPOSE 8080

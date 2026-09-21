@@ -176,3 +176,19 @@ Docker Hub 或镜像构建阶段需要代理时，宿主侧继续使用标准 `h
 升级前备份数据库并停止旧 updater，新 updater 启动创建两张更新进度观察表，再升级 workbench。不回填虚构历史，不改变采集周期或已有行情。回滚保留新增表，旧 updater 不提供进度；旧记录过期时只能说明状态未知。
 
 工作台顶栏“数据更新”可手动更新全部股票，查看股票/期货进度与失败记录。关闭电脑不会停止 NAS 任务，重启 updater 后旧任务记为中断、不自动续跑。重新更新仍按原行情规则遍历，并不跳过当天已更新证券。progress_available=false 表示采集已受理但记录暂不可用，不应自动重复提交。进度记录可能落后真实行情，不把百分比当数据库完整性证明。
+
+## NAS 无法挂载配置文件时
+
+用户批准的私有镜像可将根目录 `config.updater.yaml` 内置：
+
+```bash
+make image-updater-configured
+# 等价命令（更新配置必须保留 --no-cache-filter）：
+docker buildx build --platform linux/amd64 --target updater-configured \
+  --no-cache-filter updater-configured \
+  --secret id=updater_config,src=config.updater.yaml \
+  -t trading-updater:configured --load .
+docker save -o trading-updater-configured.tar trading-updater:configured
+```
+
+NAS 导入后无需配置文件挂载或额外启动参数，默认仍执行 `/app/trading -service updater -config /app/config.yaml`。BuildKit secret 只负责传入构建内容；最终镜像有意保存配置，镜像持有者可以提取其中凭据。真实配置不提交，镜像/tar 不公开发布；更改配置后重新执行上述构建并替换容器。普通 `updater`、`workbench` 目标仍采用只读挂载，不依赖这个文件。

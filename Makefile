@@ -1,4 +1,4 @@
-.PHONY: run-workbench run-updater build image-updater image-workbench test vet clean
+.PHONY: run-workbench run-updater build image-updater image-updater-configured image-workbench test vet clean
 
 WORKBENCH_CONFIG ?= config.yaml
 UPDATER_CONFIG ?= config.updater.yaml
@@ -14,6 +14,9 @@ build:
 
 image-updater:
 	docker buildx build --platform linux/amd64 --target updater -t trading-updater:latest --load .
+
+image-updater-configured:
+	docker buildx build --platform linux/amd64 --target updater-configured --no-cache-filter updater-configured --secret "id=updater_config,src=$(UPDATER_CONFIG)" -t trading-updater:configured --load .
 
 image-workbench:
 	docker buildx build --platform linux/amd64 --target workbench -t trading-workbench:latest --load .

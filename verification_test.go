@@ -39,6 +39,9 @@ set -eu
 tool="${0##*/}"
 printf '%s %s\n' "$tool" "$*" >> "$VERIFY_TEST_LOG"
 if [[ "$tool" == "$VERIFY_TEST_FAIL" ]]; then exit 19; fi
+if [[ "$tool" == docker && "$*" == 'image inspect '* ]]; then
+ printf '%s\n' 'linux/amd64 app ["/app/trading","-service","updater"] ["-config","/app/config.yaml"]'
+fi
 if [[ "$tool" == go ]]; then
  case "$*" in
   *-tags=deployment*) if [[ "$VERIFY_TEST_FAIL" == mysql ]]; then exit 23; fi ;;
@@ -77,9 +80,12 @@ fi
 				}
 			}
 			if tc.image && tc.failTool != "docker" {
-				for _, role := range []string{"updater", "workbench"} {
+				for _, role := range []string{"updater", "workbench", "updater-configured"} {
 					if !strings.Contains(calls, "--target "+role) {
 						t.Errorf("image target %s was not verified", role)
+					}
+					if !strings.Contains(calls, "--no-cache-filter "+role) {
+						t.Errorf("image target %s can reuse its final stage", role)
 					}
 				}
 			}
