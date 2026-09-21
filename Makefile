@@ -1,4 +1,4 @@
-.PHONY: run-workbench run-updater build image-updater image-updater-configured image-workbench test vet clean
+.PHONY: run-workbench run-updater build image-updater image-updater-configured image-workbench dev test vet clean
 
 WORKBENCH_CONFIG ?= config.yaml
 UPDATER_CONFIG ?= config.updater.yaml
@@ -8,6 +8,14 @@ run-workbench:
 
 run-updater:
 	go run . -service updater -config $(UPDATER_CONFIG)
+
+# Start workbench backend and Vite dev server together; Ctrl+C stops both.
+# Open http://localhost:5173 (proxies /api to 127.0.0.1:8080).
+dev:
+	trap 'kill 0' EXIT; \
+	go run . -service workbench -config $(WORKBENCH_CONFIG) & \
+	npm --prefix web run dev & \
+	wait
 
 build:
 	go build -o trading .
