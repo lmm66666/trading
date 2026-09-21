@@ -1,6 +1,6 @@
 ---
 id: CHG-2026-09-21-backtest-workspace
-status: implementing
+status: implemented
 approval_status: approved
 authority: normative
 approved_by: user
