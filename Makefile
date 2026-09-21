@@ -14,12 +14,16 @@ build:
 
 image-updater:
 	docker buildx build --platform linux/amd64 --target updater -t trading-updater:latest --load .
+	docker save -o trading-updater.tar trading-updater:latest
 
 image-updater-configured:
 	docker buildx build --platform linux/amd64 --target updater-configured --no-cache-filter updater-configured --secret "id=updater_config,src=$(UPDATER_CONFIG)" -t trading-updater:configured --load .
+	docker tag trading-updater:configured trading-updater:latest
+	docker save -o trading-updater.tar trading-updater:latest
 
 image-workbench:
 	docker buildx build --platform linux/amd64 --target workbench -t trading-workbench:latest --load .
+	docker save -o trading-workbench.tar trading-workbench:latest
 
 test:
 	go test ./...
