@@ -590,6 +590,19 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .indicator-editor label { font-size:10px; color:#94a3b8; }
 .indicator-editor input { display:block; width:55px; padding:5px; background:#0b101a; border:1px solid #334155; color:#e2e8f0; border-radius:4px; }
 .indicator-editor button { background:#233148; border:0; color:#e2e8f0; padding:6px; border-radius:4px; cursor:pointer; }
+.indicator-fields, .indicator-actions { display:contents; }
+.indicator-editor--multi { display:grid; gap:12px; padding:14px 0; }
+.indicator-editor--multi>strong { min-width:0; overflow-wrap:anywhere; }
+.indicator-editor--multi .indicator-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px 12px; }
+.indicator-editor--multi .indicator-fields--macd { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.indicator-editor--multi label { display:grid; gap:5px; min-width:0; }
+.indicator-editor--multi input { width:100%; min-width:0; height:32px; font-variant-numeric:tabular-nums; }
+.indicator-editor--multi .indicator-actions { display:flex; justify-content:flex-end; gap:8px; }
+.indicator-editor--multi button { min-width:32px; height:30px; }
+.indicator-editor--multi button[type="submit"] { margin-right:auto; padding:0 16px; }
+@media(max-width:767px) {
+ .indicator-popover { width:auto; max-width:none; max-height:calc(100dvh - 116px); }
+}
 button:disabled { cursor:not-allowed; opacity:.45; }
 @media(max-width:767px) {
  .sidebar-toggle,.sidebar-resizer { display:none; }

@@ -147,6 +147,11 @@ export function IndicatorManager({ indicators, onChange }: IndicatorManagerProps
   )
 }
 
+const parameterLabels: Record<string, string> = {
+  fast: '快线周期', slow: '慢线周期', signal: '信号周期',
+  period: '主窗口', smooth: '平滑周期', regime: '长期窗口', lag: '期货滞后',
+}
+
 function IndicatorEditor({
   indicator,
   onApply,
@@ -168,39 +173,43 @@ function IndicatorEditor({
         : ['period']
   return (
     <form
-      className="indicator-editor"
+      className={`indicator-editor${fields.length > 1 ? " indicator-editor--multi" : ""}`}
       onSubmit={(e) => {
         e.preventDefault()
         onApply(draft)
       }}
     >
       <strong>{label}</strong>
-      {fields.map((field) => (
-        <label key={field}>
-          {field}
-          <input
-            aria-label={`${label} ${field}`}
-            type="number"
-            min={field === 'lag' ? 0 : 1}
-            max={field === 'lag' ? 5 : 500}
-            required
-            value={Number((draft as unknown as Record<string, unknown>)[field] ?? 0)}
-            onChange={(e) => setDraft({ ...draft, [field]: Number(e.target.value) })}
-          />
-        </label>
-      ))}
-      <button aria-label={`应用 ${label} 参数`} type="submit">
-        应用
-      </button>
-      <button aria-label={`上移 ${label}`} onClick={() => onMove(-1)} type="button">
-        ↑
-      </button>
-      <button aria-label={`下移 ${label}`} onClick={() => onMove(1)} type="button">
-        ↓
-      </button>
-      <button aria-label={`删除 ${label}`} onClick={onRemove} type="button">
-        删除
-      </button>
+      <div className={`indicator-fields${indicator.kind === 'MACD' ? ' indicator-fields--macd' : ''}`}>
+        {fields.map((field) => (
+          <label key={field}>
+            <span>{fields.length > 1 ? parameterLabels[field] : field}</span>
+            <input
+              aria-label={`${label} ${field}`}
+              type="number"
+              min={field === 'lag' ? 0 : 1}
+              max={field === 'lag' ? 5 : 500}
+              required
+              value={Number((draft as unknown as Record<string, unknown>)[field] ?? 0)}
+              onChange={(e) => setDraft({ ...draft, [field]: Number(e.target.value) })}
+            />
+          </label>
+        ))}
+      </div>
+      <div className="indicator-actions">
+        <button aria-label={`应用 ${label} 参数`} type="submit">
+          应用
+        </button>
+        <button aria-label={`上移 ${label}`} onClick={() => onMove(-1)} type="button">
+          ↑
+        </button>
+        <button aria-label={`下移 ${label}`} onClick={() => onMove(1)} type="button">
+          ↓
+        </button>
+        <button aria-label={`删除 ${label}`} onClick={onRemove} type="button">
+          删除
+        </button>
+      </div>
     </form>
   )
 }
