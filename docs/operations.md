@@ -137,27 +137,20 @@ go run ./cmd/migrate-strategy-kernel -config config.yaml -dry-run=false -batch-s
 
 ## 8. 验证
 
-快速检查：
+按改动范围选择检查：
 
 ```bash
-npm --prefix web run check
-go test ./...
-go vet ./...
+bash scripts/verify.sh                           # 快速：前后端测试/构建、Go vet
+bash scripts/verify.sh --mysql                   # 仅远端隔离数据库验收
+bash scripts/verify.sh --image=updater-configured # 仅内置配置 updater 镜像
+bash scripts/verify.sh --image=updater            # 仅普通 updater 镜像
+bash scripts/verify.sh --image                   # 全部镜像，不跑应用全量测试
+bash scripts/verify.sh --full                    # 显式全量：覆盖率、Race、MySQL、全部镜像
 ```
 
-按风险选择门禁：
+纯文档或局部修改只运行相关检查，参见 [工程标准](standards/engineering.md)。首次前端检查缺少 node_modules 时自动安装依赖；修改依赖或切换依赖版本后先执行 `npm --prefix web ci --prefer-offline`。普通镜像复用缓存，内置配置阶段每次强制重写。网络故障只重试失败步骤。
 
-```bash
-bash scripts/verify.sh                 # 默认本地门禁，无 MySQL / Docker 调用
-bash scripts/verify.sh --mysql         # 追加远端隔离数据库验收
-bash scripts/verify.sh --image         # 追加 linux/amd64 镜像构建
-bash scripts/verify.sh --full          # 所有门禁；等价于 --mysql --image
-bash scripts/verify.sh --help          # 仅显示用法
-```
-
-默认包含前端构建/覆盖率、Go 测试/覆盖率、文档、Race Detector、静态检查、5000 证券性能及容器配置安全检查。SQL/模型/索引/迁移/事务/锁/持久化队列/数据库驱动变化必须选择 MySQL；Dockerfile/构建依赖/打包/部署方式变化必须选择镜像；完整触发规则以 [工程标准](standards/engineering.md) 为准。CI/发布可用 `--full`。
-
-未选择的外部门禁会显式显示“未选择”，不能当作通过；评审确认不适用时在单项记录 `not-required` 和原因。必要门禁缺少前提或执行失败则记录阻塞/失败，禁止归档与合并。脚本未知参数立即退出，所选门禁任一失败返回非零状态。
+未知参数立即失败，所选检查失败返回非零；输出只证明本次选择的检查通过，不代表未选项已经验收。`--mysql --image` 仅组合两项外部检查，不等同于 `--full`。
 
 本地不得启动或拉取 MySQL 作为验收环境。远端预检只读取版本和编译架构；完整集成测试为每个测试创建 `trading_test_` 前缀的随机空数据库，结束后删除。测试直接读取仓库根目录下、本地保存且已被 Git 忽略的 `config.yaml` 中的数据库配置；配置内的业务库名只用于定位连接，测试连接必须改写到随机空数据库。缺少文件、配置无效或连接失败时门禁失败。凭据、完整 DSN 和内网地址不得写入仓库、日志或命令示例。
 

@@ -42,15 +42,27 @@ related: []
 
 ## 4. 测试与交付
 
-- 新增业务逻辑有单元测试，总覆盖率不低于 80%。
-- `internal/market`、`internal/indicator`、`internal/strategy/...`、`internal/backtest` 各自覆盖率不低于 90%。
-- MySQL 语义必须在获批的远端 8.4/x86_64 服务上，以随机隔离数据库验证；本地不运行 MySQL 验收，部署应用镜像按 `linux/amd64` 构建。测试不得使用现有业务库，SQL mock 或只编译不能替代。
-- 快速检查：`npm --prefix web run check && go test ./... && go vet ./...`。
-- 默认本地门禁：`bash scripts/verify.sh`；包括前端构建/覆盖率、Go 全量/覆盖率、文档、Race、静态、性能和容器配置安全检查。
-- SQL、持久化模型/索引、迁移、事务、锁、队列持久化或数据库驱动变化必须追加 `--mysql`；Dockerfile、构建依赖、打包或部署方式变化必须追加 `--image`。同时涉及两类变化用 `--full`（等价于 `--mysql --image`）；CI/发布可显式采用全量。
-- 变更评审决定适用门禁，不自动根据文件名猜测。纯文档及本地门禁编排改动没有上述影响时，可记录两项外部门禁为 `not-required` 并写明理由。脚本“未选择”不等于评审认定“不适用”。
-- 适用 MySQL 门禁但缺少或无法读取本地 `config.yaml` 时，准确报告未完成；适用镜像门禁但 Docker 不可用时同样报告未完成，均不能伪报通过。`config.yaml` 只在本地保存且不得纳入 Git。
+验收按改动风险选择，不因一次小改动反复执行全项目检查。用户于 2026-09-21 明确要求兼顾效率、简化流程；下列规则替代原“每次全量本地门禁，再追加外部验收”。
 
+| 改动范围 | 必要检查 |
+|---|---|
+| 纯文档 | 文档契约与 diff 检查 |
+| 局部业务逻辑或缺陷 | 相关模块回归测试、相关构建/静态检查；新增逻辑验证覆盖率 |
+| 跨模块应用改动 | 默认快速检查 `bash scripts/verify.sh` |
+| 并发、锁或任务生命周期 | 追加受影响包的 `go test -race`；无需无关包重复 Race |
+| SQL、表结构、迁移、数据库事务/驱动 | 独立运行 `--mysql`，使用获批远端 MySQL 8.4/x86_64 随机隔离库；不能用 SQL mock 或业务库替代 |
+| 配置打包或单个镜像 | 独立运行 `--image=updater`、`--image=workbench` 或 `--image=updater-configured`；不自动跑应用全量测试或 MySQL |
+| Dockerfile 公共构建阶段 | `--image` 检查全部目标 |
+| 验收脚本 | 调度、失败传播、shell 语法及文档测试；无需为了修改调度逻辑再次连接所有外部服务 |
+| 大范围重构、全量发布核验 | 显式 `--full`，覆盖全量覆盖率、Race、数据库和全部镜像 |
+
+- 默认快速检查运行前端测试/生产构建、Go 测试和 vet；Go 测试本身已覆盖文档和全市场性能回归，不单独重复执行。
+- 覆盖率目标不降低：总计至少 80%，核心 market、indicator、strategy、backtest 各至少 90%。新增业务逻辑检查受影响模块；全量覆盖率在 `--full` 或需要重新核实全局水平时运行，文档/配置/打包无需重跑覆盖率。全量 Go 覆盖率只运行一次，核心指标从同一报告提取。
+- `--mysql`、`--image[=目标]` 是独立检查，可组合；`--mysql --image` 不包含本地全量检查，只有 `--full` 执行全部。无参数才运行默认快速检查。
+- 前端依赖已安装时复用 node_modules；首次使用自动安装，修改 package.json/package-lock.json 或切换到不同依赖版本后先执行 `npm --prefix web ci --prefer-offline`。CI 使用干净工作区或显式安装依赖，不能使用与锁文件不一致的依赖证明通过。
+- Docker 内容缓存正常复用；仅内置配置阶段必须用 `--no-cache-filter updater-configured`，防止 secret 内容变化仍使用旧配置。镜像固定 linux/amd64，检查非 root、默认启动命令和各目标配置边界。
+- 同一源码、配置与相关环境已有通过证据时直接复用；只有新改动、失败或未解决风险才扩大/重跑。网络下载失败记录为环境问题，定位后只重试失败步骤，不重复已通过的无关检查；不无限重复全无缓存下载。
+- 适用检查失败或缺前提要明确报告；不适用项记 `not-required` 及理由，未执行不算通过。真实配置与凭据不提交，测试不得修改业务库。
 
 ## 5. 文档门禁
 
@@ -68,8 +80,6 @@ related: []
 
 ## 双服务镜像验收
 
-Dockerfile 提供 updater/workbench 两个目标；updater 镜像不构建或包含前端，workbench 包含静态产物。两者按 linux/amd64 构建，非 root 运行，只读挂载本地配置。`--image` 必须实际构建两目标，不能只验证默认末阶段。`--mysql` 同时执行 MySQL 模块与 data 的隔离集成测试，以覆盖 workbench 不执行 DDL 的职责。NAS Compose 使用已存在的 MySQL，不声明新的 MySQL 容器或数据卷。
+Dockerfile 提供 updater/workbench 两个目标；updater 镜像不构建或包含前端，workbench 包含静态产物。两者按 linux/amd64 构建，非 root 运行，只读挂载本地配置。`--image` 实际构建全部目标，`--image=目标` 仅构建所选目标。`--mysql` 同时执行 MySQL 模块与 data 的隔离集成测试，以覆盖 workbench 不执行 DDL 的职责。NAS Compose 使用已存在的 MySQL，不声明新的 MySQL 容器或数据卷。
 
-内置配置目标由 `make image-updater-configured` 构建，通过 BuildKit secret 提供输入，并强制该阶段重新执行，避免配置变化命中旧缓存。`--image` 另用示例配置构建此目标并检查文件读取权限与默认命令；真实配置内容仅做一致性校验，不写入日志。
-
-镜像门禁通过 `--no-cache-filter` 重新执行选定服务目标，依赖与编译阶段仍按 Docker 内容缓存失效规则复用；无需强制重新联网下载未变化的依赖。内置配置阶段始终单独失效，且检查默认命令和文件权限。
+内置配置目标由 `make image-updater-configured` 构建，通过 BuildKit secret 提供输入，并强制该阶段重新执行，避免配置变化命中旧缓存。选择内置配置目标时用示例配置检查文件读取权限与默认命令；真实配置内容仅做一致性校验，不写入日志。

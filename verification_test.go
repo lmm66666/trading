@@ -8,25 +8,29 @@ import (
 	"testing"
 )
 
-// These tests execute the real gate selector with isolated command substitutes.
-// They verify dispatch and failure propagation, not MySQL or image correctness.
+// Command substitutes verify selection and failure propagation, not external services.
 func TestVerificationSelection(t *testing.T) {
 	for _, tc := range []struct {
-		name                      string
-		args                      []string
-		mysql, image, local, fail bool
-		failTool                  string
+		name                     string
+		args                     []string
+		local, full, mysql, fail bool
+		images                   []string
+		failTool                 string
 	}{
-		{name: "default_local", local: true},
-		{name: "mysql", args: []string{"--mysql"}, mysql: true, local: true},
-		{name: "image", args: []string{"--image"}, image: true, local: true},
-		{name: "full", args: []string{"--full"}, mysql: true, image: true, local: true},
-		{name: "combined", args: []string{"--mysql", "--image"}, mysql: true, image: true, local: true},
+		{name: "quick", local: true},
+		{name: "mysql_only", args: []string{"--mysql"}, mysql: true},
+		{name: "images_only", args: []string{"--image"}, images: []string{"updater", "workbench", "updater-configured"}},
+		{name: "updater_only", args: []string{"--image=updater"}, images: []string{"updater"}},
+		{name: "configured_only", args: []string{"--image=updater-configured"}, images: []string{"updater-configured"}},
+		{name: "combined", args: []string{"--mysql", "--image=workbench"}, mysql: true, images: []string{"workbench"}},
+		{name: "full", args: []string{"--full"}, local: true, full: true, mysql: true, images: []string{"updater", "workbench", "updater-configured"}},
 		{name: "help", args: []string{"--help"}},
-		{name: "invalid_option", args: []string{"--my-sql"}, fail: true},
+		{name: "invalid", args: []string{"--my-sql"}, fail: true},
+		{name: "invalid_target", args: []string{"--image=unknown"}, fail: true},
+		{name: "coverage_failure", args: []string{"--full"}, local: true, full: true, fail: true, failTool: "coverage"},
 		{name: "local_failure", local: true, fail: true, failTool: "npm"},
-		{name: "mysql_failure", args: []string{"--full"}, mysql: true, local: true, fail: true, failTool: "mysql"},
-		{name: "image_failure", args: []string{"--image"}, image: true, local: true, fail: true, failTool: "docker"},
+		{name: "mysql_failure", args: []string{"--mysql"}, mysql: true, fail: true, failTool: "mysql"},
+		{name: "image_failure", args: []string{"--image=updater"}, images: []string{"updater"}, fail: true, failTool: "docker"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -40,13 +44,17 @@ tool="${0##*/}"
 printf '%s %s\n' "$tool" "$*" >> "$VERIFY_TEST_LOG"
 if [[ "$tool" == "$VERIFY_TEST_FAIL" ]]; then exit 19; fi
 if [[ "$tool" == docker && "$*" == 'image inspect '* ]]; then
- printf '%s\n' 'linux/amd64 app ["/app/trading","-service","updater"] ["-config","/app/config.yaml"]'
+ case "$*" in
+  *trading-workbench:verify*) printf '%s\n' 'linux/amd64 app ["/app/trading","-service","workbench"] ["-config","/app/config.yaml"]' ;;
+  *) printf '%s\n' 'linux/amd64 app ["/app/trading","-service","updater"] ["-config","/app/config.yaml"]' ;;
+ esac
 fi
 if [[ "$tool" == go ]]; then
  case "$*" in
   *-tags=deployment*) if [[ "$VERIFY_TEST_FAIL" == mysql ]]; then exit 23; fi ;;
   'list '*) printf 'trading\n' ;;
-  'tool cover '*) printf 'total: (statements) 100.0%%\n' ;;
+  'test '*) for arg in "$@"; do case "$arg" in -coverprofile=*) printf 'mode: set\n' > "${arg#-coverprofile=}";; esac; done ;;
+  'tool cover '*) if [[ "$VERIFY_TEST_FAIL" == coverage ]]; then printf 'total: (statements) 0.0%%\n'; else printf 'total: (statements) 100.0%%\n'; fi ;;
  esac
 fi
 `
@@ -60,54 +68,57 @@ fi
 			cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "VERIFY_TEST_LOG="+log, "VERIFY_TEST_FAIL="+tc.failTool)
 			out, err := cmd.CombinedOutput()
 			if (err != nil) != tc.fail {
-				t.Fatalf("exit mismatch: err=%v, output=%s", err, out)
+				t.Fatalf("exit mismatch: %v, %s", err, out)
 			}
-			data, readErr := os.ReadFile(log)
-			if readErr != nil && !os.IsNotExist(readErr) {
-				t.Fatal(readErr)
+			data, err := os.ReadFile(log)
+			if err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
 			}
 			calls := string(data)
 			for _, check := range []struct {
 				needle string
 				want   bool
 			}{
-				{"npm --prefix web ci", tc.local},
-				{"-tags=deployment", tc.mysql},
-				{"docker buildx build --platform linux/amd64", tc.image},
+				{"npm --prefix web", tc.local}, {"-tags=deployment", tc.mysql}, {"docker buildx build", len(tc.images) > 0},
 			} {
 				if strings.Contains(calls, check.needle) != check.want {
-					t.Errorf("dispatch %q: want %v, calls=%s", check.needle, check.want, calls)
+					t.Errorf("dispatch %q want %v: %s", check.needle, check.want, calls)
 				}
 			}
-			if tc.image && tc.failTool != "docker" {
+			if !tc.fail {
 				for _, role := range []string{"updater", "workbench", "updater-configured"} {
-					if !strings.Contains(calls, "--target "+role) {
-						t.Errorf("image target %s was not verified", role)
+					want := false
+					for _, selected := range tc.images {
+						want = want || selected == role
 					}
-					if !strings.Contains(calls, "--no-cache-filter "+role) {
-						t.Errorf("image target %s can reuse its final stage", role)
+					if strings.Contains(calls, "--target "+role+" ") != want {
+						t.Errorf("target %s: %s", role, calls)
 					}
 				}
-			}
-			if tc.mysql && tc.failTool != "mysql" && !strings.Contains(calls, "-tags=integration") {
-				t.Error("selected MySQL did not run integration gate")
-			}
-			if !tc.local && len(data) != 0 {
-				t.Errorf("help/invalid options executed commands: %s", data)
-			}
-			if tc.fail && strings.Contains(string(out), "所选门禁全部通过") {
-				t.Error("failed gate reported success")
-			}
-			if tc.local && !tc.fail {
-				if !strings.Contains(calls, "go test -race ./...") || !strings.Contains(calls, "go vet ./...") {
-					t.Error("local checks omitted")
+				if strings.Contains(calls, "go test -race ./...") != tc.full {
+					t.Errorf("unexpected race selection: %s", calls)
 				}
-				if !tc.mysql && !strings.Contains(string(out), "MySQL：未选择") {
-					t.Error("unselected MySQL not disclosed")
+				if strings.Contains(calls, "-coverprofile=") != tc.full {
+					t.Errorf("unexpected coverage selection: %s", calls)
 				}
-				if !tc.image && !strings.Contains(string(out), "镜像：未选择") {
-					t.Error("unselected image not disclosed")
+				if tc.local && !strings.Contains(calls, "go vet ./...") {
+					t.Error("missing vet")
 				}
+				if tc.full && strings.Count(calls, "-coverprofile=") != 1 {
+					t.Error("coverage must run once, derive core profiles from it")
+				}
+				if tc.mysql && !strings.Contains(calls, "-tags=integration") {
+					t.Error("missing integration tests")
+				}
+				if strings.Contains(calls, "--target updater-configured ") && !strings.Contains(calls, "--no-cache-filter updater-configured") {
+					t.Error("configured image can reuse old configuration")
+				}
+				if strings.Contains(calls, "--no-cache ") {
+					t.Error("dependency caches must be reused")
+				}
+			}
+			if tc.fail && strings.Contains(string(out), "所选检查通过") {
+				t.Error("failure reported success")
 			}
 		})
 	}
