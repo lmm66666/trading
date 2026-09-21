@@ -67,11 +67,19 @@ func (h *StockHandler) snapshotKey(c *gin.Context, page port.PageRequest) (port.
 func snapshotDTO(snapshot port.SignalSnapshot, page port.PageRequest) gin.H {
 	rows := make([]gin.H, 0, len(snapshot.Rows))
 	for _, r := range snapshot.Rows {
-		rows = append(rows, gin.H{"instrument": r.Instrument.String(), "signal_time": r.SignalTime.UTC(), "reason": r.Reason, "values": r.Values})
+		row := gin.H{"instrument": r.Instrument.String(), "signal_time": r.SignalTime.UTC(), "reason": r.Reason, "values": r.Values}
+		if r.Name != "" {
+			row["name"] = r.Name
+		}
+		rows = append(rows, row)
 	}
 	failures := make([]gin.H, 0, len(snapshot.Failures))
 	for id, f := range snapshot.Failures {
-		failures = append(failures, gin.H{"instrument": id.String(), "code": f.Code, "message": f.Message, "retryable": f.Retryable})
+		failure := gin.H{"instrument": id.String(), "code": f.Code, "message": f.Message, "retryable": f.Retryable}
+		if f.Name != "" {
+			failure["name"] = f.Name
+		}
+		failures = append(failures, failure)
 	}
 	sort.Slice(failures, func(i, j int) bool { return failures[i]["instrument"].(string) < failures[j]["instrument"].(string) })
 	data := gin.H{"snapshot_id": snapshot.ID, "run_id": snapshot.RunID, "key": snapshot.Key, "data_version": snapshot.DataVersion, "rows": rows, "failures": failures}

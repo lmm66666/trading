@@ -25,11 +25,40 @@ func TestLatestSnapshotReadsPublishedPartialResultsAndIndependentValues(t *testi
 	for i := 0; i < 2; i++ {
 		m.ExpectQuery("SELECT .*t_signal_snapshots.*status IN .*snapshot_id = .*ORDER BY as_of DESC, data_version DESC, id DESC").WithArgs("strategy", "v1", "hash", "SUCCEEDED", "PARTIAL_SUCCEEDED", "snapshot", 1).WillReturnRows(snapshotMetadata(`[{"instrument":{"Exchange":"SSE","Code":"600001"},"failure":{"code":"DATA","message":"missing"}}]`))
 		m.ExpectQuery("SELECT r.*, i.exchange, i.code.*JOIN t_instruments.*r.sequence >").WithArgs("snapshot", int64(2), 10).WillReturnRows(sqlmock.NewRows([]string{"sequence", "exchange", "code", "signal_time", "reason", "values_json"}).AddRow(3, "SSE", "600000", testSnapshot().Key.AsOf, "hit", []byte(`{"score":2}`)))
+		m.ExpectQuery("SELECT exchange, code, name FROM `t_instruments`").WillReturnRows(sqlmock.NewRows([]string{"exchange", "code", "name"}))
 		result, err := s.Latest(context.Background(), key, port.PageRequest{AfterSequence: 2, Limit: 10})
 		require.NoError(t, err)
 		require.Len(t, result.Failures, 1)
 		require.Equal(t, 2.0, result.Rows[0].Values["score"])
 		result.Rows[0].Values["score"] = 99
+	}
+}
+func TestLatestSnapshotResolvesInstrumentNames(t *testing.T) {
+	failureID := market.InstrumentID{Exchange: market.SSE, Code: "600001"}
+	for _, stage := range []string{"resolved", "missing", "name_read_error"} {
+		t.Run(stage, func(t *testing.T) {
+			repo, m := mockRepository(t)
+			s := NewSignalSnapshotStore(repo.db)
+			m.ExpectQuery("SELECT .*t_signal_snapshots").WillReturnRows(snapshotMetadata(`[{"instrument":{"Exchange":"SSE","Code":"600001"},"failure":{"code":"DATA","message":"missing"}}]`))
+			m.ExpectQuery("SELECT r.*, i.exchange, i.code, i.name.*JOIN t_instruments").WillReturnRows(sqlmock.NewRows([]string{"sequence", "exchange", "code", "name", "signal_time", "reason", "values_json"}).AddRow(1, "SSE", "600000", "浦发银行", testSnapshot().Key.AsOf, "hit", []byte(`{"score":2}`)))
+			names := m.ExpectQuery("SELECT exchange, code, name FROM `t_instruments` WHERE \\(exchange, code\\) IN")
+			switch stage {
+			case "resolved":
+				names.WillReturnRows(sqlmock.NewRows([]string{"exchange", "code", "name"}).AddRow("SSE", "600001", "失败证券"))
+			case "missing":
+				names.WillReturnRows(sqlmock.NewRows([]string{"exchange", "code", "name"}))
+			case "name_read_error":
+				names.WillReturnError(errors.New("names"))
+			}
+			result, err := s.Latest(context.Background(), testSnapshot().Key, port.PageRequest{Limit: 10})
+			require.NoError(t, err)
+			require.Equal(t, "浦发银行", result.Rows[0].Name)
+			if stage == "resolved" {
+				require.Equal(t, "失败证券", result.Failures[failureID].Name)
+			} else {
+				require.Empty(t, result.Failures[failureID].Name)
+			}
+		})
 	}
 }
 func TestLatestSnapshotFailureBoundaries(t *testing.T) {

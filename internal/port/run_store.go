@@ -135,6 +135,8 @@ type Failure struct {
 	Code      string `json:"code"`
 	Message   string `json:"message"`
 	Retryable bool   `json:"retryable"`
+	// Name is the display name resolved at read time; empty when unavailable.
+	Name string `json:"name,omitempty"`
 }
 
 func (failure Failure) Validate() error {

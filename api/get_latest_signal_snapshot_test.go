@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"trading/internal/market"
+	"trading/internal/port"
 )
 
 func TestSnapshotRejectsOverlongSelectorsBeforeLookup(t *testing.T) {
@@ -30,6 +32,18 @@ func TestLatestSnapshotReturnsContinuationIdentityAndFailures(t *testing.T) {
 	require.Contains(t, w.Body.String(), `SZSE:000001`)
 	require.Contains(t, w.Body.String(), `SSE:600000`)
 	require.Zero(t, f.s.creates)
+}
+func TestLatestSnapshotIncludesNamesWhenResolved(t *testing.T) {
+	f := newKernelFixture(t)
+	w := kernelRequest(t, f, "GET", "/api/v1/signal-snapshots/latest?strategy=daily_b1_buy&limit=1", "")
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.NotContains(t, w.Body.String(), `"name"`)
+	f.s.snapshot.Rows[0].Name = "浦发银行"
+	f.s.snapshot.Failures[market.InstrumentID{Exchange: market.SZSE, Code: "000001"}] = port.Failure{Code: "DATA", Message: "safe", Name: "平安银行"}
+	w = kernelRequest(t, f, "GET", "/api/v1/signal-snapshots/latest?strategy=daily_b1_buy&limit=1", "")
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"name":"浦发银行"`)
+	require.Contains(t, w.Body.String(), `"name":"平安银行"`)
 }
 func TestLatestSnapshotRequiresIdentityOnContinuation(t *testing.T) {
 	f := newKernelFixture(t)

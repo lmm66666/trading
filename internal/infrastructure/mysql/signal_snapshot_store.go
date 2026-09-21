@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"gorm.io/gorm"
+	"log/slog"
 	"sort"
 	"time"
 	"trading/internal/market"
@@ -121,19 +122,49 @@ func (s *SignalSnapshotStore) Latest(ctx context.Context, key port.SnapshotKey, 
 		SignalSnapshotRowModel
 		Exchange string
 		Code     string
+		Name     string
 	}
-	if err := s.db.WithContext(ctx).Table("t_signal_snapshot_rows AS r").Select("r.*, i.exchange, i.code").Joins("JOIN t_instruments AS i ON i.id = r.instrument_id").Where("r.snapshot_id = ? AND r.sequence > ?", model.SnapshotID, page.AfterSequence).Order("r.sequence").Limit(page.Limit).Scan(&rows).Error; err != nil {
+	if err := s.db.WithContext(ctx).Table("t_signal_snapshot_rows AS r").Select("r.*, i.exchange, i.code, i.name").Joins("JOIN t_instruments AS i ON i.id = r.instrument_id").Where("r.snapshot_id = ? AND r.sequence > ?", model.SnapshotID, page.AfterSequence).Order("r.sequence").Limit(page.Limit).Scan(&rows).Error; err != nil {
 		return port.SignalSnapshot{}, err
 	}
 	for _, row := range rows {
-		value := port.SnapshotRow{Instrument: market.InstrumentID{Exchange: market.Exchange(row.Exchange), Code: row.Code}, SignalTime: row.SignalTime.UTC(), Reason: row.Reason}
+		value := port.SnapshotRow{Instrument: market.InstrumentID{Exchange: market.Exchange(row.Exchange), Code: row.Code}, Name: row.Name, SignalTime: row.SignalTime.UTC(), Reason: row.Reason}
 		if err := json.Unmarshal(row.ValuesJSON, &value.Values); err != nil {
 			return port.SignalSnapshot{}, err
 		}
 		result.Rows = append(result.Rows, value)
 	}
+	s.resolveFailureNames(ctx, result.Failures)
 	if err := result.Validate(); err != nil {
 		return port.SignalSnapshot{}, err
 	}
 	return result, nil
+}
+
+// resolveFailureNames fills display names for failed instruments. Names are a
+// read-time display attribute: lookup failures degrade to omission, never to a
+// snapshot read error.
+func (s *SignalSnapshotStore) resolveFailureNames(ctx context.Context, failures map[market.InstrumentID]port.Failure) {
+	if len(failures) == 0 {
+		return
+	}
+	keys := make([][]any, 0, len(failures))
+	for id := range failures {
+		keys = append(keys, []any{string(id.Exchange), id.Code})
+	}
+	var instruments []InstrumentModel
+	if err := s.db.WithContext(ctx).Select("exchange, code, name").Where("(exchange, code) IN ?", keys).Find(&instruments).Error; err != nil {
+		slog.WarnContext(ctx, "signal snapshot failure names unavailable", "err", err)
+		return
+	}
+	names := make(map[market.InstrumentID]string, len(instruments))
+	for _, i := range instruments {
+		names[market.InstrumentID{Exchange: market.Exchange(i.Exchange), Code: i.Code}] = i.Name
+	}
+	for id, failure := range failures {
+		if name, ok := names[id]; ok {
+			failure.Name = name
+			failures[id] = failure
+		}
+	}
 }

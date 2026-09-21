@@ -44,9 +44,11 @@ func (key SnapshotKey) Validate() error {
 
 type SnapshotRow struct {
 	Instrument market.InstrumentID `json:"instrument"`
-	SignalTime time.Time           `json:"signal_time"`
-	Reason     string              `json:"reason"`
-	Values     map[string]float64  `json:"values,omitempty"`
+	// Name is the display name resolved at read time; empty when unavailable.
+	Name       string             `json:"name,omitempty"`
+	SignalTime time.Time          `json:"signal_time"`
+	Reason     string             `json:"reason"`
+	Values     map[string]float64 `json:"values,omitempty"`
 }
 
 func (row SnapshotRow) Validate() error {
