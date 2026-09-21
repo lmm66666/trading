@@ -109,7 +109,7 @@ export function RangePicker({ ariaLabel = '时间范围', from, to, onChange }: 
     if (top + heightEstimate > window.innerHeight - margin) {
       top = Math.max(margin, rect.top - 6 - heightEstimate)
     }
-    setPopoverStyle({ position: 'fixed', top, left })
+    setPopoverStyle({ position: 'fixed', top, left, maxHeight: `calc(100dvh - ${top + margin}px)`, overflowY: 'auto' })
   }
 
   const openPopover = () => {
