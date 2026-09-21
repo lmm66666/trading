@@ -1,3 +1,4 @@
+import { PARAMETER_NAMES } from '../strategy/strategyLabels'
 import type { RunStatus } from '../../api/client'
 
 export interface ScanDraft {
@@ -43,9 +44,6 @@ export function saveScanPreferences(preferences: ScanPreferences): boolean {
 export function contextForRun(submitted: SubmittedScan | null, run: RunStatus): ScanContext | null {
   return submitted?.runId === run.run_id && submitted.draft.strategy === run.strategy && submitted.draft.version === run.strategy_version ? { ...submitted.draft, effectiveParameters: submitted.effectiveParameters } : null
 }
-export const STRATEGY_NAMES: Record<string, string> = { daily_b1_buy: '日线 B1', weekly_b1_buy: '周线 B1', bottom_surge_pullback: '底部倍量回撤' }
-export const strategyName = (id: string) => STRATEGY_NAMES[id] ?? id
-export const PARAMETER_NAMES: Record<string, string> = { lookback_days: '回看天数', pullback_bars: '回撤根数', volume_ratio: '成交量倍数', volume_period: '均量周期', rally_pct: '上涨幅度（%）', pullback_pct: '回撤幅度（%）', kdj_threshold: 'KDJ 阈值', ma_trend_lookback: '均线趋势回看', low_band_pct: '底部区间（%）', single_volume_ratio: '单日倍量', single_rally_pct: '单日涨幅（%）', gradual_days: '温和上涨天数', gradual_volume_ratio: '温和上涨量比', gradual_rally_pct: '温和涨幅（%）', surge_gap: '倍量间隔', j_min: 'J 值下限', j_max: 'J 值上限' }
 export function sameDraft(a: ScanDraft, b: ScanDraft): boolean {
   const normalize = (d: ScanDraft) => JSON.stringify({ strategy: d.strategy, version: d.version, from: d.from, asOf: d.asOf, activeOnly: d.activeOnly, limit: d.limit, exchanges: [...d.exchanges].sort(), parameters: Object.entries(d.parameters).sort(([a], [b]) => a.localeCompare(b)) })
   return normalize(a) === normalize(b)

@@ -23,53 +23,54 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+
 describe('OrdersTradesTables', () => {
-  it('渲染订单与成交并映射枚举与金额', async () => {
-    vi.mocked(fetchRunPage)
-      .mockResolvedValueOnce({ items: [orderOf('o-1')] })
-      .mockResolvedValueOnce({ items: [fillOf('f-1')] })
-
+  it('默认成交、订单按需加载，保留价格精度和分页状态', async () => {
+    vi.mocked(fetchRunPage).mockImplementation(async (_kind, _run, resource) => resource === 'trades'
+      ? { items: [{ ...fillOf('f-1'), price: 251234 }], next_sequence: 100 }
+      : { items: [orderOf('o-1')] })
     render(<OrdersTradesTables runId="r1" />)
-
-    // 'o-1' 同时出现在订单表 ID 列与成交表订单列，需用 findAllByText
-    expect((await screen.findAllByText('o-1'))[0]).toBeVisible()
-    expect(screen.getByText('买入')).toBeVisible()
-    expect(screen.getByText('已成交')).toBeVisible()
-    expect(await screen.findByText('f-1')).toBeVisible()
-    expect(screen.getByText('25')).toBeVisible()          // 250000 缩放 → 25 元
-    expect(screen.getByText('250')).toBeVisible()         // gross → 250 元
-    expect(screen.getByText('卖出')).toBeVisible()
-    expect(fetchRunPage).toHaveBeenCalledWith('backtest', 'r1', 'orders', undefined, 100)
-    expect(fetchRunPage).toHaveBeenCalledWith('backtest', 'r1', 'trades', undefined, 100)
+    expect(await screen.findByText('25.1234')).toBeVisible()
+    expect(screen.getByText('250.00')).toBeVisible()
+    expect(screen.getByText('已加载 1 条')).toBeVisible()
+    expect(fetchRunPage).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('tab', { name: '订单记录' }))
+    expect(await screen.findByText('已成交')).toBeVisible()
+    fireEvent.click(screen.getByRole('tab', { name: '成交记录' }))
+    expect(screen.getByText('25.1234')).toBeVisible()
+    expect(fetchRunPage).toHaveBeenCalledTimes(2)
   })
-
-  it('按游标加载更多订单', async () => {
-    vi.mocked(fetchRunPage)
-      .mockResolvedValueOnce({ items: [orderOf('o-1')], next_sequence: 100 })
-      .mockResolvedValueOnce({ items: [orderOf('o-2')] })
-      .mockResolvedValue({ items: [] })
-
+  it('分页错误保留行，重试同一游标', async () => {
+    vi.mocked(fetchRunPage).mockResolvedValueOnce({ items: [fillOf('f-1')], next_sequence: 100 }).mockRejectedValueOnce(Error('temporary')).mockResolvedValueOnce({ items: [fillOf('f-2')] })
     render(<OrdersTradesTables runId="r1" />)
-    expect(await screen.findByText('o-1')).toBeVisible()
-
-    fireEvent.click(screen.getAllByRole('button', { name: '加载更多' })[0])
-    expect(await screen.findByText('o-2')).toBeVisible()
-    expect(fetchRunPage).toHaveBeenCalledWith('backtest', 'r1', 'orders', 100, 100)
-
-    await waitFor(() => expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull())
+    fireEvent.click(await screen.findByRole('button', { name: '加载更多' }))
+    fireEvent.click(await screen.findByRole('button', { name: '重试加载记录' }))
+    expect(await screen.findByText('共 2 条')).toBeVisible()
+    expect(fetchRunPage).toHaveBeenLastCalledWith('backtest', 'r1', 'trades', 100, 100)
   })
-
-  it('分页失败时保留已加载行并提示', async () => {
-    vi.mocked(fetchRunPage)
-      .mockResolvedValueOnce({ items: [orderOf('o-1')], next_sequence: 100 })
-      .mockRejectedValueOnce(new Error('orders broken'))
-      .mockResolvedValue({ items: [] })
-
+  it('首屏失败可重试，零成交明确说明', async () => {
+    vi.mocked(fetchRunPage).mockRejectedValueOnce(Error('temporary')).mockResolvedValue({ items: [] })
     render(<OrdersTradesTables runId="r1" />)
-    expect(await screen.findByText('o-1')).toBeVisible()
-
-    fireEvent.click(screen.getAllByRole('button', { name: '加载更多' })[0])
-    expect(await screen.findByText(/orders broken/)).toBeVisible()
-    expect(screen.getByText('o-1')).toBeVisible()
+    fireEvent.click(await screen.findByRole('button', { name: '重试加载记录' }))
+    expect(await screen.findByText('本次回测没有成交记录')).toBeVisible()
   })
+  it('旧任务续页错误不得污染新任务，隐藏时暂停首屏请求', async () => {
+    let reject!: (error: unknown) => void
+    vi.mocked(fetchRunPage).mockResolvedValueOnce({ items: [fillOf('f-1')], next_sequence: 100 }).mockReturnValueOnce(new Promise((_, fail) => { reject = fail })).mockResolvedValue({ items: [] })
+    const { rerender } = render(<OrdersTradesTables runId="r1" />)
+    fireEvent.click(await screen.findByRole('button', { name: '加载更多' }))
+    rerender(<OrdersTradesTables runId="r2" active={false} />)
+    await waitFor(() => expect(fetchRunPage).toHaveBeenCalledTimes(2))
+    reject(Error('old error'))
+    rerender(<OrdersTradesTables runId="r2" active />)
+    expect(await screen.findByText('本次回测没有成交记录')).toBeVisible()
+    expect(screen.queryByText(/old error/)).toBeNull()
+  })
+})
+it('订单拒绝原因以中文解释，未知枚举保留编号', async () => {
+  vi.mocked(fetchRunPage).mockImplementation(async (_kind, _run, resource) => ({ items: resource === 'orders' ? [{ ...orderOf('invalid'), final_reason: 14 }, { ...orderOf('future'), final_reason: 99 }] : [] }))
+  render(<OrdersTradesTables runId="r" />)
+  fireEvent.click(screen.getByRole('tab', { name: '订单记录' }))
+  expect(await screen.findByText('行情数据无效')).toBeVisible()
+  expect(screen.getByText('未知结果（99）')).toBeVisible()
 })

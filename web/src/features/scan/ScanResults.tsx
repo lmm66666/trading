@@ -1,3 +1,4 @@
+import { strategyName } from '../strategy/strategyLabels'
 import { useEffect, useRef, useState } from 'react'
 import {
   fetchSnapshotPage,
@@ -5,7 +6,7 @@ import {
 } from '../../api/client'
 import type { RunStatus } from '../../api/client'
 import { RunMonitor } from '../strategy/RunMonitor'
-import { describeScan, sameDraft, strategyName, type ScanDraft, type ScanContext } from './scanPreferences'
+import { describeScan, sameDraft, type ScanDraft, type ScanContext } from './scanPreferences'
 
 const PAGE_LIMIT = 100
 

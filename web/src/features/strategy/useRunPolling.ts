@@ -10,7 +10,7 @@ interface PollState {
 }
 interface PollOptions {
   active?: boolean
-  /** 扫描启用错误分类；默认保持回测的既有重试语义。 */
+  /** 任务工作台启用错误分类；保留默认选项供其他调用方使用。 */
   classifyErrors?: boolean
 }
 
@@ -40,7 +40,7 @@ export function useRunPolling(kind: RunKind, runId: string | null, { active = tr
         if (businessError || errors >= 3) {
           const missing = businessError && cause.status === 404 && cause.code === 'NOT_FOUND'
           setState((previous) => ({ key, status: previous?.key === key ? previous.status : null,
-            error: missing ? '上次扫描记录已不可用' : cause instanceof Error ? cause.message : '任务状态读取失败', missing }))
+            error: missing ? `上次${kind === 'scan' ? '扫描' : '回测'}记录已不可用` : cause instanceof Error ? cause.message : '任务状态读取失败', missing }))
           return
         }
       }

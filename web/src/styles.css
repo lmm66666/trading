@@ -325,31 +325,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .welcome-views strong { color: var(--text); font-size: 12px; }
 .welcome-views span { color: var(--muted); font-size: 11px; }
 
-/* ---- 任务面板（扫描 / 回测共用）：左配置右结果双栏 ---- */
-.task-workspace {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
-}
-.config-column { min-height: 0; overflow-y: auto; padding: 16px 16px 24px; border-right: 1px solid var(--line); }
-.result-column {
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 16px 20px 40px;
-}
-.panel-card { padding: 18px 22px; background: var(--panel); border-radius: 8px; }
-.config-card { padding: 18px 20px 20px; }
-.config-head { margin-bottom: 4px; }
-.config-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
-.config-head p { margin: 4px 0 0; color: var(--faint); font-size: 11px; }
-.form-section { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
-.form-section:first-of-type { margin-top: 2px; border-top: 0; padding-top: 0; }
-.section-label { margin-bottom: 8px; color: var(--faint); font-size: 10px; font-weight: 700; letter-spacing: .1em; }
+/* ---- 策略表单共用样式 ---- */
 .strategy-form { display: flex; flex-direction: column; gap: 12px; }
 .param-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .field { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 11px; }
@@ -433,10 +409,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .range-btn.primary:disabled { opacity: .45; cursor: default; }
 
 /* ---- 结果空态 ---- */
-.result-empty { flex: 1; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; min-height: 300px; color: var(--muted); background: radial-gradient(circle at 50% 42%, #10141d 0, var(--bg) 72%); border-radius: 8px; text-align: center; }
-.result-empty .empty-icon { width: 40px; height: 40px; color: var(--faint); opacity: .7; }
-.result-empty strong { color: var(--text); font-size: 14px; font-weight: 600; }
-.result-empty span { max-width: 340px; color: var(--faint); font-size: 11px; line-height: 1.7; }
 .run-monitor { padding: 10px 16px; background: var(--panel); border-radius: 8px; }
 .run-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .run-badge { padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
@@ -482,26 +454,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .failures summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 .failures table { margin-top: 10px; }
 
-/* ---- 回测面板 ---- */
-.instrument-field { position: relative; display: flex; gap: 10px; align-items: center; margin-bottom: 14px; }
-.instrument-current { color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; font-weight: 700; }
-.change-instrument { height: 28px; padding: 0 12px; color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 5px; cursor: pointer; font-size: 11px; }
-.change-instrument:hover { color: var(--accent-hover); border-color: var(--accent); }
-.instrument-popover { position: absolute; z-index: 30; top: 40px; left: 0; width: min(340px, 92%); padding: 12px 14px; background: var(--raised); border-radius: 8px; box-shadow: 0 18px 44px rgba(0, 0, 0, .5); }
-.instrument-popover .search-results { position: static; max-height: 260px; margin-top: 8px; padding: 0; background: transparent; box-shadow: none; animation: none; }
-.instrument-popover .search-kbd { display: none; }
-.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
-.summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
-.summary-card { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; background: var(--panel); border-radius: 8px; }
-.summary-card span { color: var(--faint); font-size: 10px; letter-spacing: .08em; }
-.summary-card strong { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .equity-section { padding: 14px 22px 18px; background: var(--panel); border-radius: 8px; }
-.equity-chart { height: 320px; }
-.resource-table { margin-bottom: 12px; padding: 12px 22px 16px; background: var(--panel); border-radius: 8px; }
-.resource-table summary { cursor: pointer; color: var(--text); font-size: 13px; font-weight: 600; }
-.resource-table table { width: 100%; margin-top: 12px; border-collapse: collapse; font-size: 12px; }
-.resource-table th, .resource-table td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
-.resource-table th { color: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: .08em; }
 .orders-trades { display: flex; flex-direction: column; }
 
 /* ---- 动效与移动端 ---- */
@@ -516,9 +469,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 @keyframes star-pulse { 50% { transform: scale(1.25); } }
 
 @media (max-width: 899px) {
-  .task-workspace { display: block; overflow-y: auto; }
-  .config-column { overflow: visible; padding: 12px 10px 0; border-right: 0; }
-  .result-column { overflow: visible; padding: 12px 10px 40px; }
   .range-calendars { flex-wrap: wrap; }
 }
 
@@ -647,7 +597,7 @@ button:disabled { cursor:not-allowed; opacity:.45; }
 .zscore-thresholds span:first-child { color: #fb923c; background: #fb923c18; }
 .zscore-thresholds span:last-child { color: #22d3ee; background: #22d3ee18; }
 
-/* 扫描工作台：常用条件在顶部，结果占据主体；不改变回测双栏。 */
+/* 扫描工作台：常用条件在顶部，结果占据主体。 */
 .scan-workspace { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 24px; color: var(--text); font-size: 14px; }
 .scan-workspace[hidden] { display: none; }
 .scan-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
@@ -712,4 +662,95 @@ button:disabled { cursor:not-allowed; opacity:.45; }
   .scan-primary-fields .submit-task { width: 100%; height: 42px; }
   .scan-workspace input:not([type=checkbox]), .scan-workspace select { font-size: 16px; }
   .scan-workspace .scan-results { padding: 14px; }
+}
+
+/* 回测工作台：条件、报告与明细按阅读顺序排列。 */
+.backtest-workspace { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 24px; font-size: 14px; }
+.backtest-workspace[hidden] { display: none; }
+.backtest-page-heading, .backtest-report-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.backtest-page-heading h1 { margin: 0 0 6px; font-size: 22px; font-weight: 600; }
+.backtest-page-heading p, .backtest-report-heading p { margin: 0; color: var(--muted); font-size: 13px; }
+.backtest-mode, .backtest-completed { flex-shrink: 0; padding: 5px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: 12px; }
+.backtest-form { padding: 20px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.backtest-primary-fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
+.backtest-primary-fields > .field, .backtest-symbol { flex: 1 1 190px; min-width: 0; }
+.backtest-workspace .field { min-width: 0; gap: 8px; font-size: 12px; }
+.backtest-workspace input, .backtest-workspace select { min-width: 0; width: 100%; height: 38px; color-scheme: dark; font-size: 14px; }
+.backtest-workspace .field-error { font-size: 12px; }
+.backtest-workspace button:focus-visible, .backtest-workspace summary:focus-visible, .backtest-workspace input:focus-visible, .backtest-workspace select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.backtest-symbol { position: relative; color: var(--muted); font-size: 12px; }
+.backtest-symbol-button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 38px; margin-top: 8px; padding: 8px 10px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; }
+.backtest-symbol-button strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.backtest-symbol-button small { color: var(--muted); font-size: 11px; }
+.backtest-symbol-button > span:last-child { margin-left: auto; color: var(--accent-hover); white-space: nowrap; }
+.backtest-search { position: absolute; z-index: 30; top: 100%; left: 0; width: min(340px, 100%); margin-top: 8px; padding: 12px; border: 1px solid var(--line); background: var(--raised); border-radius: 8px; box-shadow: 0 12px 30px #0006; }
+.backtest-search .search-results { position: static; max-height: 260px; margin-top: 8px; }
+.backtest-search .search-kbd { display: none; }
+.backtest-dates { flex: 3 1 460px; display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; min-width: 0; }
+.backtest-dates > .field { flex: 1 1 130px; }
+.backtest-dates > .range-picker { flex: 1 1 180px; min-width: 0; }
+.backtest-workspace .range-trigger { height: 38px; }
+.backtest-primary-fields > .submit-task { flex: 0 0 120px; height: 38px; margin: 0; font-size: 14px; }
+.backtest-assumptions { display: grid; grid-template-columns: repeat(3, minmax(130px, 180px)) minmax(200px, 1fr); align-items: end; gap: 16px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.backtest-workspace .form-hint { color: var(--muted); line-height: 1.7; }
+.backtest-parameters { margin-top: 18px; }
+.backtest-parameters summary, .backtest-run-context summary, .backtest-row-details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.backtest-parameters .param-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 12px; }
+.backtest-workspace .advanced-toggle { width: auto; min-height: 32px; margin-top: 8px; padding: 4px 0; border: 0; background: transparent; color: var(--muted); font-size: 13px; }
+.backtest-fee-summary { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.backtest-fees { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-top: 16px; }
+.backtest-fees > p { grid-column: 1 / -1; }
+.backtest-notice { padding: 12px 16px; margin: 14px 0; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; line-height: 1.7; }
+.backtest-idle { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 64px 20px; color: var(--muted); text-align: center; }
+.backtest-idle svg { width: 28px; height: 28px; flex: none; }
+.backtest-idle strong { font-size: 16px; color: var(--text); }
+.backtest-report { margin-top: 24px; min-width: 0; }
+.backtest-report-heading { margin-bottom: 12px; }
+.backtest-eyebrow { color: var(--muted); font-size: 12px; }
+.backtest-report-heading h2 { margin: 6px 0 8px; font-size: 18px; font-weight: 600; }
+.backtest-report-heading small { color: var(--muted); font-size: 13px; font-weight: 400; }
+.backtest-run-context { padding: 12px 16px; margin-bottom: 16px; background: var(--panel); border-radius: 6px; overflow-wrap: anywhere; }
+.backtest-run-context p { color: var(--muted); font-size: 12px; line-height: 1.8; margin: 10px 0 0; }
+.backtest-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.backtest-metric { display: flex; flex-direction: column; gap: 12px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.backtest-metric > span, .backtest-secondary-metrics dt { color: var(--muted); font-size: 13px; }
+.backtest-metric strong { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.backtest-metric .positive { color: var(--up); }
+.backtest-metric .negative { color: var(--down); }
+.backtest-metric small, .backtest-secondary-metrics small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.backtest-workspace .equity-section { padding: 18px; border: 1px solid var(--line); }
+.backtest-equity-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; min-height: 30px; padding-bottom: 8px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.backtest-workspace .equity-chart { height: 360px; }
+.backtest-secondary-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; padding: 18px 0; margin: 0; }
+.backtest-secondary-metrics dd { margin: 8px 0; font-size: 17px; font-variant-numeric: tabular-nums; }
+.backtest-table-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--line); }
+.backtest-table-tabs button { padding: 12px 0; color: var(--muted); border: 0; border-bottom: 2px solid transparent; background: transparent; font-size: 14px; cursor: pointer; }
+.backtest-table-tabs button[aria-selected=true] { color: var(--text); border-bottom-color: var(--accent); }
+.backtest-table-scroll { overflow-x: auto; }
+.backtest-table-scroll table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.backtest-table-scroll th, .backtest-table-scroll td { padding: 12px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; font-variant-numeric: tabular-nums; vertical-align: top; }
+.backtest-table-scroll th { color: var(--muted); font-weight: 500; }
+.backtest-table-scroll summary { cursor: pointer; color: var(--accent-hover); }
+.backtest-row-details { margin-top: 10px; line-height: 1.8; color: var(--muted); font-size: 12px; }
+.backtest-table-empty { padding: 30px 12px; text-align: center; color: var(--muted); }
+.backtest-workspace .table-load-more { min-height: 34px; height: auto; font-size: 13px; }
+@media (max-width: 1100px) {
+  .backtest-assumptions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .backtest-assumptions > p { grid-column: 1 / -1; }
+  .backtest-metric { padding: 16px; }
+  .backtest-metric strong { font-size: 24px; }
+}
+@media (max-width: 600px) {
+  .backtest-workspace { padding: 16px; }
+  .backtest-form { padding: 14px; }
+  .backtest-page-heading { align-items: flex-start; }
+  .backtest-mode { display: none; }
+  .backtest-primary-fields > .submit-task { flex: 1 1 100%; height: 44px; }
+  .backtest-assumptions { grid-template-columns: minmax(0, 1fr); }
+  .backtest-metrics, .backtest-secondary-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .backtest-workspace input, .backtest-workspace select { font-size: 16px; height: 44px; }
+  .backtest-workspace .range-trigger, .backtest-symbol-button { min-height: 44px; }
+  .backtest-workspace .equity-chart { height: 280px; }
+  .backtest-metric strong { font-size: 22px; }
+  .backtest-workspace .table-load-more { min-height: 44px; }
 }

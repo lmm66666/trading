@@ -52,6 +52,8 @@ export default function App() {
   const [timeframe, setTimeframe] = useState<Timeframe>(initial.timeframe)
   const [priceView, setPriceView] = useState<PriceView>(initial.priceView)
   const [view, setView] = useState<WorkbenchView>(initial.view)
+  const [backtestVisited, setBacktestVisited] = useState(view === 'backtest')
+  useEffect(() => { if (view === 'backtest') setBacktestVisited(true) }, [view])
   const [scanVisited, setScanVisited] = useState(initial.view === 'scan')
   useEffect(() => { if (view === 'scan') setScanVisited(true) }, [view])
   const [instrumentInfo, setInstrumentInfo] = useState<InstrumentSummary | null>(null)
@@ -331,14 +333,16 @@ export default function App() {
             onSelectInstrument={(instrument) => selectSymbol(instrument, 'chart')}
           />
         )}
-        {view === 'backtest' ? (
+        {(backtestVisited || view === 'backtest') && (
           <BacktestPanel
+            active={view === 'backtest'}
+            selectedName={(instrumentInfo?.instrument === symbol ? instrumentInfo : watchlist.items.find((item) => item.instrument === symbol))?.name}
             runId={backtestRunId}
             onRunIdChange={changeBacktestRunId}
             selectedSymbol={symbol}
-            defaultLotSize={instrumentInfo?.lot_size}
+            defaultLotSize={(instrumentInfo?.instrument === symbol ? instrumentInfo : watchlist.items.find((item) => item.instrument === symbol))?.lot_size}
           />
-        ) : null}
+        )}
       </main>
     </div>
   )

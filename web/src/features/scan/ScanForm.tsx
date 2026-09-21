@@ -1,8 +1,9 @@
+import { PARAMETER_NAMES, strategyName } from '../strategy/strategyLabels'
 import { useState, type FormEvent } from 'react'
 import { strategyParamList, type StrategyDefinition } from '../../api/client'
 import { RangePicker } from '../strategy/RangePicker'
 import { validateDateRange } from '../strategy/taskUtils'
-import { PARAMETER_NAMES, strategyName, type ScanDraft } from './scanPreferences'
+import { type ScanDraft } from './scanPreferences'
 
 interface Props {
   active: boolean

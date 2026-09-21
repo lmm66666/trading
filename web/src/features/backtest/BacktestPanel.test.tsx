@@ -1,10 +1,12 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  ApiError,
   createBacktestRun,
   fetchRunPage,
   getRun,
   listStrategies,
+  searchInstruments,
   type RunStatus,
   type StrategyDefinition,
 } from '../../api/client'
@@ -17,12 +19,15 @@ vi.mock('lightweight-charts', () => ({
     addSeries: vi.fn(() => ({ setData: vi.fn() })),
     timeScale: () => ({ fitContent: vi.fn() }),
     remove: vi.fn(),
+    subscribeCrosshairMove: vi.fn(),
+    unsubscribeCrosshairMove: vi.fn(),
   })),
 }))
 
 vi.mock('../../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api/client')>()),
   listStrategies: vi.fn(),
+  searchInstruments: vi.fn(),
   createBacktestRun: vi.fn(),
   getRun: vi.fn(),
   cancelRun: vi.fn(),
@@ -93,6 +98,7 @@ async function renderWithCatalog(props?: Partial<Parameters<typeof BacktestPanel
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
   vi.mocked(listStrategies).mockResolvedValue([definition])
   vi.mocked(fetchRunPage).mockResolvedValue({ items: [] })
   vi.spyOn(crypto, 'randomUUID').mockReturnValue('bt-uuid' as ReturnType<typeof crypto.randomUUID>)
@@ -110,6 +116,7 @@ describe('BacktestPanel 表单', () => {
     await renderWithCatalog({ onRunIdChange })
 
     expect(screen.getByText('SSE:600000')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: /成交与费用设置/ }))
     expect(screen.getByLabelText('每手股数')).toHaveValue(200)
     expect(screen.getByLabelText('持有期（根）')).toHaveAttribute('placeholder', '策略默认 10')
 
@@ -143,13 +150,13 @@ describe('BacktestPanel 表单', () => {
     vi.mocked(createBacktestRun).mockResolvedValue({ run_id: 'bt-1', status: 'PENDING' })
     await renderWithCatalog()
 
-    const toggle = screen.getByRole('button', { name: /高级费用设置/ })
+    const toggle = screen.getByRole('button', { name: /成交与费用设置/ })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByLabelText('佣金（bps）')).toBeNull()
+    expect(screen.queryByLabelText('佣金（%）')).toBeNull()
 
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    fireEvent.change(screen.getByLabelText('佣金（bps）'), { target: { value: '10' } })
+    fireEvent.change(screen.getByLabelText('佣金（%）'), { target: { value: '0.10' } })
 
     pickPresetRange('近 1 月')
     fireEvent.click(screen.getByRole('button', { name: '发起回测' }))
@@ -200,7 +207,7 @@ describe('BacktestPanel 结果', () => {
     vi.mocked(getRun).mockResolvedValue(succeededStatus)
     render(<BacktestPanel runId="r1" onRunIdChange={noop} selectedSymbol="SSE:600000" />)
 
-    await screen.findByText('总收益')
+    await screen.findByText('总收益率')
     expect(screen.getByText('15.23%')).toBeVisible()
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2) // 年化收益、胜率
     expect(screen.getByText('-8.00%')).toBeVisible()
@@ -227,4 +234,117 @@ describe('BacktestPanel 结果', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消任务' }))
     await vi.waitFor(() => expect(cancelRun).toHaveBeenCalledWith('backtest', 'r1'))
   })
+})
+
+
+describe('回测工作台恢复与报告隔离', () => {
+  it('恢复任务不闪现空态，明确不存在清理引用', async () => {
+    let reject!: (reason: unknown) => void
+    vi.mocked(getRun).mockReturnValue(new Promise((_, fail) => { reject = fail }))
+    const changed = vi.fn()
+    render(<BacktestPanel runId="gone" onRunIdChange={changed} selectedSymbol={null} />)
+    expect(screen.queryByText('尚未发起回测')).toBeNull()
+    expect(screen.getByText('正在加载上次回测…')).toBeVisible()
+    await act(async () => reject(new ApiError(404, 'NOT_FOUND')))
+    expect(changed).toHaveBeenCalledWith(null)
+    expect(screen.getByText('上次回测记录已不可用，可重新发起回测')).toBeVisible()
+  })
+
+  it('新任务运行及失败保留报告，成功切换后不混用旧资源', async () => {
+    vi.mocked(getRun).mockResolvedValue(succeededStatus)
+    const { rerender } = render(<BacktestPanel runId="r1" onRunIdChange={noop} selectedSymbol={null} />)
+    await screen.findByText('15.23%')
+    vi.mocked(getRun).mockResolvedValue({ ...succeededStatus, run_id: 'r2', status: 'FAILED', summary: undefined })
+    rerender(<BacktestPanel runId="r2" onRunIdChange={noop} selectedSymbol={null} />)
+    expect(screen.getByText('15.23%')).toBeVisible()
+    await screen.findByText('失败')
+    expect(screen.getByText('15.23%')).toBeVisible()
+    vi.mocked(getRun).mockResolvedValue({ ...succeededStatus, run_id: 'r3', summary: { ...succeededStatus.summary!, total_return: 0.3 } })
+    rerender(<BacktestPanel runId="r3" onRunIdChange={noop} selectedSymbol={null} />)
+    await screen.findByText('30.00%')
+    expect(screen.queryByText('15.23%')).toBeNull()
+    expect(fetchRunPage).toHaveBeenCalledWith('backtest', 'r3', 'equity', undefined, 1000)
+    expect(screen.getByText(/原始条件未保存/)).toBeVisible()
+  })
+
+  it('编辑草稿后刷新恢复草稿，报告仍使用冻结提交条件', async () => {
+    vi.mocked(createBacktestRun).mockResolvedValue({ run_id: 'r1', status: 'PENDING' })
+    const first = render(<BacktestPanel runId={null} onRunIdChange={noop} selectedSymbol="SSE:600000" />)
+    await screen.findByText(/主周期 日线/)
+    pickPresetRange('近 1 月')
+    fireEvent.click(screen.getByRole('button', { name: '发起回测' }))
+    await vi.waitFor(() => expect(createBacktestRun).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('初始资金（元）'), { target: { value: '2000000' } })
+    first.unmount()
+    vi.mocked(getRun).mockResolvedValue(succeededStatus)
+    render(<BacktestPanel runId="r1" onRunIdChange={noop} selectedSymbol="SZSE:000001" />)
+    await screen.findByText('15.23%')
+    expect(screen.getByLabelText('初始资金（元）')).toHaveValue(2000000)
+    expect(screen.getByText(/初始资金 1,000,000 元/)).toBeInTheDocument()
+    expect(screen.getByText(/本机提交记录/)).toBeInTheDocument()
+  })
+})
+
+it('证券搜索选择保留名称、使用证券手数，日期和参数直接编辑并提交', async () => {
+  vi.mocked(listStrategies).mockResolvedValue([{ ...definition, parameters: { volume_period: { default: 10, min: 1, max: 50, integer: true } } }])
+  vi.mocked(searchInstruments).mockResolvedValue([{ instrument: 'SZSE:300750', name: '宁德时代', code: '300750', exchange: 'SZSE', board: 'CHINEXT', lot_size: 200 }])
+  vi.mocked(createBacktestRun).mockResolvedValue({ run_id: 'r1', status: 'PENDING' })
+  await renderWithCatalog()
+  fireEvent.click(screen.getByRole('button', { name: /SSE:600000.*更换/ }))
+  fireEvent.change(screen.getByRole('combobox', { name: '搜索股票' }), { target: { value: '300750' } })
+  fireEvent.click(await screen.findByRole('option', { name: /宁德时代/ }))
+  fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-01-01' } })
+  fireEvent.change(screen.getByLabelText('截止日期'), { target: { value: '2026-02-01' } })
+  fireEvent.click(screen.getByText('策略参数'))
+  fireEvent.change(screen.getByLabelText('参数 volume_period'), { target: { value: '2.5' } })
+  fireEvent.click(screen.getByRole('button', { name: '发起回测' }))
+  expect(createBacktestRun).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByLabelText('参数 volume_period'), { target: { value: '20' } })
+  fireEvent.change(screen.getByLabelText('资金使用比例（%）'), { target: { value: '29.99' } })
+  fireEvent.click(screen.getByRole('button', { name: '发起回测' }))
+  await vi.waitFor(() => expect(createBacktestRun).toHaveBeenCalledWith(expect.objectContaining({ instrument: 'SZSE:300750', parameters: { volume_period: 20 }, config: expect.objectContaining({ cash_fraction_bps: 2999, lot_size: 200 }) })))
+  expect(screen.getByText('宁德时代')).toBeVisible()
+})
+it('目录失败可恢复，切策略清空旧参数', async () => {
+  vi.mocked(listStrategies).mockRejectedValueOnce(Error('目录断开')).mockResolvedValue([definition, { ...definition, strategy: 'weekly_b1_buy', version: '2' }])
+  render(<BacktestPanel runId={null} onRunIdChange={noop} selectedSymbol={null} />)
+  fireEvent.click(await screen.findByRole('button', { name: '重试加载策略' }))
+  await screen.findByText(/主周期 日线/)
+  fireEvent.change(screen.getByLabelText('策略'), { target: { value: 'weekly_b1_buy@2' } })
+  expect(screen.getByLabelText('策略')).toHaveValue('weekly_b1_buy@2')
+})
+it('隐藏时停止轮询，返回保留编辑条件并恢复查询', async () => {
+  vi.mocked(getRun).mockResolvedValue({ ...succeededStatus, status: 'RUNNING', summary: undefined })
+  const { rerender } = render(<BacktestPanel runId="r1" onRunIdChange={noop} selectedSymbol="SSE:600000" />)
+  await screen.findByText('运行中')
+  fireEvent.change(screen.getByLabelText('初始资金（元）'), { target: { value: '2000000' } })
+  rerender(<BacktestPanel runId="r1" onRunIdChange={noop} selectedSymbol="SSE:600000" active={false} />)
+  expect(screen.queryByRole('region', { name: '策略回测' })).toBeNull()
+  vi.mocked(getRun).mockResolvedValue(succeededStatus)
+  rerender(<BacktestPanel runId="r1" onRunIdChange={noop} selectedSymbol="SSE:600000" active />)
+  await screen.findByText('15.23%')
+  expect(screen.getByLabelText('初始资金（元）')).toHaveValue(2000000)
+  expect(getRun).toHaveBeenCalledTimes(2)
+})
+it('晚到的默认标的信息补全名称和手数，不覆盖手动编辑', async () => {
+  const { rerender } = render(<BacktestPanel runId={null} onRunIdChange={noop} selectedSymbol="SSE:600000" />)
+  await screen.findByText(/主周期 日线/)
+  rerender(<BacktestPanel runId={null} onRunIdChange={noop} selectedSymbol="SSE:600000" selectedName="浦发银行" defaultLotSize={200} />)
+  expect(screen.getByText('浦发银行')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: /成交与费用设置/ }))
+  expect(screen.getByLabelText('每手股数')).toHaveValue(200)
+  fireEvent.change(screen.getByLabelText('每手股数'), { target: { value: '300' } })
+  rerender(<BacktestPanel runId={null} onRunIdChange={noop} selectedSymbol="SSE:600000" selectedName="浦发银行" defaultLotSize={100} />)
+  expect(screen.getByLabelText('每手股数')).toHaveValue(300)
+})
+it('请求标识生成失败也释放提交状态，修复后可以重新提交', async () => {
+  vi.mocked(crypto.randomUUID).mockImplementationOnce(() => { throw Error('UUID unavailable') })
+  await renderWithCatalog()
+  pickPresetRange('近 1 月')
+  fireEvent.click(screen.getByRole('button', { name: '发起回测' }))
+  expect(await screen.findByText('UUID unavailable')).toBeVisible()
+  expect(screen.getByRole('button', { name: '发起回测' })).toBeEnabled()
+  vi.mocked(createBacktestRun).mockResolvedValue({ run_id: 'r', status: 'PENDING' })
+  fireEvent.click(screen.getByRole('button', { name: '发起回测' }))
+  await vi.waitFor(() => expect(createBacktestRun).toHaveBeenCalled())
 })
