@@ -40,7 +40,7 @@ func AttachWebUI(router *gin.Engine, webDir string) error {
 	router.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
 		if path == "/api" || strings.HasPrefix(path, "/api/") || (c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead) {
-			c.JSON(http.StatusNotFound, gin.H{"code": "NOT_FOUND", "message": "resource not found"})
+			respondError(c, http.StatusNotFound, "NOT_FOUND")
 			return
 		}
 		c.File(indexPath)

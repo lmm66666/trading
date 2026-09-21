@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -38,8 +39,25 @@ func TestAttachWebUI(t *testing.T) {
 	}
 	missingAPI := httptest.NewRecorder()
 	router.ServeHTTP(missingAPI, httptest.NewRequest(http.MethodGet, "/api/v1/missing", nil))
-	if missingAPI.Code != http.StatusNotFound || missingAPI.Body.String() == "<main>workbench</main>" {
+	if missingAPI.Code != http.StatusNotFound {
 		t.Fatalf("missing api: status=%d body=%q", missingAPI.Code, missingAPI.Body.String())
+	}
+	// 契约（docs/standards/http-api.md）：错误时 code 为 HTTP 状态整数，message 为稳定标识。
+	var missingBody struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    any    `json:"data"`
+	}
+	if err := json.Unmarshal(missingAPI.Body.Bytes(), &missingBody); err != nil {
+		t.Fatalf("missing api body is not JSON: %q", missingAPI.Body.String())
+	}
+	if missingBody.Code != http.StatusNotFound || missingBody.Message != "NOT_FOUND" || missingBody.Data != nil {
+		t.Fatalf("missing api envelope: %+v", missingBody)
+	}
+	missingMethod := httptest.NewRecorder()
+	router.ServeHTTP(missingMethod, httptest.NewRequest(http.MethodPost, "/missing", nil))
+	if missingMethod.Code != http.StatusNotFound || missingMethod.Body.String() == "<main>workbench</main>" {
+		t.Fatalf("missing method: status=%d body=%q", missingMethod.Code, missingMethod.Body.String())
 	}
 }
 
