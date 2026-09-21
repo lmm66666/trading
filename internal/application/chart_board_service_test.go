@@ -130,6 +130,9 @@ func TestChartBoardCreateValidatesConfig(t *testing.T) {
 	for name, body := range map[string]string{
 		"bad default symbol":   replacement(func(c map[string]any) { c["defaultSymbol"] = "evil" }),
 		"unsupported exchange": replacement(func(c map[string]any) { c["defaultSymbol"] = "NASDAQ:AAPL" }),
+		"non-numeric code":     replacement(func(c map[string]any) { c["defaultSymbol"] = "SSE:ABC123" }),
+		"short code":           replacement(func(c map[string]any) { c["defaultSymbol"] = "SSE:60000" }),
+		"long code":            replacement(func(c map[string]any) { c["defaultSymbol"] = "SSE:6000000" }),
 		"bad timeframe":        replacement(func(c map[string]any) { c["timeframe"] = "MONTH" }),
 		"bad price view":       replacement(func(c map[string]any) { c["priceView"] = "HFQ" }),
 		"null indicators":      replacement(func(c map[string]any) { c["indicators"] = nil }),

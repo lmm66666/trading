@@ -17,6 +17,15 @@ describe('board config pre-check', () => {
         c.defaultSymbol = 'evil'
       },
       (c: ReturnType<typeof defaultBoardConfig>) => {
+        c.defaultSymbol = 'SSE:ABC123'
+      },
+      (c: ReturnType<typeof defaultBoardConfig>) => {
+        c.defaultSymbol = 'SSE:60000'
+      },
+      (c: ReturnType<typeof defaultBoardConfig>) => {
+        c.defaultSymbol = 'SSE:6000000'
+      },
+      (c: ReturnType<typeof defaultBoardConfig>) => {
         c.visibleBars = 0
       },
       (c: ReturnType<typeof defaultBoardConfig>) => {

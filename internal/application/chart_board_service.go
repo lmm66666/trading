@@ -29,7 +29,9 @@ const (
 	maxChartBoardPaneWeight = 10000
 )
 
-var chartBoardSymbolPattern = regexp.MustCompile(`^(SSE|SZSE|BSE):[A-Z0-9]{1,32}$`)
+// 默认标的只接受股票现货（6 位数字代码），与 market.InstrumentID 的领域校验同口径；
+// 期货主力连续仅用于 comparison，不允许作为看板默认标的。
+var chartBoardSymbolPattern = regexp.MustCompile(`^(SSE|SZSE|BSE):[0-9]{6}$`)
 
 var chartBoardComparisons = map[string]bool{
 	"INE:SC.MAIN":  true,

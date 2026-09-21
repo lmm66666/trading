@@ -56,7 +56,7 @@ export function validIndicator(value: unknown): value is IndicatorRequest {
 export function validConfig(c: BoardConfig): boolean {
   return (
     !!c &&
-    (c.defaultSymbol === null || /^(SSE|SZSE|BSE):[A-Z0-9]{1,32}$/.test(c.defaultSymbol)) &&
+    (c.defaultSymbol === null || /^(SSE|SZSE|BSE):[0-9]{6}$/.test(c.defaultSymbol)) &&
     ['DAY', 'WEEK'].includes(c.timeframe) &&
     ['RAW', 'QFQ'].includes(c.priceView) &&
     Array.isArray(c.indicators) &&

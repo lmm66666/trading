@@ -27,6 +27,9 @@ const WORKBENCH_VIEWS: readonly WorkbenchView[] = ['chart', 'scan', 'backtest']
 export function readWorkbenchState(search: string): WorkbenchState {
   const params = new URLSearchParams(search)
   const candidate = params.get('symbol')?.toUpperCase() ?? ''
+  // 此处较 boards.validConfig 宽松：URL symbol 同时用于恢复图表主标的（期货主力
+  // 合法，见 QueryChart），收紧会破坏期货图表的 URL 恢复；看板 defaultSymbol
+  // 的严格校验由 validConfig 与服务端正则负责。
   const symbol = /^(SSE|SZSE|BSE):[A-Z0-9]{1,32}$/.test(candidate) ? candidate : null
   const timeframe = params.get('timeframe') === 'WEEK' ? 'WEEK' : 'DAY'
   const priceView = params.get('view') === 'RAW' ? 'RAW' : 'QFQ'
