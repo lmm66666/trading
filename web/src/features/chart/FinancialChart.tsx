@@ -14,6 +14,7 @@ import {
 } from 'lightweight-charts'
 import type { ChartBar, ChartSeries, Timeframe } from '../../api/client'
 
+import { zScoreBands } from './zScoreBands'
 import type { BoardConfig } from './boards'
 import { alignComparison, comparisonBasis, percent, periodKey, type ComparisonBasis } from './comparison'
 
@@ -34,21 +35,21 @@ const DOWN_COLOR = '#26a69a'
 const UP_COLOR_SOFT = 'rgba(239, 83, 80, .72)'
 const DOWN_COLOR_SOFT = 'rgba(38, 166, 154, .72)'
 const lineColors = ['#FDE68A', '#60A5FA', '#C084FC', '#22d3ee', '#f472b6', '#84cc16']
-const RETZ_COLORS = {
+const ZSCORE_COLORS = {
   histogram: '#c0c4cc',
   smooth: '#e2e8f0',
   regime: '#C084FC',
   high: '#fb923c',
   low: '#22d3ee',
 }
-const retzColor = (value: number) =>
-  value >= 2 ? RETZ_COLORS.high : value <= -2 ? RETZ_COLORS.low : RETZ_COLORS.histogram
+const zscoreColor = (value: number) =>
+  value >= 2 ? ZSCORE_COLORS.high : value <= -2 ? ZSCORE_COLORS.low : ZSCORE_COLORS.histogram
 const sigmaFormat = {
   type: 'custom' as const,
   formatter: (value: number) => `${value.toFixed(2)}σ`,
   minMove: 0.01,
 }
-const retzAutoscale: AutoscaleInfoProvider = (original) => {
+const zscoreAutoscale: AutoscaleInfoProvider = (original) => {
   const info = original()
   return {
     ...info,
@@ -94,8 +95,8 @@ const componentLabels: Record<string, string> = {
 const periodOf = (key: string): string => key.match(/\/p=(\d+)/)?.[1] ?? ''
 
 function groupTitle(item: ChartSeries): string {
-  if (item.kind === 'RETZ')
-    return `涨幅Z ${periodOf(item.key)},${item.key.match(/\/sm=(\d+)/)?.[1] ?? ''},${item.key.match(/\/rg=(\d+)/)?.[1] ?? ''}`
+  if (item.kind === 'ZSCORE')
+    return `Z-score ${periodOf(item.key)},${item.key.match(/\/sm=(\d+)/)?.[1] ?? ''},${item.key.match(/\/rg=(\d+)/)?.[1] ?? ''}`
   if (item.kind === 'MACD') {
     const fast = item.key.match(/\/f=(\d+)/)?.[1] ?? ''
     const slow = item.key.match(/\/s=(\d+)/)?.[1] ?? ''
@@ -123,8 +124,8 @@ function buildLegendModel(series: ChartSeries[]): {
   series.forEach((item) => {
     const period = item.key.match(/\/p=(\d+)/)?.[1]
     const color =
-      item.kind === 'RETZ'
-        ? RETZ_COLORS[item.component as 'histogram' | 'smooth' | 'regime']
+      item.kind === 'ZSCORE'
+        ? ZSCORE_COLORS[item.component as 'histogram' | 'smooth' | 'regime']
         : item.kind === 'SMA' && SMA_PERIODS.includes(period ?? '')
           ? lineColors[SMA_PERIODS.indexOf(period!)]
           : lineColors[colorIndex++ % lineColors.length]
@@ -160,8 +161,8 @@ function buildLegendModel(series: ChartSeries[]): {
       component: item.component,
       label: componentLabels[item.component] ?? item.component.toUpperCase(),
       color,
-      signed: item.kind !== 'RETZ' && item.component === 'histogram',
-      sigma: item.kind === 'RETZ',
+      signed: item.kind !== 'ZSCORE' && item.component === 'histogram',
+      sigma: item.kind === 'ZSCORE',
     })
   })
   return {
@@ -347,23 +348,24 @@ export function FinancialChart({
       const isOverlay = item.kind === 'SMA' || item.kind === 'EMA'
       const paneIndex = legendModel.paneIndexByKey.get(item.key) ?? 0
       const color = legendModel.colors.get(item.key) ?? lineColors[0]
-      const isRETZ = item.kind === 'RETZ'
+      const isZSCORE = item.kind === 'ZSCORE'
       if (item.component === 'histogram') {
         const indicator = chart.addSeries(
           HistogramSeries,
           {
             color,
-            ...(isRETZ ? { priceFormat: sigmaFormat, autoscaleInfoProvider: retzAutoscale } : {}),
+            ...(isZSCORE ? { priceFormat: sigmaFormat, autoscaleInfoProvider: zscoreAutoscale } : {}),
             priceLineVisible: false,
             lastValueVisible: false,
           },
           paneIndex,
         )
-        if (isRETZ) {
+        if (isZSCORE) {
+          indicator.attachPrimitive(zScoreBands((value) => indicator.priceToCoordinate(value)))
           for (const price of [2, 1, 0, -1, -2])
             indicator.createPriceLine({
               price,
-              color: price > 0 ? RETZ_COLORS.high : price < 0 ? RETZ_COLORS.low : RETZ_COLORS.histogram,
+              color: price > 0 ? ZSCORE_COLORS.high : price < 0 ? ZSCORE_COLORS.low : ZSCORE_COLORS.histogram,
               lineWidth: 1,
               lineStyle: price === 0 ? 0 : 2,
               axisLabelVisible: true,
@@ -375,7 +377,7 @@ export function FinancialChart({
             updated.points.map((point): HistogramData => ({
               time: chartTime(point.time),
               value: point.value,
-              color: isRETZ ? retzColor(point.value) : point.value >= 0 ? UP_COLOR_SOFT : DOWN_COLOR_SOFT,
+              color: isZSCORE ? zscoreColor(point.value) : point.value >= 0 ? UP_COLOR_SOFT : DOWN_COLOR_SOFT,
             })),
           ),
         )
@@ -385,7 +387,7 @@ export function FinancialChart({
           {
             color,
             lineWidth: 1,
-            ...(isRETZ ? { priceFormat: sigmaFormat } : {}),
+            ...(isZSCORE ? { priceFormat: sigmaFormat } : {}),
             priceLineVisible: false,
             lastValueVisible: false,
             ...(isOverlay
@@ -404,6 +406,7 @@ export function FinancialChart({
           indicator.setData(
             updated.points.map((point): LineData => ({
               time: chartTime(point.time),
+              ...(isZSCORE && item.component === 'smooth' ? { color: zscoreColor(point.value) } : {}),
               value:
                 isOverlay && displayBasisRef.current
                   ? percent(point.value, displayBasisRef.current.main)
@@ -581,7 +584,7 @@ export function FinancialChart({
               : {
                   color:
                     item.sigma && item.component === 'histogram' && value !== undefined
-                      ? retzColor(value)
+                      ? zscoreColor(value)
                       : item.color,
                 }
           }

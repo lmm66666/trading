@@ -19,7 +19,6 @@ const (
 	VolumeMA Kind = "volume_ma"
 	MACDKind Kind = "macd"
 	KDJKind  Kind = "kdj"
-	RETZKind Kind = "retz"
 )
 
 type Field string
@@ -36,8 +35,6 @@ const (
 	K         Field = "k"
 	D         Field = "d"
 	J         Field = "j"
-	Smooth    Field = "smooth"
-	Regime    Field = "regime"
 )
 
 // Ref identifies one fully-specified feature. Its key is stable across runs.
@@ -50,15 +47,10 @@ type Ref struct {
 	Fast      int
 	Slow      int
 	Signal    int
-	Smooth    int
-	Regime    int
 }
 
 func (r Ref) Validate() error {
 	if !r.Timeframe.Valid() || !validPriceView(r.PriceView) {
-		return ErrInvalidRef
-	}
-	if r.Kind != RETZKind && (r.Smooth != 0 || r.Regime != 0) {
 		return ErrInvalidRef
 	}
 	switch r.Kind {
@@ -82,10 +74,6 @@ func (r Ref) Validate() error {
 		if !isKDJField(r.Field) || r.Period <= 0 || r.Fast != 0 || r.Slow != 0 || r.Signal != 0 {
 			return ErrInvalidRef
 		}
-	case RETZKind:
-		if !isRETZField(r.Field) || r.Period < 2 || r.Smooth <= 0 || r.Regime <= r.Period || r.Fast != 0 || r.Slow != 0 || r.Signal != 0 {
-			return ErrInvalidRef
-		}
 	default:
 		return ErrInvalidRef
 	}
@@ -93,7 +81,7 @@ func (r Ref) Validate() error {
 }
 
 func (r Ref) hasParameters() bool {
-	return r.Period != 0 || r.Fast != 0 || r.Slow != 0 || r.Signal != 0 || r.Smooth != 0 || r.Regime != 0
+	return r.Period != 0 || r.Fast != 0 || r.Slow != 0 || r.Signal != 0
 }
 
 func (r Ref) Key() string {
@@ -106,8 +94,6 @@ func (r Ref) Key() string {
 		return fmt.Sprintf("%s/p=%d", base, r.Period)
 	case MACDKind:
 		return fmt.Sprintf("%s/f=%d/s=%d/sig=%d", base, r.Fast, r.Slow, r.Signal)
-	case RETZKind:
-		return fmt.Sprintf("%s/p=%d/sm=%d/rg=%d", base, r.Period, r.Smooth, r.Regime)
 	default:
 		return base
 	}
@@ -123,10 +109,6 @@ func isMACDField(field Field) bool {
 
 func isKDJField(field Field) bool {
 	return field == K || field == D || field == J
-}
-
-func isRETZField(field Field) bool {
-	return field == Histogram || field == Smooth || field == Regime
 }
 
 func validPriceView(view market.PriceView) bool {

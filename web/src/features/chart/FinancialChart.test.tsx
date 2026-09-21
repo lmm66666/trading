@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => {
   const setData = vi.fn()
   const applyOptions = vi.fn()
   const createPriceLine = vi.fn()
-  const series = { setData, createPriceLine, priceScale: () => ({ applyOptions }) }
+  const series = { attachPrimitive: vi.fn(), setData, createPriceLine, priceScale: () => ({ applyOptions }) }
   const setStretchFactor = vi.fn()
   const getStretchFactor = () => 1
   const timeScale = {
@@ -618,7 +618,7 @@ it.each([
   }
 })
 
-it('renders RETZ components together with threshold colors, sigma values and five reference lines', () => {
+it('renders ZSCORE components together with threshold colors, sigma values and five reference lines', () => {
   vi.clearAllMocks()
   const values = [-2.1, -2, -1.99, 0, 1.99, 2, 2.1]
   const bars = values.map((_, i) => ({
@@ -633,8 +633,8 @@ it('renders RETZ components together with threshold colors, sigma values and fiv
     trading_status: 0,
   }))
   const series = ['histogram', 'smooth', 'regime'].map((component) => ({
-    key: `retz/day/raw/${component}/p=126/sm=5/rg=252`,
-    kind: 'RETZ' as const,
+    key: `zscore/day/raw/${component}/p=126/sm=5/rg=252`,
+    kind: 'ZSCORE' as const,
     component,
     points: values.map((value, i) => ({ time: bars[i].close_time, value })),
   }))
@@ -666,7 +666,7 @@ it('renders RETZ components together with threshold colors, sigma values and fiv
     [-1, '#22d3ee', 2],
     [-2, '#22d3ee', 2],
   ])
-  expect(container.querySelector('.chart-legend-pane')).toHaveTextContent('涨幅Z 126,5,252')
+  expect(container.querySelector('.chart-legend-pane')).toHaveTextContent('Z-score 126,5,252')
   expect(container.querySelectorAll('.chart-legend-pane b')).toHaveLength(3)
   container
     .querySelectorAll('.chart-legend-pane b')
@@ -682,7 +682,7 @@ it('renders RETZ components together with threshold colors, sigma values and fiv
   expect(mocks.createPriceLine).toHaveBeenCalledTimes(5)
 })
 
-it('keeps RETZ reference lines visible without clipping real extremes', () => {
+it('keeps ZSCORE reference lines visible without clipping real extremes', () => {
   vi.clearAllMocks()
   const bar = {
     open_time: '2026-09-21',
@@ -700,8 +700,8 @@ it('keeps RETZ reference lines visible without clipping real extremes', () => {
       bars={[bar]}
       series={[
         {
-          key: 'retz/day/raw/histogram/p=2/sm=1/rg=3',
-          kind: 'RETZ',
+          key: 'zscore/day/raw/histogram/p=2/sm=1/rg=3',
+          kind: 'ZSCORE',
           component: 'histogram',
           points: [{ time: bar.close_time, value: 1 }],
         },

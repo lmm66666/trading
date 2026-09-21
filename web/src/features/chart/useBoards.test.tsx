@@ -266,13 +266,13 @@ it('refuses to remove the last board without calling the server', async () => {
   expect(deleteChartBoard).not.toHaveBeenCalled()
 })
 
-it('RETZ remains a draft until saved and restores its full parameters after remount', async () => {
+it('ZSCORE remains a draft until saved and restores its full parameters after remount', async () => {
   const initial = defaultBoardConfig()
   seedBoard('涨幅偏差', initial)
   const hook = renderHook(() => useBoards({}))
   await waitFor(() => expect(hook.result.current.status).toBe('ready'))
-  const retz = { kind: 'RETZ' as const, period: 126, smooth: 5, regime: 252 }
-  act(() => hook.result.current.setConfig((c) => ({ ...c, indicators: [retz] })))
+  const zscore = { kind: 'ZSCORE' as const, period: 126, smooth: 5, regime: 252 }
+  act(() => hook.result.current.setConfig((c) => ({ ...c, indicators: [zscore] })))
   expect(server.boards[0].config.indicators).toEqual(initial.indicators)
   expect(hook.result.current.dirty).toBe(true)
   await act(async () => {
@@ -281,6 +281,26 @@ it('RETZ remains a draft until saved and restores its full parameters after remo
   hook.unmount()
   const restored = renderHook(() => useBoards({}))
   await waitFor(() => expect(restored.result.current.status).toBe('ready'))
-  expect(restored.result.current.config?.indicators).toEqual([retz])
+  expect(restored.result.current.config?.indicators).toEqual([zscore])
   expect(restored.result.current.dirty).toBe(false)
+})
+
+it('migrates legacy board drafts, keeps dirty on restore, and persists only on explicit save', async () => {
+  const config = defaultBoardConfig('SSE:600938')
+  config.comparison = 'SHFE:AU.MAIN'
+  config.indicators = [{kind:'STD',period:20},{kind:'RETZ',period:126,smooth:5,regime:252}] as never
+  seedBoard('旧看板', config)
+  const {result} = renderHook(() => useBoards({}))
+  await waitFor(() => expect(result.current.status).toBe('ready'))
+  expect(result.current.config?.indicators).toEqual([{kind:'ZSCORE',period:126,smooth:5,regime:252,lag:0}])
+  expect(result.current.config?.comparison).toBe('SHFE:AU.MAIN')
+  expect(result.current.dirty).toBe(true)
+  expect(result.current.migrationNotice).toContain('保存')
+  expect(updateChartBoard).not.toHaveBeenCalled()
+  act(() => result.current.restore())
+  expect(result.current.dirty).toBe(true)
+  await act(async () => {await result.current.save()})
+  expect(result.current.dirty).toBe(false)
+  expect(result.current.migrationNotice).toBe('')
+  expect(server.boards[0].config.indicators[0].kind).toBe('ZSCORE')
 })

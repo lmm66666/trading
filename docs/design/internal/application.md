@@ -115,16 +115,14 @@ go vet ./...
 - [Broker 设计](../pkg/broker.md)
 
 
-## 图表标准差扩展
-
-ChartQueryService 接受 STD(period)，周期1–500，fast/slow/signal必须为0；映射 STDKind + Close 引用，成本按period纳入2000预算。沿用完整历史构建后裁页、正版本固定、取消与16指标上限；总体标准差口径见[指标设计](indicator.md)。
-
 ## 拆分后的生命周期
 
 每个目标库单个 updater 持续采集；workbench 只执行查询、工作台操作和扫描/回测。两者各自取消并等待所拥有的后台任务退出，最后关闭自身数据库连接。workbench 的刷新请求通过 HTTP 交给 updater，已受理的全市场任务属于 updater 根 context。工作台停机不取消 NAS 更新；计算任务沿用数据库租约恢复，NAS 不领取计算任务。MarketScheduler、FuturesScheduler 启动不立即采集，首个周期后才自动执行；手动股票刷新可立即触发且不重置定时节拍。周期、范围、限频和发布算法不变。
 
-## 图表涨幅偏差 RETZ
+## 双价格 Z-score
 
-`ChartQueryService` 接受 `RETZ(period,smooth,regime)`，在固定版本完整历史计算后裁页，按 histogram、smooth、regime 顺序返回三分量。period/regime 为2–500整数，smooth 为1–500整数，regime>period，fast/slow/signal 必须为0；其他类型的 smooth/regime 必须为0。成本 `period + regime` 计入2000总预算，指标个数≤16；不同 smooth 或 regime 配置属于不同指标，完全相同配置拒绝。
+ChartQueryService 的 comparison 限已有八项国内期货。`ZSCORE(period,smooth,regime,lag)` 在相同正版本读取股票、商品完整历史，商品仅读取一次。按UTC日期取不晚于股票日期的最近已知商品Bar，再滞后lag根商品Bar；股票RAW/QFQ、商品RAW，计算后按股票页裁剪。历史下界固定为服务UTC当天向前20年，不随分页before移动；边界之前返回空页。
 
-看板配置继续调用统一参数校验；去重身份包含 smooth/regime，规范化 JSON 保留这两个参数。复用已有存储端口、表和读写路径，不改变 SQL、索引、事务或库表结构。计算口径见[指标设计](indicator.md#每根涨幅偏差-retz)。
+参数 band2–500、smooth1–500、regime>band且≤500、lag0–5；其他类型不得带smooth/regime/lag。成本 `2*period+regime+68` 含诊断，仍受2000/16/并发4约束。三分量与其他指标按请求顺序返回；key包含两腿身份、复权及所有参数。
+
+未选关联、周线、商品缺历史/读取失败/版本不符只返回ZSCORE诊断warning；股票和其他指标保留。取消和超时继续传播。zscores返回最新股票点上的主Z、长期Z、63期相对表现、5期收益相关、商品日期、lag和状态，未定义字段为null。旧STD/RETZ不再接受新增/保存；读取看板不改库，客户端修正草稿后手动保存，复用原表/SQL。

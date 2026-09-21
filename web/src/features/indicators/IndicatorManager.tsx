@@ -18,8 +18,7 @@ const overlayPresets: IndicatorRequest[] = [
 const panePresets: IndicatorRequest[] = [
   { kind: 'MACD', fast: 12, slow: 26, signal: 9 },
   { kind: 'KDJ', period: 9 },
-  { kind: 'STD', period: 20 },
-  { kind: 'RETZ', period: 126, smooth: 5, regime: 252 },
+  { kind: 'ZSCORE', period: 126, smooth: 5, regime: 252, lag: 0 },
 ]
 
 export function IndicatorManager({ indicators, onChange }: IndicatorManagerProps) {
@@ -31,10 +30,8 @@ export function IndicatorManager({ indicators, onChange }: IndicatorManagerProps
         sum +
         (i.kind === 'KDJ'
           ? i.period * 3
-          : i.kind === 'STD'
-            ? i.period
-            : i.kind === 'RETZ'
-              ? i.period + i.regime
+          : i.kind === 'ZSCORE'
+              ? 2 * i.period + i.regime + 68
               : i.kind === 'MACD'
                 ? 3
                 : 1),
@@ -140,8 +137,9 @@ export function IndicatorManager({ indicators, onChange }: IndicatorManagerProps
           </section>
           {error && <p role="alert">{error}</p>}
           <p className="indicator-hint">
-            STD 为收盘价总体标准差；涨幅Z 为对数日涨幅的滚动 Z-Score（band,smooth,regime，要求 regime &gt;
-            band）。指标跟随当前股票。参数模板由服务端统一计算，图表只负责展现。
+            Z-score 衡量股票与关联期货价格比值偏离历史均值的程度，仅支持日线。
+            period 为主窗口，smooth 为平滑周期，regime 为更长窗口；lag 为期货交易日滞后（0–5）。
+            在“同图叠加”中选择关联期货。使用最近已知期货收盘价，股票跟随当前复权方式。
           </p>
         </div>
       )}
@@ -165,8 +163,8 @@ function IndicatorEditor({
   const fields =
     indicator.kind === 'MACD'
       ? ['fast', 'slow', 'signal']
-      : indicator.kind === 'RETZ'
-        ? ['period', 'smooth', 'regime']
+      : indicator.kind === 'ZSCORE'
+        ? ['period', 'smooth', 'regime', 'lag']
         : ['period']
   return (
     <form
@@ -183,10 +181,10 @@ function IndicatorEditor({
           <input
             aria-label={`${label} ${field}`}
             type="number"
-            min={1}
-            max={500}
+            min={field === 'lag' ? 0 : 1}
+            max={field === 'lag' ? 5 : 500}
             required
-            value={Number((draft as unknown as Record<string, unknown>)[field])}
+            value={Number((draft as unknown as Record<string, unknown>)[field] ?? 0)}
             onChange={(e) => setDraft({ ...draft, [field]: Number(e.target.value) })}
           />
         </label>

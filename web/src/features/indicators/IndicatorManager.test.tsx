@@ -27,15 +27,11 @@ describe('IndicatorManager', () => {
   })
 })
 
-it('adds standard deviation preset and edits an existing period', () => {
+it('removes obsolete presets and edits an existing period', () => {
   const change = vi.fn()
   render(<IndicatorManager indicators={[{ kind: 'SMA', period: 5 }]} onChange={change} />)
   fireEvent.click(screen.getByRole('button', { name: /指标/ }))
-  fireEvent.click(screen.getByRole('button', { name: '添加 STD 20' }))
-  expect(change).toHaveBeenCalledWith([
-    { kind: 'SMA', period: 5 },
-    { kind: 'STD', period: 20 },
-  ])
+  expect(screen.queryByRole('button', { name: '添加 STD 20' })).toBeNull()
   fireEvent.change(screen.getByRole('spinbutton', { name: 'SMA 5 period' }), { target: { value: '10' } })
   fireEvent.click(screen.getByRole('button', { name: '应用 SMA 5 参数' }))
   expect(change).toHaveBeenLastCalledWith([{ kind: 'SMA', period: 10 }])
@@ -73,42 +69,40 @@ it('rejects duplicates and invalid MACD order, supports reorder/removal', () => 
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })
 
-it('adds RETZ, edits all parameters and rejects invalid windows and excessive cost', () => {
-  const retz = { kind: 'RETZ' as const, period: 126, smooth: 5, regime: 252 }
+it('adds ZSCORE, edits all parameters and rejects invalid windows and excessive cost', () => {
+  const zscore = { kind: 'ZSCORE' as const, period: 126, smooth: 5, regime: 252, lag: 0 }
   const change = vi.fn()
   const { rerender } = render(<IndicatorManager indicators={[]} onChange={change} />)
   fireEvent.click(screen.getByRole('button', { name: /指标/ }))
-  fireEvent.click(screen.getByRole('button', { name: '添加 涨幅Z 126,5,252' }))
-  expect(change).toHaveBeenLastCalledWith([retz])
-  rerender(<IndicatorManager indicators={[retz]} onChange={change} />)
+  fireEvent.click(screen.getByRole('button', { name: '添加 Z-score 126,5,252' }))
+  expect(change).toHaveBeenLastCalledWith([zscore])
+  rerender(<IndicatorManager indicators={[zscore]} onChange={change} />)
   change.mockClear()
-  fireEvent.change(screen.getByRole('spinbutton', { name: '涨幅Z 126,5,252 regime' }), {
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Z-score 126,5,252 regime' }), {
     target: { value: '100' },
   })
-  fireEvent.click(screen.getByRole('button', { name: '应用 涨幅Z 126,5,252 参数' }))
+  fireEvent.click(screen.getByRole('button', { name: '应用 Z-score 126,5,252 参数' }))
   expect(change).not.toHaveBeenCalled()
-  fireEvent.change(screen.getByRole('spinbutton', { name: '涨幅Z 126,5,252 period' }), {
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Z-score 126,5,252 period' }), {
     target: { value: '63' },
   })
-  fireEvent.change(screen.getByRole('spinbutton', { name: '涨幅Z 126,5,252 smooth' }), {
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Z-score 126,5,252 smooth' }), {
     target: { value: '10' },
   })
-  fireEvent.click(screen.getByRole('button', { name: '应用 涨幅Z 126,5,252 参数' }))
-  expect(change).toHaveBeenLastCalledWith([{ ...retz, period: 63, smooth: 10, regime: 100 }])
+  fireEvent.click(screen.getByRole('button', { name: '应用 Z-score 126,5,252 参数' }))
+  expect(change).toHaveBeenLastCalledWith([{ ...zscore, period: 63, smooth: 10, regime: 100 }])
   rerender(
     <IndicatorManager
-      indicators={Array.from({ length: 5 }, (_, i) => ({ ...retz, period: 126 + i, regime: 252 + i }))}
+      indicators={Array.from({ length: 5 }, (_, i) => ({ ...zscore, period: 126 + i, regime: 252 + i }))}
       onChange={change}
     />,
   )
   change.mockClear()
-  fireEvent.click(screen.getByRole('button', { name: '添加 STD 20' }))
-  expect(change).toHaveBeenCalledTimes(1)
-  fireEvent.change(screen.getByRole('spinbutton', { name: '涨幅Z 126,5,252 regime' }), {
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'Z-score 126,5,252 regime' }), {
     target: { value: '500' },
   })
   change.mockClear()
-  fireEvent.click(screen.getByRole('button', { name: '应用 涨幅Z 126,5,252 参数' }))
+  fireEvent.click(screen.getByRole('button', { name: '应用 Z-score 126,5,252 参数' }))
   expect(change).not.toHaveBeenCalled()
   expect(screen.getByRole('alert')).toBeVisible()
 })

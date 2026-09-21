@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { queryChart, type ChartResult, type PriceView, type Timeframe } from '../../api/client'
 import { IndicatorManager } from '../indicators/IndicatorManager'
 import { mergeBars, mergeSeries } from './chartData'
+import { ZScoreSummary } from './ZScoreSummary'
 import { FinancialChart } from './FinancialChart'
 import type { BoardController } from './useBoards'
 import { BoardToolbar } from './BoardToolbar'
@@ -35,6 +36,7 @@ export function ChartWorkspace({
   const timeframe = config?.timeframe
   const priceView = config?.priceView
   const indicators = config?.indicators
+  const comparisonSymbol = config?.comparison ?? undefined
   const [result, setResult] = useState<ChartResult | null>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [loadingMore, setLoadingMore] = useState(false)
@@ -57,7 +59,7 @@ export function ChartWorkspace({
     setLoadingMore(false)
     setError('')
     setResult(null)
-    query({ instrument, timeframe, price_view: priceView, limit: 400, indicators }, controller.signal)
+    query({ instrument, comparison: comparisonSymbol, timeframe, price_view: priceView, limit: 400, indicators }, controller.signal)
       .then((data) => {
         if (controller.signal.aborted || generation !== generationRef.current) return
         setResult(data)
@@ -72,7 +74,7 @@ export function ChartWorkspace({
       controller.abort()
       pageControllerRef.current?.abort()
     }
-  }, [indicators, instrument, priceView, query, timeframe])
+  }, [comparisonSymbol, indicators, instrument, priceView, query, timeframe])
 
   const changeTimeframe = (value: Timeframe) => {
     board.setConfig((c) => ({ ...c, timeframe: value }))
@@ -92,6 +94,7 @@ export function ChartWorkspace({
     query(
       {
         instrument,
+        comparison: comparisonSymbol,
         timeframe,
         price_view: priceView,
         before: result.next_before,
@@ -129,7 +132,7 @@ export function ChartWorkspace({
       .finally(() => {
         if (generation === generationRef.current) setLoadingMore(false)
       })
-  }, [indicators, instrument, loadingMore, priceView, query, result, timeframe])
+  }, [comparisonSymbol, indicators, instrument, loadingMore, priceView, query, result, timeframe])
 
   const comparison = useComparison(config?.comparison ?? null, result, timeframe ?? 'DAY')
 
@@ -226,6 +229,8 @@ export function ChartWorkspace({
         />
         <BoardToolbar board={board} instrument={instrument} captureLayout={() => captureLayout.current?.()} />
       </nav>
+      {board.migrationNotice && <p role="status">{board.migrationNotice}</p>}
+      {status === 'ready' && result?.zscores?.map((item) => <ZScoreSummary key={item.key} item={item} />)}
       <section className="chart-stage" aria-live="polite">
         {status === 'loading' && (
           <div className="chart-loading">

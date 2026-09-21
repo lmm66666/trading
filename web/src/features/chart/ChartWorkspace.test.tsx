@@ -349,3 +349,17 @@ it('周线报价按前一周收盘计算并标注周涨跌', async () => {
   const quote = await screen.findByLabelText('最新行情')
   expect(quote).toHaveTextContent('周涨跌 +10.00 (+10.00%)')
 })
+
+it('sends the board commodity on reload and pagination, aborting stale pair requests', async () => {
+  const diagnostic = {key:'z',comparison:'SHFE:AU.MAIN',period:126,regime:252,lag:0,commodity_date:'2026-09-18',z:2,long_z:1,relative_performance:10,correlation:.5,state:'股票阶段性偏强'}
+  const query = vi.fn().mockResolvedValue({...response, has_more:true, next_before:response.bars[0].close_time, zscores:[diagnostic]})
+  render(<Harness {...baseProps} query={query} />)
+  await screen.findByTestId('financial-chart')
+  const signal = query.mock.calls[0][1] as AbortSignal
+  fireEvent.change(screen.getByRole('combobox', {name:'同图叠加'}), {target:{value:'SHFE:AU.MAIN'}})
+  await waitFor(() => expect(query).toHaveBeenLastCalledWith(expect.objectContaining({comparison:'SHFE:AU.MAIN'}),expect.anything()))
+  expect(signal.aborted).toBe(true)
+  await screen.findByText('股票阶段性偏强')
+  fireEvent.click(screen.getByRole('button', {name:'触发自动加载'}))
+  await waitFor(() => expect(query).toHaveBeenLastCalledWith(expect.objectContaining({comparison:'SHFE:AU.MAIN',data_version:17,before:response.bars[0].close_time}),expect.anything()))
+})

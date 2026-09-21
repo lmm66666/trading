@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultBoardConfig, validConfig, validIndicator } from './boards'
+import { migrateBoardConfig, defaultBoardConfig, validConfig, validIndicator } from './boards'
 
 describe('board config pre-check', () => {
   it('accepts default and explicit valid configurations', () => {
@@ -52,9 +52,9 @@ describe('board config pre-check', () => {
   })
 })
 
-it('validates RETZ bounds, unrelated fields and distinct saved configurations', () => {
-  const retz = { kind: 'RETZ' as const, period: 126, smooth: 5, regime: 252 }
-  expect(validIndicator(retz)).toBe(true)
+it('validates ZSCORE bounds, unrelated fields and distinct saved configurations', () => {
+  const zscore = { kind: 'ZSCORE' as const, period: 126, smooth: 5, regime: 252 }
+  expect(validIndicator(zscore)).toBe(true)
   for (const patch of [
     { period: 1 },
     { period: 501 },
@@ -67,13 +67,23 @@ it('validates RETZ bounds, unrelated fields and distinct saved configurations', 
     { slow: 26 },
     { signal: 9 },
   ])
-    expect(validIndicator({ ...retz, ...patch })).toBe(false)
+    expect(validIndicator({ ...zscore, ...patch })).toBe(false)
   for (const kind of ['SMA', 'EMA', 'STD', 'KDJ'])
     expect(validIndicator({ kind, period: 20, smooth: 5 })).toBe(false)
   expect(validIndicator({ kind: 'MACD', fast: 12, slow: 26, signal: 9, regime: 252 })).toBe(false)
   const config = defaultBoardConfig()
-  config.indicators = [retz, { ...retz, smooth: 10 }, { ...retz, regime: 300 }]
+  config.indicators = [zscore, { ...zscore, smooth: 10 }, { ...zscore, regime: 300 }]
   expect(validConfig(JSON.parse(JSON.stringify(config)))).toBe(true)
-  config.indicators.push(retz)
+  config.indicators.push(zscore)
   expect(validConfig(config)).toBe(false)
+})
+
+it('replaces legacy indicators once without mutating the saved board or guessing a commodity', () => {
+  const saved = defaultBoardConfig()
+  saved.indicators = [{ kind: 'STD', period: 20 }, { kind: 'RETZ', period: 126, smooth: 5, regime: 252 }, { kind: 'SMA', period: 5 }] as never
+  const draft = migrateBoardConfig(saved)
+  expect(draft.indicators).toEqual([{ kind: 'ZSCORE', period: 126, smooth: 5, regime: 252, lag: 0 }, { kind: 'SMA', period: 5 }])
+  expect(saved.indicators[0].kind).toBe('STD')
+  expect(draft.comparison).toBeNull()
+  expect(migrateBoardConfig(draft)).toEqual(draft)
 })

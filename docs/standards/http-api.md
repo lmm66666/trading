@@ -185,13 +185,15 @@ curl -X DELETE http://localhost:8080/api/v1/chart-boards/2
 
 `timeframe` 支持 DAY、WEEK；`price_view` 支持 RAW、QFQ；`limit` 默认400、范围100–1000。`data_version=0` 在首次请求解析最新版本，向前加载时必须回传响应中的正版本。`before` 是可选的 RFC3339 排他游标。
 
-指标最多16个：SMA/EMA/STD 使用1–500的 period；MACD 使用正数 fast/slow/signal 且 slow>fast；KDJ 使用1–500的 period。服务端还会按指标类型和周期执行总计算成本门禁，拒绝可能造成 CPU 放大的极端组合。STD 对当前价格视图收盘价计算滚动总体标准差（分母为 period，常量窗口为0），成本按 period 计入2000预算，返回单条 value 序列，预热不足不输出；在完整历史计算后裁页。响应的 series 按请求顺序返回，MACD 展开为 dif/dea/histogram，KDJ 展开为 k/d/j；预热期无效点不输出，客户端取消后会在指标计算边界停止。
+指标最多16个：SMA/EMA 的period为1–500；MACD正数fast/slow/signal且slow>fast；KDJ的period为1–500。SMA/EMA成本1、MACD成本3、KDJ成本3*period。STD/RETZ已移除，不再接受。
 
-RETZ 请求示例：`{"kind":"RETZ","period":126,"smooth":5,"regime":252}`。period（band）与 regime 为2–500整数，smooth 为1–500整数，regime>period；fast/slow/signal 必须为0，其他指标禁止非零 smooth/regime。成本为 `period + regime`，与其他指标共同受2000预算限制。重复身份包括全部参数，完全相同配置拒绝。看板 config.indicators 使用相同参数与身份校验。
+双价格示例：请求顶层 `"comparison":"SHFE:AU.MAIN"`，indicators加入 `{"kind":"ZSCORE","period":126,"smooth":5,"regime":252,"lag":0}`。comparison可省略，仅限既有八项国内期货；省略时ZSCORE返回未选关联提示。period为2–500、smooth1–500、regime>period且≤500、lag0–5默认0。fast/slow/signal必须为0；其他指标禁止非零smooth/regime/lag。成本 `2*period+regime+68`，总成本≤2000、并发计算≤4；所有参数参与去重和看板校验。
 
-RETZ 以当前价格视图收盘价的逐根对数涨幅为输入，以窗口内简单均值和总体标准差计算 Z 值，返回 histogram（band窗口）、smooth（histogram 的 EMA）、regime（长期窗口）三分量，单位 σ。首点、无效/非正价格、预热不足、窗口标准差≤1e-12 对应点不输出，EMA 遇到无效点后在下个有效点重新播种。DAY/WEEK 分别解释为日/周涨幅，计算在完整历史上进行后裁页。
+股票取当前RAW/QFQ，商品RAW收盘；按UTC日期向后查找最近已知商品日线再滞后lag根商品Bar，绝不使用未来日期。仅日线：周线、未选关联、商品无历史、读取失败或版本不一致返回zscores.warning，不影响股票及其他指标；取消/超时传播。计算输入为ln(stock)-ln(commodity)，滚动SMA/总体标准差，标准差≤1e-12或预热不足留空。series按请求顺序返回histogram/smooth/regime（单位σ），smooth为主Z的EMA。key为 `zscore/day/<view>/<component>/p=<period>/sm=<smooth>/rg=<regime>/lag=<lag>/<stock>/<commodity>`。
 
-响应 Bar 按 close_time 升序。`has_more` 表示当前游标之前、项目统一的20年查询边界内是否仍有数据；它不承诺提供20年以前的数据。`has_more=true` 时，使用 `next_before` 和相同 `data_version` 获取更早一页。服务先在完整历史上下文计算指标，再裁剪响应页，避免页边界指标跳变。
+新增 `zscores` 诊断数组（无该指标时可为null）：每项含key（主柱键）、comparison、period、regime、lag、commodity_date（最近实际用到的商品UTC日期）、z、long_z、relative_performance（63期比价变化百分比）、correlation（5期对数收益在period窗口的相关）、state、可选warning。无有效诊断值为null；state为数据不足、常态区（|z|≤0.75）、偏离观察、股票阶段性偏强/弱（z≥2/≤-2）、长期偏离，核查结构变化（主/长Z同号且绝对值均≥2）。数据在完整固定版本历史计算后裁页，诊断对应该页最新股票点。
+
+响应 Bar 按 close_time 升序。`has_more` 表示当前游标之前、服务UTC当天向前20年的固定查询边界内（不随before移动）是否仍有数据；它不承诺提供20年以前的数据。`has_more=true` 时，使用 `next_before` 和相同 `data_version` 获取更早一页。服务先在完整历史上下文计算指标，再裁剪响应页，避免页边界指标跳变。
 
 #### 查询版本化行情
 

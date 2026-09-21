@@ -29,7 +29,7 @@ related: []
 - `Ref` 完整标识指标种类、周期、价格视图、字段和参数；`Key` 为相同引用生成跨运行稳定键。
 - `Series` 保存数值与逐点有效位，通过 `At`、`Valid`、`Slice` 提供防越界读取。
 - `BuildContext` 对一组引用去重计算并返回 `Set`，在指标边界响应 context 取消。
-- `STDKind` 引用支持 OHLC 字段与正周期，计算完整滚动窗口总体标准差；使用中心化两遍计算，预热/无效窗口不输出，常量窗口有效值为0。图表使用 Close 字段、周期上限500和成本预算。
+- `STDKind` 引用支持 OHLC 字段与正周期，计算完整滚动窗口总体标准差；使用中心化两遍计算，预热/无效窗口不输出，常量窗口有效值为0。STD 保留为领域能力，不再作为图表入口。
 - `SMA`、`EMA` 提供基础序列计算；复合指标由构建图内部组合。
 - `RelativePriceZScore` 对两条由调用方按日线时点对齐的正价格序列计算对数价格比的滚动总体标准化结果，不接入单 Dataset 的 `Ref` 和构建图。
 
@@ -105,8 +105,8 @@ go test ./internal/indicator -cover
 - [行情领域设计](market.md)
 - [策略设计](strategy.md)
 
-## 每根涨幅偏差 RETZ
+## 双价格相对 Z-score
 
-`RETZKind` 对当前价格视图的 Close 计算每根对数涨幅 `ln(c_t/c_{t-1})`，DAY 表示日涨幅，WEEK 表示周涨幅。首点、非正或无效收盘及其后一根涨幅无效。band 窗口的总体标准化结果输出为 `Histogram`，其 EMA 为 `Smooth`，regime 窗口的总体标准化结果为 `Regime`。窗口包含无效点、预热不足或总体标准差不大于 `1e-12` 时不输出；EMA 遇到无效点中断，下次有效值重新播种。
+`RelativePanel` 接受调用方已因果对齐的两条正价格序列，不参与单证券 Ref/Build。主Z与长期Z复用 `RelativePriceZScore`：对 `ln(stock)-ln(commodity)` 使用滚动简单均值和总体标准差，标准差≤1e-12及预热不足留空。平滑为主Z的EMA，首次有效值播种。
 
-Ref 使用 `Period`（band）、`Smooth`、`Regime`，要求 band≥2、smooth≥1、regime>band，禁止 fast/slow/signal。稳定键为 `retz/<timeframe>/<view>/<field>/p=<band>/sm=<smooth>/rg=<regime>`；其他指标拒绝非零 smooth/regime。同次 Build 以价格视图和窗口为键复用涨幅、滚动 Z 和平滑结果，缓存仅属于该次调用，不能跨证券或版本复用。总体标准差复用 `stddevSeries` 的中心化两遍计算；追加未来数据不改变前缀。图表参数上限与预算由应用层负责。
+同时返回63期比价变化百分比与5期对数收益的 band 窗口 Pearson 相关；零方差相关无定义，不输出。全部计算仅依赖当前与历史前缀。参数 band≥2、smooth≥1、regime>band；长度相等、价格正且有限。读取、日期对齐、滞后、参数上限和裁页属于应用层。已移除误加的单标的RETZ，保留原纯STD能力。

@@ -294,6 +294,8 @@ function indicatorSeries(
   window: ValueWindow,
   timeframe: Timeframe,
   view: PriceView,
+  comparison: string | undefined,
+  instrument: string,
 ): ChartSeries[] {
   const build = (key: string, component: string, values: Array<number | null>): ChartSeries => ({
     key,
@@ -304,19 +306,6 @@ function indicatorSeries(
   switch (indicator.kind) {
     case 'SMA':
       return [build(`SMA/p=${indicator.period}`, 'line', smaSeries(master.closes, indicator.period))]
-    case 'STD':
-      return [
-        build(
-          `STD/p=${indicator.period}`,
-          'value',
-          master.closes.map((_, i) => {
-            if (i < indicator.period - 1) return null
-            const window = master.closes.slice(i - indicator.period + 1, i + 1)
-            const mean = window.reduce((a, b) => a + b, 0) / window.length
-            return Math.sqrt(window.reduce((a, b) => a + (b - mean) ** 2, 0) / window.length)
-          }),
-        ),
-      ]
     case 'EMA':
       return [build(`EMA/p=${indicator.period}`, 'line', emaSeries(master.closes, indicator.period, 0))]
     case 'MACD': {
@@ -333,15 +322,20 @@ function indicatorSeries(
       const { k, d, j } = kdjSeries(master.closes, master.highs, master.lows, indicator.period)
       return [build(`${key}:k`, 'k', k), build(`${key}:d`, 'd', d), build(`${key}:j`, 'j', j)]
     }
-    case 'RETZ': {
+    case 'ZSCORE': {
+      if (!comparison || timeframe !== 'DAY') return []
+      const commodity = masterBars(comparison, timeframe, 'RAW')
       const key = (component: string) =>
-        `retz/${timeframe.toLowerCase()}/${view.toLowerCase()}/${component}/p=${indicator.period}/sm=${indicator.smooth}/rg=${indicator.regime}`
-      const returns: Array<number | null> = master.closes.map((close, i) =>
-        i === 0 || close <= 0 || master.closes[i - 1] <= 0 ? null : Math.log(close / master.closes[i - 1]),
-      )
+        `zscore/${timeframe.toLowerCase()}/${view.toLowerCase()}/${component}/p=${indicator.period}/sm=${indicator.smooth}/rg=${indicator.regime}/lag=${indicator.lag ?? 0}/${instrument}/${comparison}`
+      let cursor = -1
+      const returns: Array<number | null> = master.bars.map((bar) => {
+        while (cursor + 1 < commodity.length && commodity[cursor + 1].close_time.slice(0, 10) <= bar.close_time.slice(0, 10)) cursor++
+        const index = cursor - (indicator.lag ?? 0)
+        return index < 0 ? null : Math.log(bar.close) - Math.log(commodity[index].close)
+      })
       const zOf = (window: number): Array<number | null> =>
         returns.map((_, i) => {
-          if (i < window) return null
+          if (i < window - 1) return null
           const slice = returns.slice(i - window + 1, i + 1)
           if (slice.length < window || slice.some((value) => value === null)) return null
           const values = slice as number[]
@@ -405,7 +399,7 @@ export function mockChartQuery(input: ChartQueryInput): ChartResult {
     data_version: 1,
     bars: bars.slice(start, end),
     series: input.indicators.flatMap((indicator) =>
-      indicatorSeries(indicator, { bars, closes, highs, lows }, window, input.timeframe, input.price_view),
+      indicatorSeries(indicator, { bars, closes, highs, lows }, window, input.timeframe, input.price_view, input.comparison, input.instrument),
     ),
     has_more: start > 0,
     next_before: start > 0 ? bars[start].close_time : null,

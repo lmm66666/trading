@@ -105,17 +105,17 @@ describe('chart data state', () => {
   })
 })
 
-it('keeps RETZ identities and all components stable across pagination', () => {
-  const indicator = { kind: 'RETZ' as const, period: 126, smooth: 5, regime: 252 }
-  expect(indicatorLabel(indicator)).toBe('涨幅Z 126,5,252')
-  expect(indicatorIdentity(indicator)).toBe('RETZ:126:5:252')
+it('keeps ZSCORE identities and all components stable across pagination', () => {
+  const indicator = { kind: 'ZSCORE' as const, period: 126, smooth: 5, regime: 252 }
+  expect(indicatorLabel(indicator)).toBe('Z-score 126,5,252')
+  expect(indicatorIdentity(indicator)).toBe('ZSCORE:126:5:252:0')
   expect(indicatorIdentity({ ...indicator, smooth: 10 })).not.toBe(indicatorIdentity(indicator))
   expect(indicatorIdentity({ ...indicator, regime: 300 })).not.toBe(indicatorIdentity(indicator))
   const components = ['histogram', 'smooth', 'regime']
   const page = (time: string, value: number) =>
     components.map((component) => ({
-      key: `retz/day/raw/${component}/p=126/sm=5/rg=252`,
-      kind: 'RETZ' as const,
+      key: `zscore/day/raw/${component}/p=126/sm=5/rg=252`,
+      kind: 'ZSCORE' as const,
       component,
       points: [{ time, value }],
     }))

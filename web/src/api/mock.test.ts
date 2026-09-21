@@ -87,25 +87,25 @@ describe('mockChartQuery', () => {
   })
 })
 
-it('RETZ mock uses backend-compatible keys, windows and population statistics', () => {
+it('ZSCORE mock standardizes the two-price log ratio', () => {
   const result = mockChartQuery({
     instrument: 'SSE:600519',
+    comparison: 'SHFE:AU.MAIN',
     timeframe: 'DAY',
     price_view: 'RAW',
     limit: 1000,
-    indicators: [{ kind: 'RETZ', period: 5, smooth: 2, regime: 10 }],
+    indicators: [{ kind: 'ZSCORE', period: 5, smooth: 2, regime: 10 }],
   })
   expect(result.series.map((item) => item.key)).toEqual(
-    ['histogram', 'smooth', 'regime'].map((field) => `retz/day/raw/${field}/p=5/sm=2/rg=10`),
+    ['histogram', 'smooth', 'regime'].map((field) => `zscore/day/raw/${field}/p=5/sm=2/rg=10/lag=0/SSE:600519/SHFE:AU.MAIN`),
   )
   for (const [index, window] of [
     [0, 5],
     [2, 10],
   ]) {
-    expect(result.series[index].points[0].time).toBe(result.bars[window].close_time)
-    const returns = result.bars
-      .slice(1, window + 1)
-      .map((bar, i) => Math.log(bar.close / result.bars[i].close))
+    expect(result.series[index].points[0].time).toBe(result.bars[window - 1].close_time)
+    const commodity = mockChartQuery({ instrument: 'SHFE:AU.MAIN', timeframe: 'DAY', price_view: 'RAW', limit: 1000, indicators: [] })
+    const returns = result.bars.slice(0, window).map((bar, i) => Math.log(bar.close) - Math.log(commodity.bars[i].close))
     const mean = returns.reduce((a, b) => a + b, 0) / window
     const sd = Math.sqrt(returns.reduce((a, b) => a + (b - mean) ** 2, 0) / window)
     expect(result.series[index].points[0].value).toBeCloseTo((returns.at(-1)! - mean) / sd, 6)

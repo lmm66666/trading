@@ -602,3 +602,8 @@ button:disabled { cursor:not-allowed; opacity:.45; }
 }
 .chart-view { display:flex; flex-direction:column; }
 .chart-view[hidden] { display:none; }
+
+.zscore-summary { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 10px 16px; margin: 8px 0; border: 1px solid var(--border, #293241); border-radius: 8px; font-size: 12px; }
+.zscore-summary small { color: var(--muted, #94a3b8); }
+.zscore-thresholds span:first-child { color: #fb923c; background: #fb923c18; }
+.zscore-thresholds span:last-child { color: #22d3ee; background: #22d3ee18; }

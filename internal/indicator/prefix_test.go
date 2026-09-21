@@ -31,9 +31,6 @@ func builtInRefs() []indicator.Ref {
 		{Kind: indicator.MACDKind, Timeframe: market.Day, PriceView: market.ForwardAdjusted, Field: indicator.Histogram, Fast: 12, Slow: 26, Signal: 9},
 		{Kind: indicator.KDJKind, Timeframe: market.Day, PriceView: market.Raw, Field: indicator.K, Period: 9},
 		{Kind: indicator.KDJKind, Timeframe: market.Day, PriceView: market.ForwardAdjusted, Field: indicator.J, Period: 9},
-		{Kind: indicator.RETZKind, Timeframe: market.Day, PriceView: market.Raw, Field: indicator.Histogram, Period: 10, Smooth: 3, Regime: 20},
-		{Kind: indicator.RETZKind, Timeframe: market.Day, PriceView: market.ForwardAdjusted, Field: indicator.Smooth, Period: 10, Smooth: 3, Regime: 20},
-		{Kind: indicator.RETZKind, Timeframe: market.Day, PriceView: market.Raw, Field: indicator.Regime, Period: 10, Smooth: 3, Regime: 20},
 	}
 }
 
