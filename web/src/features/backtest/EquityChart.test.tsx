@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchRunPage, type EquityPoint } from '../../api/client'
 import { EquityChart } from './EquityChart'
@@ -8,8 +8,9 @@ const mocks = vi.hoisted(() => {
   const fitContent = vi.fn()
   const remove = vi.fn()
   const addSeries = vi.fn(() => ({ setData }))
-  const createChart = vi.fn(() => ({ addSeries, timeScale: () => ({ fitContent }), remove }))
-  return { addSeries, createChart, fitContent, remove, setData }
+  const subscribeCrosshairMove = vi.fn()
+  const createChart = vi.fn(() => ({ addSeries, timeScale: () => ({ fitContent }), remove, subscribeCrosshairMove, unsubscribeCrosshairMove: vi.fn() }))
+  return { subscribeCrosshairMove, addSeries, createChart, fitContent, remove, setData }
 })
 
 vi.mock('lightweight-charts', () => ({
@@ -68,4 +69,21 @@ describe('EquityChart', () => {
     expect(mocks.setData).not.toHaveBeenCalled()
     expect(mocks.remove).toHaveBeenCalled()
   })
+})
+
+it('达到读取上限明确显示不完整，不能冒充全部结果', async () => {
+  let page = 0
+  vi.mocked(fetchRunPage).mockImplementation(async () => equityOf([[`2026-01-${String(++page).padStart(2, '0')}T00:00:00Z`, 10000]], page))
+  render(<EquityChart runId="r" />)
+  expect(await screen.findByText(/曲线未完整/)).toBeVisible()
+  expect(fetchRunPage).toHaveBeenCalledTimes(10)
+})
+it('加载失败可重试，十字线展示现金与持仓市值', async () => {
+  vi.mocked(fetchRunPage).mockRejectedValueOnce(Error('temporary')).mockResolvedValue({ items: [{ time: '2026-01-01T00:00:00Z', equity: 1200000, cash: 500000, position_value: 700000 }] })
+  render(<EquityChart runId="r" />)
+  fireEvent.click(await screen.findByRole('button', { name: '重试权益曲线' }))
+  await waitFor(() => expect(mocks.setData).toHaveBeenCalledWith([{ time: '2026-01-01', value: 120 }]))
+  act(() => mocks.subscribeCrosshairMove.mock.lastCall![0]({ time: '2026-01-01' }))
+  expect(screen.getByText(/现金 50.00 元/)).toBeVisible()
+  expect(screen.getByText(/持仓市值 70.00 元/)).toBeVisible()
 })

@@ -191,3 +191,12 @@ describe('RangePicker', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 })
+
+it('bounds a tall calendar by the remaining viewport below its positioned top', () => {
+  render(<Harness onChange={vi.fn()} />)
+  const wrapper = screen.getByRole('button', { name: '时间范围' }).parentElement!
+  vi.spyOn(wrapper, 'getBoundingClientRect').mockReturnValue({ top: 200, bottom: 236, left: 20, right: 320, width: 300, height: 36, x: 20, y: 200, toJSON: () => ({}) })
+  openPicker()
+  const dialog = screen.getByRole('dialog')
+  expect(dialog.style.maxHeight).toBe('calc(100dvh - 254px)')
+})

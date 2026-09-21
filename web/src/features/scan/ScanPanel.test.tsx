@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  ApiError,
   cancelRun,
   createScanRun,
   fetchSnapshotPage,
@@ -101,11 +103,14 @@ function pickPresetRange(label: string) {
 async function renderWithCatalog(props?: Partial<Parameters<typeof ScanPanel>[0]>) {
   render(<ScanPanel runId={null} onRunIdChange={noop} onSelectInstrument={noop} {...props} />)
   // 目录加载后自动选中第一个策略，等待参数输入出现
+  await screen.findByRole('combobox', { name: '策略' })
   await screen.findByLabelText('参数 lookback_days')
+  fireEvent.click(screen.getByText('策略参数'))
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
   vi.mocked(listStrategies).mockResolvedValue([definition])
   vi.spyOn(crypto, 'randomUUID').mockReturnValue('uuid-123' as ReturnType<typeof crypto.randomUUID>)
 })
@@ -391,4 +396,161 @@ describe('ScanPanel 结果', () => {
     expect(screen.getByText('广发证券')).toBeVisible()
     expect(screen.getByText('是')).toBeVisible()
   })
+})
+
+
+describe('扫描工作台恢复与结果保留', () => {
+  it('读取已有任务时不展示未扫描空态', async () => {
+    vi.mocked(getRun).mockReturnValue(new Promise(() => {}))
+    await renderWithCatalog({ runId: 'r1' })
+    expect(screen.queryByText('尚未发起扫描')).toBeNull()
+    expect(screen.getByText('正在加载上次扫描…')).toBeVisible()
+  })
+  it('明确的任务不存在立即清理引用并保留表单', async () => {
+    vi.mocked(getRun).mockRejectedValue(new ApiError(404, 'NOT_FOUND'))
+    const change = vi.fn()
+    await renderWithCatalog({ runId: 'gone', onRunIdChange: change })
+    await screen.findByText('上次扫描记录已不可用，可重新发起扫描')
+    expect(change).toHaveBeenCalledWith(null)
+    expect(getRun).toHaveBeenCalledTimes(1)
+  })
+  it('保存直接输入的日期与参数，重挂载后恢复', async () => {
+    const first = render(<ScanPanel runId={null} onRunIdChange={noop} onSelectInstrument={noop} />)
+    await screen.findByRole('combobox', { name: '策略' })
+    fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-01-01' } })
+    expect(screen.getByLabelText('开始日期')).toHaveValue('2026-01-01')
+    fireEvent.change(screen.getByLabelText('截止日期'), { target: { value: '2026-06-01' } })
+    fireEvent.click(screen.getByText('策略参数'))
+    fireEvent.change(screen.getByLabelText('参数 lookback_days'), { target: { value: '35' } })
+    expect(JSON.parse(localStorage.getItem('wb.scan_preferences')!).draft.from).toBe('2026-01-01')
+    first.unmount()
+    await renderWithCatalog()
+    expect(screen.getByLabelText('开始日期')).toHaveValue('2026-01-01')
+    expect(screen.getByLabelText('参数 lookback_days')).toHaveValue(35)
+  })
+  it('分页未完成时只声明已加载数量', async () => {
+    vi.mocked(getRun).mockResolvedValue(succeededStatus)
+    vi.mocked(fetchSnapshotPage).mockResolvedValue(pageOf(['SSE:600000'], 100))
+    await renderWithCatalog({ runId: 'r1' })
+    expect(await screen.findByText('已加载 1 条')).toBeVisible()
+    expect(screen.queryByText('入选 1 只')).toBeNull()
+  })
+  it('新快照失败保留旧结果，重试得到零行后替换', async () => {
+    vi.mocked(getRun).mockResolvedValue(succeededStatus)
+    vi.mocked(fetchSnapshotPage).mockResolvedValueOnce(pageOf(['SSE:600000'])).mockRejectedValueOnce(new Error('new snapshot failed')).mockResolvedValueOnce(pageOf([]))
+    const props = { onRunIdChange: noop, onSelectInstrument: noop }
+    const { rerender } = render(<ScanPanel {...props} runId="r1" />)
+    await screen.findByRole('button', { name: 'SSE:600000' })
+    vi.mocked(getRun).mockResolvedValue({ ...succeededStatus, run_id: 'r2', snapshot_id: 'snap-2' })
+    rerender(<ScanPanel {...props} runId="r2" />)
+    await screen.findByText(/new snapshot failed/)
+    expect(screen.getByRole('button', { name: 'SSE:600000' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '重试读取结果' }))
+    await screen.findByText('无入选证券')
+    expect(screen.queryByRole('button', { name: 'SSE:600000' })).toBeNull()
+  })
+})
+
+
+it('submission freezes source conditions while the draft remains editable', async () => {
+  let finish!: (value: { run_id: string; status: string }) => void
+  vi.mocked(createScanRun).mockReturnValue(new Promise((resolve) => { finish = resolve }))
+  vi.mocked(getRun).mockResolvedValue(succeededStatus)
+  vi.mocked(fetchSnapshotPage).mockResolvedValue(pageOf(['SSE:600000']))
+  function Harness() {
+    const [id, setId] = useState<string | null>(null)
+    return <ScanPanel runId={id} onRunIdChange={setId} onSelectInstrument={noop} />
+  }
+  render(<Harness />)
+  await screen.findByLabelText('参数 lookback_days')
+  fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-01-01' } })
+  fireEvent.change(screen.getByLabelText('截止日期'), { target: { value: '2026-06-01' } })
+  fireEvent.click(screen.getByRole('button', { name: '发起扫描' }))
+  fireEvent.change(screen.getByLabelText('开始日期'), { target: { value: '2026-02-01' } })
+  await act(async () => finish({ run_id: 'r1', status: 'PENDING' }))
+  await screen.findByRole('button', { name: 'SSE:600000' })
+  expect(screen.getByText(/2026-01-01 → 2026-06-01/)).toBeVisible()
+  expect(screen.getByText(/回看天数 20/)).toBeVisible()
+  expect(screen.getByLabelText('开始日期')).toHaveValue('2026-02-01')
+  expect(screen.getByText('条件已修改，以下仍为上次扫描结果')).toBeVisible()
+  expect(JSON.parse(localStorage.getItem('wb.scan_preferences')!).draft.from).toBe('2026-02-01')
+  expect(createScanRun).toHaveBeenCalledTimes(1)
+})
+
+it('stale pagination failure cannot replace the loading state of a new snapshot', async () => {
+  let rejectPage!: (cause: Error) => void
+  let finishSnapshot!: (page: ReturnType<typeof pageOf>) => void
+  vi.mocked(getRun).mockResolvedValue(succeededStatus)
+  vi.mocked(fetchSnapshotPage).mockResolvedValueOnce(pageOf(['SSE:600000'], 100))
+    .mockReturnValueOnce(new Promise((_, reject) => { rejectPage = reject }))
+    .mockReturnValueOnce(new Promise((resolve) => { finishSnapshot = resolve }))
+  const props = { onRunIdChange: noop, onSelectInstrument: noop }
+  const { rerender } = render(<ScanPanel {...props} runId="r1" />)
+  await screen.findByRole('button', { name: 'SSE:600000' })
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }))
+  vi.mocked(getRun).mockResolvedValue({ ...succeededStatus, run_id: 'r2', snapshot_id: 'snap-2' })
+  rerender(<ScanPanel {...props} runId="r2" />)
+  await screen.findByText(/等待新扫描结果加载成功/)
+  await act(async () => rejectPage(new Error('stale page error')))
+  expect(screen.queryByText(/stale page error/)).toBeNull()
+  expect(screen.getByRole('button', { name: '加载更多' })).toBeDisabled()
+  await act(async () => finishSnapshot(pageOf(['SSE:600001'])))
+  expect(screen.queryByRole('button', { name: 'SSE:600000' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'SSE:600001' })).toBeVisible()
+})
+
+it('old first-page success cannot overwrite a newer snapshot', async () => {
+  let finishOld!: (page: ReturnType<typeof pageOf>) => void
+  vi.mocked(getRun).mockResolvedValue(succeededStatus)
+  vi.mocked(fetchSnapshotPage).mockReturnValueOnce(new Promise((resolve) => { finishOld = resolve })).mockResolvedValueOnce(pageOf(['SSE:600001']))
+  const props = { onRunIdChange: noop, onSelectInstrument: noop }
+  const { rerender } = render(<ScanPanel {...props} runId="r1" />)
+  await screen.findByRole('status', { name: '结果加载中' })
+  vi.mocked(getRun).mockResolvedValue({ ...succeededStatus, run_id: 'r2', snapshot_id: 'snap-2' })
+  rerender(<ScanPanel {...props} runId="r2" />)
+  await screen.findByRole('button', { name: 'SSE:600001' })
+  await act(async () => finishOld(pageOf(['SSE:600000'])))
+  expect(screen.queryByRole('button', { name: 'SSE:600000' })).toBeNull()
+})
+
+it('hiding the scan closes its calendar portal without clearing the draft', async () => {
+  const props = { runId: null, onRunIdChange: noop, onSelectInstrument: noop }
+  const { rerender } = render(<ScanPanel {...props} />)
+  await screen.findByLabelText('参数 lookback_days')
+  pickPresetRange('近 1 月')
+  fireEvent.click(screen.getByRole('button', { name: '扫描时间范围' }))
+  expect(screen.getByRole('dialog')).toBeVisible()
+  rerender(<ScanPanel {...props} active={false} />)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  rerender(<ScanPanel {...props} active />)
+  expect(screen.getByLabelText('截止日期')).toHaveValue(fmt(today()))
+})
+
+it('can retry a failed strategy catalog without reloading the workbench', async () => {
+  vi.mocked(listStrategies).mockRejectedValueOnce(new Error('catalog offline')).mockResolvedValueOnce([definition])
+  render(<ScanPanel runId={null} onRunIdChange={noop} onSelectInstrument={noop} />)
+  await screen.findByText('catalog offline')
+  expect(screen.getByRole('button', { name: '发起扫描' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: '重试加载策略' }))
+  await screen.findByLabelText('参数 lookback_days')
+  expect(screen.getByRole('button', { name: '发起扫描' })).not.toBeDisabled()
+})
+
+it('shows reconnect errors even when preserving a completed result', async () => {
+  vi.useFakeTimers()
+  vi.mocked(getRun).mockResolvedValue(succeededStatus)
+  vi.mocked(fetchSnapshotPage).mockResolvedValue(pageOf(['SSE:600000']))
+  const props = { runId: 'r1', onRunIdChange: noop, onSelectInstrument: noop }
+  const { rerender } = render(<ScanPanel {...props} />)
+  await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+  rerender(<ScanPanel {...props} active={false} />)
+  vi.mocked(getRun).mockRejectedValue(new Error('connection lost'))
+  rerender(<ScanPanel {...props} active />)
+  await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+  expect(screen.getByText(/connection lost/)).toBeVisible()
+  expect(screen.getByRole('button', { name: 'SSE:600000' })).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: '重新连接' }))
+  vi.mocked(getRun).mockResolvedValue(succeededStatus)
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+  expect(screen.queryByText(/connection lost/)).toBeNull()
 })

@@ -231,3 +231,8 @@ describe('金额缩放换算', () => {
     expect(toScaled(1e9)).toBe(1e13)
   })
 })
+
+it('preserves HTTP status and business identifier for task recovery', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 404, message: 'NOT_FOUND', data: null }), { status: 404 })))
+  await expect(getRun('scan', 'missing')).rejects.toMatchObject({ status: 404, code: 'NOT_FOUND', message: 'NOT_FOUND' })
+})
