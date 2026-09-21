@@ -465,14 +465,24 @@ export function RefreshMonitor({ onReload }: { onReload: () => void }) {
         >
           <div className="update-heading">
             <h2>数据更新</h2>
-            <button
-              ref={close}
-              type="button"
-              onClick={dismiss}
-              aria-label="关闭数据更新"
-            >
-              关闭
-            </button>
+            <div className="update-heading-actions">
+              <button
+                type="button"
+                className="update-primary"
+                disabled={updateDisabled}
+                onClick={() => void submit()}
+              >
+                {busy ? '正在提交…' : '更新数据'}
+              </button>
+              <button
+                ref={close}
+                type="button"
+                onClick={dismiss}
+                aria-label="关闭数据更新"
+              >
+                关闭
+              </button>
+            </div>
           </div>
           <p className="update-hint">
             任务在 NAS 执行，关闭页面或电脑不会停止更新。
@@ -484,14 +494,6 @@ export function RefreshMonitor({ onReload }: { onReload: () => void }) {
             </div>
             <div className="update-toolbar-actions">
               <button type="button" onClick={() => setPulse((v) => v + 1)}>刷新进度</button>
-              <button
-                type="button"
-                className="update-primary"
-                disabled={updateDisabled}
-                onClick={() => void submit()}
-              >
-                {busy ? '正在提交…' : '立即更新'}
-              </button>
             </div>
           </div>
           {error && (
