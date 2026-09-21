@@ -5,6 +5,8 @@
   --raised: #151b26;
   --line: #1d2432;
   --hover: #171e2a;
+  --watchlist-selected-bg: #192335;
+  --watchlist-selected-border: rgba(41, 98, 255, .25);
   --text: #d6dde8;
   --muted: #8792a6;
   --faint: #5a6478;
@@ -105,9 +107,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .watchlist-retry:hover { background: var(--hover); }
 .watchlist-empty { margin: 28px 18px; color: var(--faint); font-size: 11px; line-height: 1.8; text-align: center; }
 .watchlist-list { flex: 1; min-height: 0; margin: 0; padding: 4px 8px 12px; overflow-y: auto; list-style: none; }
-.watchlist-row { position: relative; display: flex; align-items: stretch; border-radius: 6px; transition: background-color .1s; }
+.watchlist-row { position: relative; display: flex; align-items: stretch; border-radius: 10px; outline: 1px solid transparent; outline-offset: -1px; transition: background-color .15s ease, outline-color .15s ease; }
 .watchlist-row:hover { background: var(--hover); }
-.watchlist-row.current { background: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
+.watchlist-row.current { background: var(--watchlist-selected-bg); outline-color: var(--watchlist-selected-border); }
+@media (prefers-reduced-motion: reduce) {
+  .watchlist-row { transition: none; }
+}
 .watchlist-row-main { display: flex; flex: 1; gap: 8px; align-items: center; justify-content: space-between; min-width: 0; min-height: 40px; padding: 4px 4px 4px 10px; background: transparent; border: 0; cursor: pointer; text-align: left; }
 .watchlist-names { display: grid; gap: 1px; min-width: 0; }
 .watchlist-names strong { overflow: hidden; color: var(--text); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
@@ -540,7 +545,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .watchlist-list { padding:0 8px; }
 .watchlist-row { margin-bottom:3px; }
 .watchlist-row-main { min-height:56px; padding:8px 8px 8px 12px; }
-.watchlist-row.current { background:#18283f; box-shadow:inset 3px 0 0 #2962ff; }
 .watchlist-names strong { font-size:13px; }
 .watchlist-names small { color:#93a0b5; font-size:11px; }
 .watchlist-quote { font-variant-numeric:tabular-nums; gap:4px; }
