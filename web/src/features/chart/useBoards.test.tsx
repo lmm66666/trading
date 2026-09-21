@@ -184,7 +184,8 @@ it('rejects empty names and invalid config locally without hitting the server', 
   await act(async () => {
     expect(await result.current.save()).toBe(false)
   })
-  expect(result.current.error).toBeTruthy()
+  // 文案只描述配置参数问题：名称校验不走 validConfig（空名单独提示，长度由服务端把关）。
+  expect(result.current.error).toBe('看板参数不符合要求，请检查标的、指标、对比或布局设置')
   expect(updateChartBoard).not.toHaveBeenCalled()
   expect(result.current.dirty).toBe(true)
 })

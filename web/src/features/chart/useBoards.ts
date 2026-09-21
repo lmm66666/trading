@@ -122,7 +122,8 @@ export function useBoards(initial: Partial<BoardConfig>, onSelectSymbol?: (symbo
     [],
   )
 
-  const invalidConfigError = '看板名称、参数或数量不符合要求'
+  /** validConfig 只校验配置参数；名称为空单独提示，超长由服务端返回错误。 */
+  const invalidConfigError = '看板参数不符合要求，请检查标的、指标、对比或布局设置'
 
   const save = useCallback(
     async (layout?: Partial<BoardConfig>): Promise<boolean> => {
