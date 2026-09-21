@@ -128,7 +128,9 @@ it('edits remain drafts until save; boards stay independent across switch, copy,
   await act(async () => {
     expect(await result.current.select(firstId, true)).toBe(true)
   })
-  expect(updateChartBoard).toHaveBeenCalledWith(copyId, { config: expect.objectContaining({ timeframe: 'WEEK' }) })
+  expect(updateChartBoard).toHaveBeenCalledWith(copyId, {
+    config: expect.objectContaining({ timeframe: 'WEEK' }),
+  })
   expect(result.current.config?.timeframe).toBe('DAY')
   expect(select).toHaveBeenCalledWith('SSE:600938')
 
@@ -262,4 +264,23 @@ it('refuses to remove the last board without calling the server', async () => {
     expect(await result.current.remove()).toBe(false)
   })
   expect(deleteChartBoard).not.toHaveBeenCalled()
+})
+
+it('RETZ remains a draft until saved and restores its full parameters after remount', async () => {
+  const initial = defaultBoardConfig()
+  seedBoard('涨幅偏差', initial)
+  const hook = renderHook(() => useBoards({}))
+  await waitFor(() => expect(hook.result.current.status).toBe('ready'))
+  const retz = { kind: 'RETZ' as const, period: 126, smooth: 5, regime: 252 }
+  act(() => hook.result.current.setConfig((c) => ({ ...c, indicators: [retz] })))
+  expect(server.boards[0].config.indicators).toEqual(initial.indicators)
+  expect(hook.result.current.dirty).toBe(true)
+  await act(async () => {
+    expect(await hook.result.current.save()).toBe(true)
+  })
+  hook.unmount()
+  const restored = renderHook(() => useBoards({}))
+  await waitFor(() => expect(restored.result.current.status).toBe('ready'))
+  expect(restored.result.current.config?.indicators).toEqual([retz])
+  expect(restored.result.current.dirty).toBe(false)
 })

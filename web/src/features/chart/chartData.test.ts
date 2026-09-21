@@ -75,9 +75,24 @@ describe('chart data state', () => {
   })
 
   it('merges paginated indicator points while preserving current values', () => {
-    const current = [{ key: 'sma', kind: 'SMA' as const, component: 'value', points: [{ time: '2026-01-02', value: 2 }] }]
-    const older = [{ key: 'sma', kind: 'SMA' as const, component: 'value', points: [{ time: '2026-01-01', value: 1 }, { time: '2026-01-02', value: 20 }] }]
-    expect(mergeSeries(current, older)[0].points).toEqual([{ time: '2026-01-01', value: 1 }, { time: '2026-01-02', value: 2 }])
+    const current = [
+      { key: 'sma', kind: 'SMA' as const, component: 'value', points: [{ time: '2026-01-02', value: 2 }] },
+    ]
+    const older = [
+      {
+        key: 'sma',
+        kind: 'SMA' as const,
+        component: 'value',
+        points: [
+          { time: '2026-01-01', value: 1 },
+          { time: '2026-01-02', value: 20 },
+        ],
+      },
+    ]
+    expect(mergeSeries(current, older)[0].points).toEqual([
+      { time: '2026-01-01', value: 1 },
+      { time: '2026-01-02', value: 2 },
+    ])
     expect(mergeSeries([], older)).toEqual(older)
   })
 
@@ -88,4 +103,30 @@ describe('chart data state', () => {
     expect(indicatorIdentity({ kind: 'SMA', period: 20 })).toBe('SMA:20')
     expect(indicatorIdentity({ kind: 'MACD', fast: 12, slow: 26, signal: 9 })).toBe('MACD:12:26:9')
   })
+})
+
+it('keeps RETZ identities and all components stable across pagination', () => {
+  const indicator = { kind: 'RETZ' as const, period: 126, smooth: 5, regime: 252 }
+  expect(indicatorLabel(indicator)).toBe('涨幅Z 126,5,252')
+  expect(indicatorIdentity(indicator)).toBe('RETZ:126:5:252')
+  expect(indicatorIdentity({ ...indicator, smooth: 10 })).not.toBe(indicatorIdentity(indicator))
+  expect(indicatorIdentity({ ...indicator, regime: 300 })).not.toBe(indicatorIdentity(indicator))
+  const components = ['histogram', 'smooth', 'regime']
+  const page = (time: string, value: number) =>
+    components.map((component) => ({
+      key: `retz/day/raw/${component}/p=126/sm=5/rg=252`,
+      kind: 'RETZ' as const,
+      component,
+      points: [{ time, value }],
+    }))
+  const merged = mergeSeries(
+    page('2026-09-21', 2),
+    mergeSeries(page('2026-09-20', 1), page('2026-09-21', 99)),
+  )
+  expect(merged.map((item) => item.component)).toEqual(components)
+  for (const item of merged)
+    expect(item.points).toEqual([
+      { time: '2026-09-20', value: 1 },
+      { time: '2026-09-21', value: 2 },
+    ])
 })

@@ -104,3 +104,9 @@ go test ./internal/indicator -cover
 - [系统设计](../../architecture/system-design.md)
 - [行情领域设计](market.md)
 - [策略设计](strategy.md)
+
+## 每根涨幅偏差 RETZ
+
+`RETZKind` 对当前价格视图的 Close 计算每根对数涨幅 `ln(c_t/c_{t-1})`，DAY 表示日涨幅，WEEK 表示周涨幅。首点、非正或无效收盘及其后一根涨幅无效。band 窗口的总体标准化结果输出为 `Histogram`，其 EMA 为 `Smooth`，regime 窗口的总体标准化结果为 `Regime`。窗口包含无效点、预热不足或总体标准差不大于 `1e-12` 时不输出；EMA 遇到无效点中断，下次有效值重新播种。
+
+Ref 使用 `Period`（band）、`Smooth`、`Regime`，要求 band≥2、smooth≥1、regime>band，禁止 fast/slow/signal。稳定键为 `retz/<timeframe>/<view>/<field>/p=<band>/sm=<smooth>/rg=<regime>`；其他指标拒绝非零 smooth/regime。同次 Build 以价格视图和窗口为键复用涨幅、滚动 Z 和平滑结果，缓存仅属于该次调用，不能跨证券或版本复用。总体标准差复用 `stddevSeries` 的中心化两遍计算；追加未来数据不改变前缀。图表参数上限与预算由应用层负责。

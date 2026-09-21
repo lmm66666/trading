@@ -48,12 +48,22 @@ func TestRefValidationAndKeyAreStable(t *testing.T) {
 	require.NoError(t, valid.Validate())
 	assert.Equal(t, "macd/week/qfq/dea/f=12/s=26/sig=9", valid.Key())
 
+	retz := Ref{Kind: RETZKind, Timeframe: market.Day, PriceView: market.Raw, Field: Histogram, Period: 126, Smooth: 5, Regime: 252}
+	require.NoError(t, retz.Validate())
+	assert.Equal(t, "retz/day/raw/histogram/p=126/sm=5/rg=252", retz.Key())
+	assert.NotEqual(t, retz.Key(), Ref{Kind: RETZKind, Timeframe: market.Day, PriceView: market.Raw, Field: Regime, Period: 126, Smooth: 5, Regime: 252}.Key())
+
 	invalid := []Ref{
 		{Kind: SMAKind, Timeframe: market.Day, PriceView: market.Raw, Field: Close},
 		{Kind: EMAKind, Timeframe: market.UnknownTimeframe, PriceView: market.Raw, Field: Close, Period: 3},
 		{Kind: VolumeMA, Timeframe: market.Day, PriceView: market.ForwardAdjusted, Field: Volume, Period: 3},
 		{Kind: MACDKind, Timeframe: market.Day, PriceView: market.Raw, Field: DIF, Fast: 26, Slow: 12, Signal: 9},
 		{Kind: KDJKind, Timeframe: market.Day, PriceView: market.Raw, Field: J},
+		{Kind: RETZKind, Timeframe: market.Day, PriceView: market.Raw, Field: Histogram, Period: 1, Smooth: 5, Regime: 252},
+		{Kind: RETZKind, Timeframe: market.Day, PriceView: market.Raw, Field: Histogram, Period: 126, Smooth: 0, Regime: 252},
+		{Kind: RETZKind, Timeframe: market.Day, PriceView: market.Raw, Field: Histogram, Period: 126, Smooth: 5, Regime: 126},
+		{Kind: RETZKind, Timeframe: market.Day, PriceView: market.Raw, Field: Close, Period: 126, Smooth: 5, Regime: 252},
+		{Kind: RETZKind, Timeframe: market.Day, PriceView: market.Raw, Field: Histogram, Period: 126, Smooth: 5, Regime: 252, Fast: 12},
 	}
 	for _, ref := range invalid {
 		assert.ErrorIs(t, ref.Validate(), ErrInvalidRef)

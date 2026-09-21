@@ -5,6 +5,8 @@ import type {
   ChartResult,
   ChartSeries,
   IndicatorRequest,
+  Timeframe,
+  PriceView,
   InstrumentSummary,
 } from './client'
 
@@ -290,6 +292,8 @@ function indicatorSeries(
   indicator: IndicatorRequest,
   master: { bars: ChartBar[]; closes: number[]; highs: number[]; lows: number[] },
   window: ValueWindow,
+  timeframe: Timeframe,
+  view: PriceView,
 ): ChartSeries[] {
   const build = (key: string, component: string, values: Array<number | null>): ChartSeries => ({
     key,
@@ -328,6 +332,39 @@ function indicatorSeries(
       const key = `KDJ/p=${indicator.period}`
       const { k, d, j } = kdjSeries(master.closes, master.highs, master.lows, indicator.period)
       return [build(`${key}:k`, 'k', k), build(`${key}:d`, 'd', d), build(`${key}:j`, 'j', j)]
+    }
+    case 'RETZ': {
+      const key = (component: string) =>
+        `retz/${timeframe.toLowerCase()}/${view.toLowerCase()}/${component}/p=${indicator.period}/sm=${indicator.smooth}/rg=${indicator.regime}`
+      const returns: Array<number | null> = master.closes.map((close, i) =>
+        i === 0 || close <= 0 || master.closes[i - 1] <= 0 ? null : Math.log(close / master.closes[i - 1]),
+      )
+      const zOf = (window: number): Array<number | null> =>
+        returns.map((_, i) => {
+          if (i < window) return null
+          const slice = returns.slice(i - window + 1, i + 1)
+          if (slice.length < window || slice.some((value) => value === null)) return null
+          const values = slice as number[]
+          const mean = values.reduce((a, b) => a + b, 0) / window
+          const std = Math.sqrt(values.reduce((a, b) => a + (b - mean) ** 2, 0) / window)
+          return std <= 1e-12 ? null : (values[window - 1] - mean) / std
+        })
+      const histogram = zOf(indicator.period)
+      let previous: number | null = null
+      const alpha = 2 / (indicator.smooth + 1)
+      const smooth = histogram.map((value) => {
+        if (value === null) {
+          previous = null
+          return null
+        }
+        previous = previous === null ? value : alpha * value + (1 - alpha) * previous
+        return previous
+      })
+      return [
+        build(key('histogram'), 'histogram', histogram),
+        build(key('smooth'), 'smooth', smooth),
+        build(key('regime'), 'regime', zOf(indicator.regime)),
+      ]
     }
   }
 }
@@ -368,7 +405,7 @@ export function mockChartQuery(input: ChartQueryInput): ChartResult {
     data_version: 1,
     bars: bars.slice(start, end),
     series: input.indicators.flatMap((indicator) =>
-      indicatorSeries(indicator, { bars, closes, highs, lows }, window),
+      indicatorSeries(indicator, { bars, closes, highs, lows }, window, input.timeframe, input.price_view),
     ),
     has_more: start > 0,
     next_before: start > 0 ? bars[start].close_time : null,

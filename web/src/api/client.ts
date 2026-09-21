@@ -30,6 +30,7 @@ export type IndicatorRequest =
   | { kind: 'MACD'; fast: number; slow: number; signal: number }
   | { kind: 'KDJ'; period: number }
   | { kind: 'STD'; period: number }
+  | { kind: 'RETZ'; period: number; smooth: number; regime: number }
 
 export interface ChartPoint {
   time: string

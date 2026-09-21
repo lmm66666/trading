@@ -29,6 +29,7 @@ const (
 	IndicatorEMA  IndicatorKind = "EMA"
 	IndicatorMACD IndicatorKind = "MACD"
 	IndicatorKDJ  IndicatorKind = "KDJ"
+	IndicatorRETZ IndicatorKind = "RETZ"
 )
 
 type IndicatorRequest struct {
@@ -37,6 +38,8 @@ type IndicatorRequest struct {
 	Fast   int           `json:"fast,omitempty"`
 	Slow   int           `json:"slow,omitempty"`
 	Signal int           `json:"signal,omitempty"`
+	Smooth int           `json:"smooth,omitempty"`
+	Regime int           `json:"regime,omitempty"`
 }
 
 type ChartQuery struct {
@@ -195,7 +198,7 @@ func validateChartQuery(query *ChartQuery) error {
 		if err := validateIndicatorRequest(*request); err != nil {
 			return err
 		}
-		key := fmt.Sprintf("%s/%d/%d/%d/%d", request.Kind, request.Period, request.Fast, request.Slow, request.Signal)
+		key := fmt.Sprintf("%s/%d/%d/%d/%d/%d/%d", request.Kind, request.Period, request.Fast, request.Slow, request.Signal, request.Smooth, request.Regime)
 		if seen[key] {
 			return invalidRequest("duplicate chart indicator")
 		}
@@ -214,6 +217,8 @@ func chartIndicatorCost(request IndicatorRequest) int {
 		return request.Period
 	case IndicatorKDJ:
 		return request.Period * 3
+	case IndicatorRETZ:
+		return request.Period + request.Regime
 	case IndicatorMACD:
 		return 3
 	default:
@@ -222,6 +227,9 @@ func chartIndicatorCost(request IndicatorRequest) int {
 }
 
 func validateIndicatorRequest(request IndicatorRequest) error {
+	if request.Kind != IndicatorRETZ && (request.Smooth != 0 || request.Regime != 0) {
+		return invalidRequest("unexpected RETZ parameters")
+	}
 	switch request.Kind {
 	case IndicatorSMA, IndicatorEMA, IndicatorSTD:
 		if request.Period < 1 || request.Period > MaxIndicatorPeriod || request.Fast != 0 || request.Slow != 0 || request.Signal != 0 {
@@ -234,6 +242,10 @@ func validateIndicatorRequest(request IndicatorRequest) error {
 	case IndicatorKDJ:
 		if request.Period < 1 || request.Period > MaxIndicatorPeriod || request.Fast != 0 || request.Slow != 0 || request.Signal != 0 {
 			return invalidRequest("invalid KDJ parameters")
+		}
+	case IndicatorRETZ:
+		if request.Period < 2 || request.Period > MaxIndicatorPeriod || request.Smooth < 1 || request.Smooth > MaxIndicatorPeriod || request.Regime < 2 || request.Regime > MaxIndicatorPeriod || request.Regime <= request.Period || request.Fast != 0 || request.Slow != 0 || request.Signal != 0 {
+			return invalidRequest("invalid RETZ parameters")
 		}
 	default:
 		return invalidRequest("unsupported chart indicator")
@@ -290,6 +302,13 @@ func chartIndicatorRefs(query ChartQuery, requests []IndicatorRequest) ([]indica
 				name  string
 			}{{indicator.K, "k"}, {indicator.D, "d"}, {indicator.J, "j"}} {
 				add(indicator.Ref{Kind: indicator.KDJKind, Timeframe: query.Timeframe, PriceView: query.View, Field: component.field, Period: request.Period}, request.Kind, component.name)
+			}
+		case IndicatorRETZ:
+			for _, component := range []struct {
+				field indicator.Field
+				name  string
+			}{{indicator.Histogram, "histogram"}, {indicator.Smooth, "smooth"}, {indicator.Regime, "regime"}} {
+				add(indicator.Ref{Kind: indicator.RETZKind, Timeframe: query.Timeframe, PriceView: query.View, Field: component.field, Period: request.Period, Smooth: request.Smooth, Regime: request.Regime}, request.Kind, component.name)
 			}
 		}
 	}

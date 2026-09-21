@@ -3,7 +3,9 @@ import { mockChartQuery, mockSearchInstruments } from './mock'
 
 describe('mockSearchInstruments', () => {
   it('按代码与名称过滤', () => {
-    expect(mockSearchInstruments('600519')).toEqual([expect.objectContaining({ code: '600519', name: '贵州茅台' })])
+    expect(mockSearchInstruments('600519')).toEqual([
+      expect.objectContaining({ code: '600519', name: '贵州茅台' }),
+    ])
     expect(mockSearchInstruments('茅台')[0]?.name).toBe('贵州茅台')
     expect(mockSearchInstruments('SZSE:002415')[0]?.instrument).toBe('SZSE:002415')
     expect(mockSearchInstruments('不存在')).toEqual([])
@@ -24,7 +26,9 @@ describe('mockChartQuery', () => {
     const first = mockChartQuery(base)
     const again = mockChartQuery(base)
     expect(first.bars).toHaveLength(400)
-    expect(first.bars.map((bar) => bar.close_time)).toEqual([...first.bars].map((bar) => bar.close_time).sort())
+    expect(first.bars.map((bar) => bar.close_time)).toEqual(
+      [...first.bars].map((bar) => bar.close_time).sort(),
+    )
     expect(first.has_more).toBe(true)
     expect(first.next_before).toBe(first.bars[0].close_time)
     expect(first.series[0]?.points).toHaveLength(400)
@@ -81,4 +85,29 @@ describe('mockChartQuery', () => {
       lot_size: 100,
     })
   })
+})
+
+it('RETZ mock uses backend-compatible keys, windows and population statistics', () => {
+  const result = mockChartQuery({
+    instrument: 'SSE:600519',
+    timeframe: 'DAY',
+    price_view: 'RAW',
+    limit: 1000,
+    indicators: [{ kind: 'RETZ', period: 5, smooth: 2, regime: 10 }],
+  })
+  expect(result.series.map((item) => item.key)).toEqual(
+    ['histogram', 'smooth', 'regime'].map((field) => `retz/day/raw/${field}/p=5/sm=2/rg=10`),
+  )
+  for (const [index, window] of [
+    [0, 5],
+    [2, 10],
+  ]) {
+    expect(result.series[index].points[0].time).toBe(result.bars[window].close_time)
+    const returns = result.bars
+      .slice(1, window + 1)
+      .map((bar, i) => Math.log(bar.close / result.bars[i].close))
+    const mean = returns.reduce((a, b) => a + b, 0) / window
+    const sd = Math.sqrt(returns.reduce((a, b) => a + (b - mean) ** 2, 0) / window)
+    expect(result.series[index].points[0].value).toBeCloseTo((returns.at(-1)! - mean) / sd, 6)
+  }
 })

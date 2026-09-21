@@ -274,3 +274,28 @@ func TestChartBoardListAndActivatePropagateStore(t *testing.T) {
 	_, err = service.Activate(context.Background(), 9)
 	require.ErrorIs(t, err, port.ErrChartBoardNotFound)
 }
+
+func TestChartBoardRETZIdentityAndRoundTrip(t *testing.T) {
+	raw := json.RawMessage(`{"defaultSymbol":null,"timeframe":"DAY","priceView":"RAW","indicators":[{"kind":"RETZ","period":126,"smooth":5,"regime":252},{"kind":"RETZ","period":126,"smooth":10,"regime":252}],"comparison":null,"paneWeights":{},"visibleBars":120}`)
+	normalized, err := normalizeChartBoardConfig(raw)
+	require.NoError(t, err)
+	var config ChartBoardConfig
+	require.NoError(t, json.Unmarshal([]byte(normalized), &config))
+	require.Equal(t, 10, config.Indicators[1].Smooth)
+	config.Indicators[1] = config.Indicators[0]
+	require.ErrorIs(t, validateChartBoardConfig(&config), ErrInvalidRequest)
+}
+
+func TestLegacyIndicatorsRejectRETZParameters(t *testing.T) {
+	for _, request := range []IndicatorRequest{{Kind: IndicatorSMA, Period: 5}, {Kind: IndicatorEMA, Period: 5}, {Kind: IndicatorSTD, Period: 5}, {Kind: IndicatorKDJ, Period: 9}, {Kind: IndicatorMACD, Fast: 12, Slow: 26, Signal: 9}} {
+		for _, field := range []string{"smooth", "regime"} {
+			next := request
+			if field == "smooth" {
+				next.Smooth = 5
+			} else {
+				next.Regime = 252
+			}
+			require.ErrorIs(t, validateIndicatorRequest(next), ErrInvalidRequest, "%s %s", request.Kind, field)
+		}
+	}
+}

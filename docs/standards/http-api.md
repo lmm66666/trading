@@ -187,6 +187,10 @@ curl -X DELETE http://localhost:8080/api/v1/chart-boards/2
 
 指标最多16个：SMA/EMA/STD 使用1–500的 period；MACD 使用正数 fast/slow/signal 且 slow>fast；KDJ 使用1–500的 period。服务端还会按指标类型和周期执行总计算成本门禁，拒绝可能造成 CPU 放大的极端组合。STD 对当前价格视图收盘价计算滚动总体标准差（分母为 period，常量窗口为0），成本按 period 计入2000预算，返回单条 value 序列，预热不足不输出；在完整历史计算后裁页。响应的 series 按请求顺序返回，MACD 展开为 dif/dea/histogram，KDJ 展开为 k/d/j；预热期无效点不输出，客户端取消后会在指标计算边界停止。
 
+RETZ 请求示例：`{"kind":"RETZ","period":126,"smooth":5,"regime":252}`。period（band）与 regime 为2–500整数，smooth 为1–500整数，regime>period；fast/slow/signal 必须为0，其他指标禁止非零 smooth/regime。成本为 `period + regime`，与其他指标共同受2000预算限制。重复身份包括全部参数，完全相同配置拒绝。看板 config.indicators 使用相同参数与身份校验。
+
+RETZ 以当前价格视图收盘价的逐根对数涨幅为输入，以窗口内简单均值和总体标准差计算 Z 值，返回 histogram（band窗口）、smooth（histogram 的 EMA）、regime（长期窗口）三分量，单位 σ。首点、无效/非正价格、预热不足、窗口标准差≤1e-12 对应点不输出，EMA 遇到无效点后在下个有效点重新播种。DAY/WEEK 分别解释为日/周涨幅，计算在完整历史上进行后裁页。
+
 响应 Bar 按 close_time 升序。`has_more` 表示当前游标之前、项目统一的20年查询边界内是否仍有数据；它不承诺提供20年以前的数据。`has_more=true` 时，使用 `next_before` 和相同 `data_version` 获取更早一页。服务先在完整历史上下文计算指标，再裁剪响应页，避免页边界指标跳变。
 
 #### 查询版本化行情

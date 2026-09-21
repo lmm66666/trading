@@ -122,3 +122,9 @@ ChartQueryService 接受 STD(period)，周期1–500，fast/slow/signal必须为
 ## 拆分后的生命周期
 
 每个目标库单个 updater 持续采集；workbench 只执行查询、工作台操作和扫描/回测。两者各自取消并等待所拥有的后台任务退出，最后关闭自身数据库连接。workbench 的刷新请求通过 HTTP 交给 updater，已受理的全市场任务属于 updater 根 context。工作台停机不取消 NAS 更新；计算任务沿用数据库租约恢复，NAS 不领取计算任务。MarketScheduler、FuturesScheduler 启动不立即采集，首个周期后才自动执行；手动股票刷新可立即触发且不重置定时节拍。周期、范围、限频和发布算法不变。
+
+## 图表涨幅偏差 RETZ
+
+`ChartQueryService` 接受 `RETZ(period,smooth,regime)`，在固定版本完整历史计算后裁页，按 histogram、smooth、regime 顺序返回三分量。period/regime 为2–500整数，smooth 为1–500整数，regime>period，fast/slow/signal 必须为0；其他类型的 smooth/regime 必须为0。成本 `period + regime` 计入2000总预算，指标个数≤16；不同 smooth 或 regime 配置属于不同指标，完全相同配置拒绝。
+
+看板配置继续调用统一参数校验；去重身份包含 smooth/regime，规范化 JSON 保留这两个参数。复用已有存储端口、表和读写路径，不改变 SQL、索引、事务或库表结构。计算口径见[指标设计](indicator.md#每根涨幅偏差-retz)。

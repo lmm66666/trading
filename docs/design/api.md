@@ -114,3 +114,7 @@ go test ./api -cover
 `updater_router.go` 只注册 `POST /internal/v1/market/refresh` 并校验 Bearer Token（至少 32 字节可打印非空白 ASCII，哈希后常量时间比较）。`updater_client.go` 只调用该固定路径，服务地址来自配置而非请求；限制请求/响应 1MiB、40 秒总超时、专用 Transport 仅用 HTTP/1 且去除 GetBody 重放能力、不重试 POST、不跟随重定向。成功响应以类型化 DTO 重建，错误仅允许既定状态/message，不透传上游错误正文。
 
 网络故障为 503 UPDATER_UNAVAILABLE，超时为 504 UPDATER_TIMEOUT，认证或响应异常为 502 UPDATER_BAD_RESPONSE。内部 401 不作为浏览器认证问题返回。单证券取消随请求传播，全市场受理后的生命周期属于 updater 根 context，断线不保证未执行。详细协议以 HTTP 契约为准。
+
+## RETZ 传输契约
+
+图表请求与看板 config.indicators 新增 `kind: RETZ`、`smooth`、`regime`；应用层统一校验参数与指标身份。图表返回三个分量 histogram/smooth/regime，预热或无效点不输出。沿用严格 JSON、错误映射、版本与分页规则，不新增路由。参数范围、成本与计算口径见[HTTP 契约](../standards/http-api.md#图表查询)。

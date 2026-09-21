@@ -17,7 +17,10 @@ func Build(dataset market.Dataset, factors []market.AdjustmentFactor, refs []Ref
 
 // BuildContext computes a feature set and observes cancellation between refs.
 func BuildContext(ctx context.Context, dataset market.Dataset, factors []market.AdjustmentFactor, refs []Ref) (Set, error) {
-	return buildWithComputerContext(ctx, dataset, factors, refs, compute)
+	cache := make(Set)
+	return buildWithComputerContext(ctx, dataset, factors, refs, func(dataset market.Dataset, factors []market.AdjustmentFactor, ref Ref) (Series, error) {
+		return compute(dataset, factors, ref, cache)
+	})
 }
 
 func buildWithComputer(dataset market.Dataset, factors []market.AdjustmentFactor, refs []Ref, computer func(market.Dataset, []market.AdjustmentFactor, Ref) (Series, error)) (Set, error) {
@@ -59,7 +62,7 @@ func buildWithComputerContext(ctx context.Context, dataset market.Dataset, facto
 	return result, nil
 }
 
-func compute(dataset market.Dataset, factors []market.AdjustmentFactor, ref Ref) (Series, error) {
+func compute(dataset market.Dataset, factors []market.AdjustmentFactor, ref Ref, cache Set) (Series, error) {
 	if dataset.Timeframe() != ref.Timeframe {
 		return Series{}, fmt.Errorf("indicator: dataset timeframe %s does not match reference %s", timeframeKey(dataset.Timeframe()), timeframeKey(ref.Timeframe))
 	}
@@ -113,6 +116,38 @@ func compute(dataset market.Dataset, factors []market.AdjustmentFactor, ref Ref)
 		default:
 			return j, nil
 		}
+	case RETZKind:
+		// Cache only within this Build: datasets/versions never share intermediates.
+		sourceKey := fmt.Sprintf("returns/%s/%s", timeframeKey(ref.Timeframe), priceViewKey(ref.PriceView))
+		returns, exists := cache[sourceKey]
+		if !exists {
+			input, err := priceSeries(dataset, factors, ref.PriceView, Close)
+			if err != nil {
+				return Series{}, err
+			}
+			returns = logReturnSeries(input)
+			cache[sourceKey] = returns
+		}
+		window := ref.Period
+		if ref.Field == Regime {
+			window = ref.Regime
+		}
+		zKey := fmt.Sprintf("%s/p=%d", sourceKey, window)
+		z, exists := cache[zKey]
+		if !exists {
+			z = returnZScoreSeries(returns, window)
+			cache[zKey] = z
+		}
+		if ref.Field != Smooth {
+			return z, nil
+		}
+		smoothKey := fmt.Sprintf("%s/sm=%d", zKey, ref.Smooth)
+		smoothed, exists := cache[smoothKey]
+		if !exists {
+			smoothed = emaSeries(z, ref.Smooth)
+			cache[smoothKey] = smoothed
+		}
+		return smoothed, nil
 	default:
 		return Series{}, ErrInvalidRef
 	}

@@ -69,3 +69,22 @@ func TestQueryChartRejectsInvalidAndNonStrictBodies(t *testing.T) {
 		require.Contains(t, w.Body.String(), "INVALID_REQUEST")
 	}
 }
+
+func TestQueryChartRETZTransport(t *testing.T) {
+	f := newKernelFixture(t)
+	queries := &apiChartQueries{result: application.ChartResult{Timeframe: market.Day, View: market.Raw, DataVersion: 7}}
+	for _, component := range []string{"histogram", "smooth", "regime"} {
+		queries.result.Series = append(queries.result.Series, application.ChartSeries{Kind: application.IndicatorRETZ, Component: component})
+	}
+	f.services.ChartQueries = queries
+	f.router = NewRouter(f.services)
+	body := `{"instrument":"SSE:600000","timeframe":"DAY","price_view":"RAW","indicators":[{"kind":"RETZ","period":126,"smooth":5,"regime":252}]}`
+	w := kernelRequest(t, f, "POST", "/api/v1/chart-queries", body)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Equal(t, []application.IndicatorRequest{{Kind: application.IndicatorRETZ, Period: 126, Smooth: 5, Regime: 252}}, queries.query.Indicators)
+	for _, component := range []string{"histogram", "smooth", "regime"} {
+		require.Contains(t, w.Body.String(), `"component":"`+component+`"`)
+	}
+	queries.err = application.ErrInvalidRequest
+	require.Equal(t, 400, kernelRequest(t, f, "POST", "/api/v1/chart-queries", body).Code)
+}

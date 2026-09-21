@@ -19,6 +19,7 @@ const panePresets: IndicatorRequest[] = [
   { kind: 'MACD', fast: 12, slow: 26, signal: 9 },
   { kind: 'KDJ', period: 9 },
   { kind: 'STD', period: 20 },
+  { kind: 'RETZ', period: 126, smooth: 5, regime: 252 },
 ]
 
 export function IndicatorManager({ indicators, onChange }: IndicatorManagerProps) {
@@ -27,7 +28,16 @@ export function IndicatorManager({ indicators, onChange }: IndicatorManagerProps
   const apply = (next: IndicatorRequest[]) => {
     const cost = next.reduce(
       (sum, i) =>
-        sum + (i.kind === 'KDJ' ? i.period * 3 : i.kind === 'STD' ? i.period : i.kind === 'MACD' ? 3 : 1),
+        sum +
+        (i.kind === 'KDJ'
+          ? i.period * 3
+          : i.kind === 'STD'
+            ? i.period
+            : i.kind === 'RETZ'
+              ? i.period + i.regime
+              : i.kind === 'MACD'
+                ? 3
+                : 1),
       0,
     )
     if (
@@ -130,7 +140,8 @@ export function IndicatorManager({ indicators, onChange }: IndicatorManagerProps
           </section>
           {error && <p role="alert">{error}</p>}
           <p className="indicator-hint">
-            STD 为收盘价总体标准差；指标跟随当前股票。参数模板由服务端统一计算，图表只负责展现。
+            STD 为收盘价总体标准差；涨幅Z 为对数日涨幅的滚动 Z-Score（band,smooth,regime，要求 regime &gt;
+            band）。指标跟随当前股票。参数模板由服务端统一计算，图表只负责展现。
           </p>
         </div>
       )}
@@ -151,7 +162,12 @@ function IndicatorEditor({
 }) {
   const [draft, setDraft] = useState(indicator)
   const label = indicatorLabel(indicator)
-  const fields = indicator.kind === 'MACD' ? ['fast', 'slow', 'signal'] : ['period']
+  const fields =
+    indicator.kind === 'MACD'
+      ? ['fast', 'slow', 'signal']
+      : indicator.kind === 'RETZ'
+        ? ['period', 'smooth', 'regime']
+        : ['period']
   return (
     <form
       className="indicator-editor"

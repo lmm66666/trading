@@ -51,3 +51,29 @@ describe('board config pre-check', () => {
     expect(validIndicator(null)).toBe(false)
   })
 })
+
+it('validates RETZ bounds, unrelated fields and distinct saved configurations', () => {
+  const retz = { kind: 'RETZ' as const, period: 126, smooth: 5, regime: 252 }
+  expect(validIndicator(retz)).toBe(true)
+  for (const patch of [
+    { period: 1 },
+    { period: 501 },
+    { smooth: 0 },
+    { smooth: 501 },
+    { regime: 126 },
+    { regime: 501 },
+    { smooth: 1.5 },
+    { fast: 12 },
+    { slow: 26 },
+    { signal: 9 },
+  ])
+    expect(validIndicator({ ...retz, ...patch })).toBe(false)
+  for (const kind of ['SMA', 'EMA', 'STD', 'KDJ'])
+    expect(validIndicator({ kind, period: 20, smooth: 5 })).toBe(false)
+  expect(validIndicator({ kind: 'MACD', fast: 12, slow: 26, signal: 9, regime: 252 })).toBe(false)
+  const config = defaultBoardConfig()
+  config.indicators = [retz, { ...retz, smooth: 10 }, { ...retz, regime: 300 }]
+  expect(validConfig(JSON.parse(JSON.stringify(config)))).toBe(true)
+  config.indicators.push(retz)
+  expect(validConfig(config)).toBe(false)
+})

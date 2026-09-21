@@ -5,6 +5,7 @@ import {
   createChart,
   HistogramSeries,
   LineSeries,
+  type AutoscaleInfoProvider,
   type HistogramData,
   type IChartApi,
   type ISeriesApi,
@@ -33,6 +34,30 @@ const DOWN_COLOR = '#26a69a'
 const UP_COLOR_SOFT = 'rgba(239, 83, 80, .72)'
 const DOWN_COLOR_SOFT = 'rgba(38, 166, 154, .72)'
 const lineColors = ['#FDE68A', '#60A5FA', '#C084FC', '#22d3ee', '#f472b6', '#84cc16']
+const RETZ_COLORS = {
+  histogram: '#c0c4cc',
+  smooth: '#e2e8f0',
+  regime: '#C084FC',
+  high: '#fb923c',
+  low: '#22d3ee',
+}
+const retzColor = (value: number) =>
+  value >= 2 ? RETZ_COLORS.high : value <= -2 ? RETZ_COLORS.low : RETZ_COLORS.histogram
+const sigmaFormat = {
+  type: 'custom' as const,
+  formatter: (value: number) => `${value.toFixed(2)}σ`,
+  minMove: 0.01,
+}
+const retzAutoscale: AutoscaleInfoProvider = (original) => {
+  const info = original()
+  return {
+    ...info,
+    priceRange: {
+      minValue: Math.min(info?.priceRange?.minValue ?? 0, -2),
+      maxValue: Math.max(info?.priceRange?.maxValue ?? 0, 2),
+    },
+  }
+}
 const SMA_PERIODS = ['5', '20', '60']
 
 const chartTime = (value: string): Time => value.slice(0, 10) as Time
@@ -46,6 +71,7 @@ interface LegendItem {
   label: string
   color: string
   signed: boolean
+  sigma?: boolean
 }
 
 interface LegendGroup {
@@ -54,11 +80,22 @@ interface LegendGroup {
   items: LegendItem[]
 }
 
-const componentLabels: Record<string, string> = { dif: 'DIF', dea: 'DEA', histogram: '柱', k: 'K', d: 'D', j: 'J' }
+const componentLabels: Record<string, string> = {
+  dif: 'DIF',
+  dea: 'DEA',
+  histogram: '柱',
+  k: 'K',
+  d: 'D',
+  j: 'J',
+  smooth: '平滑',
+  regime: '长期',
+}
 
 const periodOf = (key: string): string => key.match(/\/p=(\d+)/)?.[1] ?? ''
 
 function groupTitle(item: ChartSeries): string {
+  if (item.kind === 'RETZ')
+    return `涨幅Z ${periodOf(item.key)},${item.key.match(/\/sm=(\d+)/)?.[1] ?? ''},${item.key.match(/\/rg=(\d+)/)?.[1] ?? ''}`
   if (item.kind === 'MACD') {
     const fast = item.key.match(/\/f=(\d+)/)?.[1] ?? ''
     const slow = item.key.match(/\/s=(\d+)/)?.[1] ?? ''
@@ -86,9 +123,11 @@ function buildLegendModel(series: ChartSeries[]): {
   series.forEach((item) => {
     const period = item.key.match(/\/p=(\d+)/)?.[1]
     const color =
-      item.kind === 'SMA' && SMA_PERIODS.includes(period ?? '')
-        ? lineColors[SMA_PERIODS.indexOf(period!)]
-        : lineColors[colorIndex++ % lineColors.length]
+      item.kind === 'RETZ'
+        ? RETZ_COLORS[item.component as 'histogram' | 'smooth' | 'regime']
+        : item.kind === 'SMA' && SMA_PERIODS.includes(period ?? '')
+          ? lineColors[SMA_PERIODS.indexOf(period!)]
+          : lineColors[colorIndex++ % lineColors.length]
     colors.set(item.key, color)
     const isOverlay = item.kind === 'SMA' || item.kind === 'EMA'
     const groupKey = item.kind + item.key.split('/').slice(4).join('/')
@@ -121,7 +160,8 @@ function buildLegendModel(series: ChartSeries[]): {
       component: item.component,
       label: componentLabels[item.component] ?? item.component.toUpperCase(),
       color,
-      signed: item.component === 'histogram',
+      signed: item.kind !== 'RETZ' && item.component === 'histogram',
+      sigma: item.kind === 'RETZ',
     })
   })
   return {
@@ -237,14 +277,21 @@ export function FinancialChart({
       const tops: number[] = []
       if (paneEls.every((el): el is HTMLElement => el !== null)) {
         const baseTop = container.getBoundingClientRect().top
-        panesApi.forEach((_, index) => { tops[index] = paneEls[index].getBoundingClientRect().top - baseTop })
+        panesApi.forEach((_, index) => {
+          tops[index] = paneEls[index].getBoundingClientRect().top - baseTop
+        })
       } else {
         const heights = panesApi.map((pane) => pane.getHeight())
-        const separatorHeight = panesApi.length > 1
-          ? Math.max(0, container.clientHeight - heights.reduce((sum, height) => sum + height, 0)) / (panesApi.length - 1)
-          : 0
+        const separatorHeight =
+          panesApi.length > 1
+            ? Math.max(0, container.clientHeight - heights.reduce((sum, height) => sum + height, 0)) /
+              (panesApi.length - 1)
+            : 0
         let top = 0
-        heights.forEach((height, index) => { tops[index] = top; top += height + separatorHeight })
+        heights.forEach((height, index) => {
+          tops[index] = top
+          top += height + separatorHeight
+        })
       }
       setPaneTops((prev) =>
         prev.length === tops.length && prev.every((top, index) => top === tops[index]) ? prev : tops,
@@ -300,22 +347,35 @@ export function FinancialChart({
       const isOverlay = item.kind === 'SMA' || item.kind === 'EMA'
       const paneIndex = legendModel.paneIndexByKey.get(item.key) ?? 0
       const color = legendModel.colors.get(item.key) ?? lineColors[0]
+      const isRETZ = item.kind === 'RETZ'
       if (item.component === 'histogram') {
         const indicator = chart.addSeries(
           HistogramSeries,
           {
             color,
+            ...(isRETZ ? { priceFormat: sigmaFormat, autoscaleInfoProvider: retzAutoscale } : {}),
             priceLineVisible: false,
             lastValueVisible: false,
           },
           paneIndex,
         )
+        if (isRETZ) {
+          for (const price of [2, 1, 0, -1, -2])
+            indicator.createPriceLine({
+              price,
+              color: price > 0 ? RETZ_COLORS.high : price < 0 ? RETZ_COLORS.low : RETZ_COLORS.histogram,
+              lineWidth: 1,
+              lineStyle: price === 0 ? 0 : 2,
+              axisLabelVisible: true,
+              title: '',
+            })
+        }
         indicatorUpdatersRef.current.set(item.key, (updated) =>
           indicator.setData(
             updated.points.map((point): HistogramData => ({
               time: chartTime(point.time),
               value: point.value,
-              color: point.value >= 0 ? UP_COLOR_SOFT : DOWN_COLOR_SOFT,
+              color: isRETZ ? retzColor(point.value) : point.value >= 0 ? UP_COLOR_SOFT : DOWN_COLOR_SOFT,
             })),
           ),
         )
@@ -325,6 +385,7 @@ export function FinancialChart({
           {
             color,
             lineWidth: 1,
+            ...(isRETZ ? { priceFormat: sigmaFormat } : {}),
             priceLineVisible: false,
             lastValueVisible: false,
             ...(isOverlay
@@ -512,10 +573,24 @@ export function FinancialChart({
       item.signed && value !== undefined ? (value >= 0 ? 'legend-up' : 'legend-down') : undefined
     return (
       <span key={item.key}>
-        <em className={signClass} style={signClass ? undefined : { color: item.color }}>
+        <em
+          className={signClass}
+          style={
+            signClass
+              ? undefined
+              : {
+                  color:
+                    item.sigma && item.component === 'histogram' && value !== undefined
+                      ? retzColor(value)
+                      : item.color,
+                }
+          }
+        >
           {item.label}
         </em>
-        <b className={signClass}>{value !== undefined ? value.toFixed(2) : '—'}</b>
+        <b className={signClass}>
+          {value !== undefined ? `${value.toFixed(2)}${item.sigma ? 'σ' : ''}` : '—'}
+        </b>
       </span>
     )
   }

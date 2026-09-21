@@ -72,3 +72,43 @@ it('rejects duplicates and invalid MACD order, supports reorder/removal', () => 
   fireEvent.click(screen.getByRole('button', { name: '关闭指标管理' }))
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 })
+
+it('adds RETZ, edits all parameters and rejects invalid windows and excessive cost', () => {
+  const retz = { kind: 'RETZ' as const, period: 126, smooth: 5, regime: 252 }
+  const change = vi.fn()
+  const { rerender } = render(<IndicatorManager indicators={[]} onChange={change} />)
+  fireEvent.click(screen.getByRole('button', { name: /指标/ }))
+  fireEvent.click(screen.getByRole('button', { name: '添加 涨幅Z 126,5,252' }))
+  expect(change).toHaveBeenLastCalledWith([retz])
+  rerender(<IndicatorManager indicators={[retz]} onChange={change} />)
+  change.mockClear()
+  fireEvent.change(screen.getByRole('spinbutton', { name: '涨幅Z 126,5,252 regime' }), {
+    target: { value: '100' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: '应用 涨幅Z 126,5,252 参数' }))
+  expect(change).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByRole('spinbutton', { name: '涨幅Z 126,5,252 period' }), {
+    target: { value: '63' },
+  })
+  fireEvent.change(screen.getByRole('spinbutton', { name: '涨幅Z 126,5,252 smooth' }), {
+    target: { value: '10' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: '应用 涨幅Z 126,5,252 参数' }))
+  expect(change).toHaveBeenLastCalledWith([{ ...retz, period: 63, smooth: 10, regime: 100 }])
+  rerender(
+    <IndicatorManager
+      indicators={Array.from({ length: 5 }, (_, i) => ({ ...retz, period: 126 + i, regime: 252 + i }))}
+      onChange={change}
+    />,
+  )
+  change.mockClear()
+  fireEvent.click(screen.getByRole('button', { name: '添加 STD 20' }))
+  expect(change).toHaveBeenCalledTimes(1)
+  fireEvent.change(screen.getByRole('spinbutton', { name: '涨幅Z 126,5,252 regime' }), {
+    target: { value: '500' },
+  })
+  change.mockClear()
+  fireEvent.click(screen.getByRole('button', { name: '应用 涨幅Z 126,5,252 参数' }))
+  expect(change).not.toHaveBeenCalled()
+  expect(screen.getByRole('alert')).toBeVisible()
+})

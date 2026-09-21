@@ -32,9 +32,23 @@ const integer = (n: unknown, min: number, max: number): n is number =>
 
 export function validIndicator(value: unknown): value is IndicatorRequest {
   if (!value || typeof value !== 'object') return false
+  const fields = value as Record<string, unknown>
+  if (
+    fields.kind !== 'RETZ' &&
+    ((fields.smooth !== undefined && fields.smooth !== 0) ||
+      (fields.regime !== undefined && fields.regime !== 0))
+  )
+    return false
   const i = value as IndicatorRequest
   if (i.kind === 'MACD')
     return integer(i.fast, 1, 499) && integer(i.slow, i.fast + 1, 500) && integer(i.signal, 1, 500)
+  if (i.kind === 'RETZ')
+    return (
+      ['fast', 'slow', 'signal'].every((field) => fields[field] === undefined || fields[field] === 0) &&
+      integer(i.period, 2, 500) &&
+      integer(i.smooth, 1, 500) &&
+      integer(i.regime, Number(i.period) + 1, 500)
+    )
   return ['SMA', 'EMA', 'KDJ', 'STD'].includes(i.kind) && 'period' in i && integer(i.period, 1, 500)
 }
 
