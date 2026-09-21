@@ -1,12 +1,24 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import {
   searchInstruments,
+  type Exchange,
   type InstrumentSummary,
 } from '../../api/client'
 
 interface InstrumentSearchProps {
   onSelect: (instrument: InstrumentSummary) => void
   search?: typeof searchInstruments
+}
+
+// 徽标单字：股票按市场，期货统一“期”（具体交易所以 exchange-tag 与 title 呈现）。
+const EXCHANGE_MARKS: Record<Exchange, string> = {
+  SSE: '沪',
+  SZSE: '深',
+  BSE: '北',
+  SHFE: '期',
+  INE: '期',
+  DCE: '期',
+  CZCE: '期',
 }
 
 export function InstrumentSearch({ onSelect, search = searchInstruments }: InstrumentSearchProps) {
@@ -129,7 +141,7 @@ export function InstrumentSearch({ onSelect, search = searchInstruments }: Instr
               role="option"
               type="button"
             >
-              <span className="symbol-mark">{item.exchange === 'SSE' ? '沪' : item.exchange === 'SZSE' ? '深' : '北'}</span>
+              <span className="symbol-mark" title={item.exchange}>{EXCHANGE_MARKS[item.exchange]}</span>
               <span className="result-name"><strong>{item.name}</strong><small>{item.code}</small></span>
               <span className="exchange-tag">{item.exchange}</span>
             </button>

@@ -1,11 +1,14 @@
 export type Timeframe = 'DAY' | 'WEEK'
 export type PriceView = 'RAW' | 'QFQ'
 
+/** 交易所全集：股票 SSE/SZSE/BSE，期货 SHFE/INE/DCE/CZCE（与后端 market.Exchange 一致）。 */
+export type Exchange = 'SSE' | 'SZSE' | 'BSE' | 'SHFE' | 'INE' | 'DCE' | 'CZCE'
+
 export interface InstrumentSummary {
   instrument: string
   code: string
   name: string
-  exchange: 'SSE' | 'SZSE' | 'BSE'
+  exchange: Exchange
   board: string
   lot_size: number
 }

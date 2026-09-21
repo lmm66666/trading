@@ -30,6 +30,26 @@ describe('InstrumentSearch', () => {
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
   })
 
+  it('期货品种徽标显示“期”而不是误标为北交所', async () => {
+    const futures = {
+      instrument: 'INE:SC.MAIN',
+      code: 'SC.MAIN',
+      name: '原油',
+      exchange: 'INE' as const,
+      board: 'CONTINUOUS',
+      lot_size: 1000,
+    }
+    const search = vi.fn().mockResolvedValue([futures])
+    render(<InstrumentSearch search={search} onSelect={vi.fn()} />)
+    const input = screen.getByRole('combobox', { name: '搜索股票' })
+    fireEvent.change(input, { target: { value: '原油' } })
+
+    await waitFor(() => expect(search).toHaveBeenCalledWith('原油', expect.any(AbortSignal)))
+    expect(await screen.findByText('原油')).toBeVisible()
+    expect(screen.getByText('期')).toBeVisible()
+    expect(screen.queryByText('北')).not.toBeInTheDocument()
+  })
+
   it('无匹配时提示，清空输入后收起下拉', async () => {
     const search = vi.fn().mockResolvedValue([])
     render(<InstrumentSearch search={search} onSelect={vi.fn()} />)
