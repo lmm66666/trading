@@ -73,7 +73,7 @@ COMPLETE 表示已提供变更全部提交。当前写入端口没有上游质�
 
 `Retry` 清理租约并写入下次执行时间；第四次执行或不可重试错误直接进入 FAILED。应用 worker 必须通过 `port.JobQueue.ReapExpired(ctx)` 周期清理已耗尽次数的过期租约，每轮最多1000个。取消请求在行锁下直接进入 CANCELLED，同时保留数据库 UTC 请求时间；计算中的 worker 应通过 Get 检查并退出。
 
-扫描快照、回测汇总、订单、成交、权益点、完成 outbox 及 Run 终态在同一事务提交。明细单批最多1000行，最终更新再次检查租约期限；任一批次、outbox 或最终 CAS 失败全部回滚。扫描带失败项时保存 PARTIAL_SUCCEEDED。Latest 只读取已发布成功/部分成功快照，快照行按证券稳定排序，结果分页使用持久化 sequence。回测 Trades 接口返回 Fill 成交明细；领域 round-trip Trade 和 FinalPosition 没有独立读取端口，已由 Summary 与持仓布尔状态提供汇总。
+扫描快照、回测汇总、订单、成交、权益点、完成 outbox 及 Run 终态在同一事务提交。明细单批最多1000行，最终更新再次检查租约期限；任一批次、outbox 或最终 CAS 失败全部回滚。扫描带失败项时保存 PARTIAL_SUCCEEDED。Latest 只读取已发布成功/部分成功快照，快照行按证券稳定排序，结果分页使用持久化 sequence。Latest 读取快照行时 JOIN `t_instruments` 取出证券当前名称（主数据中不存在的证券不出现在行内）；失败行名称按 (exchange, code) 单次批量查询解析，查询失败降级为省略并记录告警，不产生读取错误。名称是读取时点的显示属性，不随快照固化。回测 Trades 接口返回 Fill 成交明细；领域 round-trip Trade 和 FinalPosition 没有独立读取端口，已由 Summary 与持仓布尔状态提供汇总。
 
 快照分页必须绑定精确 SnapshotID：只有 `AfterSequence=0` 且 `SnapshotKey.SnapshotID` 为空时可选最新快照；返回的 `SignalSnapshot.ID` 及 `Key.SnapshotID` 是后续页绑定值。`AfterSequence>0` 缺失 ID 直接返回 ErrInvalidPortValue，不会重新选择最新快照。提供 ID 后仍同时匹配策略 ID、策略版本、参数 hash，以及非零 AsOf；未知、键不匹配或未发布的快照返回 ErrSnapshotNotReady。ID 的大小写和尾空格均精确区分。同 AsOf 后续发布更高 DataVersion 也不会改变已经开始的分页。API 必须把 `snapshot_id` 与 `after_sequence` 一起传入；不能仅以 AsOf/DataVersion 代替快照身份。
 

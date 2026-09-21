@@ -102,7 +102,7 @@ curl -X POST http://localhost:8080/api/v1/scan-runs \
 
 `GET /api/v1/signal-snapshots/latest?strategy=daily_b1_buy&limit=100`。仅给 strategy 选该策略最近发布快照（可跨版本/参数）；精确查询同时给 strategy_version、parameters_hash，可用 RFC3339 的 as_of 限定。仅 strategy 时，as_of 只对选中的最新快照作校验；历史定位应提供版本/hash 或 SnapshotID。
 
-data 含 `snapshot_id,run_id,key,data_version,rows,failures` 和满页时的 next_sequence。key 含 `snapshot_id,strategy_id,strategy_version,parameters_hash,as_of`；rows 保留完整 instrument；failures 是按完整 instrument 排序的 `{instrument,code,message,retryable}` 数组，属于整个快照，不随成功行分页改变。
+data 含 `snapshot_id,run_id,key,data_version,rows,failures` 和满页时的 next_sequence。key 含 `snapshot_id,strategy_id,strategy_version,parameters_hash,as_of`；rows 保留完整 instrument，每行含 `instrument,signal_time,reason,values` 与可选 `name`；failures 是按完整 instrument 排序的 `{instrument,code,message,retryable}` 数组，含可选 `name`，属于整个快照，不随成功行分页改变。`name` 是读取时点 `t_instruments` 当前名称的显示属性，不随快照固化：证券更名后旧快照按新名称显示；名称缺失时字段省略，客户端回退显示证券代码。rows 读取关联 `t_instruments`，主数据中不存在的证券不出现在 rows。
 
 保存首响应的 key，再继续：
 
