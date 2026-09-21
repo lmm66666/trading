@@ -1,0 +1,20 @@
+services:
+  updater:
+    image: trading-updater:latest
+    build:
+      context: .
+      target: updater
+      platforms:
+        - linux/amd64
+    platform: linux/amd64
+    restart: unless-stopped
+    ports:
+      - "${UPDATER_BIND_IP:?Set UPDATER_BIND_IP to the NAS LAN address}:8081:8081"
+    volumes:
+      - type: bind
+        source: ./config.updater.yaml
+        target: /app/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+    stop_grace_period: 30s

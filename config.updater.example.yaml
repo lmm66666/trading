@@ -1,0 +1,23 @@
+# NAS updater: connect to the existing full-data database.
+Config:
+  Server:
+    ListenAddress: :8081
+  Updater:
+    # Generate with openssl rand -hex 32 and configure the workbench with the same value.
+    Token: replace_with_a_random_shared_token
+  DB:
+    # In Docker, use the existing MySQL host/container address, not localhost.
+    Host: nas.local
+    Port: 3306
+    User: trading
+    Password: your_password
+    DBName: trading
+    MaxOpenConns: 25
+    MaxIdleConns: 5
+    ConnMaxLifetimeMinutes: 30
+  Worker:
+    ScanBatchSize: 8
+  Market:
+    StockRequestIntervalSeconds: 5
+    FuturesEnabled: true
+    FuturesRefreshIntervalHours: 24

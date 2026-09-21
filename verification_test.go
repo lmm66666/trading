@@ -76,6 +76,13 @@ fi
 					t.Errorf("dispatch %q: want %v, calls=%s", check.needle, check.want, calls)
 				}
 			}
+			if tc.image && tc.failTool != "docker" {
+				for _, role := range []string{"updater", "workbench"} {
+					if !strings.Contains(calls, "--target "+role) {
+						t.Errorf("image target %s was not verified", role)
+					}
+				}
+			}
 			if tc.mysql && tc.failTool != "mysql" && !strings.Contains(calls, "-tags=integration") {
 				t.Error("selected MySQL did not run integration gate")
 			}

@@ -24,11 +24,20 @@ type Data struct {
 
 // New 创建 Data 实例，内部根据配置初始化 gorm.DB 连接与连接池
 func New(cfg config.DB) (*Data, error) {
+	return open(cfg, migrateSchema)
+}
+
+// Open connects without schema changes; the updater owns runtime migrations.
+func Open(cfg config.DB) (*Data, error) {
+	return open(cfg, nil)
+}
+
+func open(cfg config.DB, migrate func(*gorm.DB) error) (*Data, error) {
 	db, err := gorm.Open(mysql.Open(mysqlDSN(cfg)), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("open mysql failed: %w", err)
 	}
-	return initializeData(cfg, db, migrateSchema)
+	return initializeData(cfg, db, migrate)
 }
 
 // initializeData 在初始化成功前拥有连接；任何迁移错误都统一清理，
@@ -61,8 +70,10 @@ func initializeData(cfg config.DB, db *gorm.DB, migrate func(*gorm.DB) error) (*
 	sqlDB.SetMaxOpenConns(maxOpen)
 	sqlDB.SetMaxIdleConns(maxIdle)
 	sqlDB.SetConnMaxLifetime(time.Duration(lifetimeMin) * time.Minute)
-	if err := migrate(db); err != nil {
-		return nil, err
+	if migrate != nil {
+		if err := migrate(db); err != nil {
+			return nil, err
+		}
 	}
 	transferred = true
 	return &Data{db: db}, nil

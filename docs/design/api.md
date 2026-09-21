@@ -72,7 +72,7 @@ HTTP 请求
   → 统一 JSON 响应
 ```
 
-图表查询在应用层完整历史上下文计算指标后返回裁剪页；API 只保持请求顺序、版本和游标。手动刷新带证券身份时同步调用单个 `MarketIngestion.Refresh`，缺省时通过 `MarketTrigger` 异步触发全市场补全扫描。
+图表查询在应用层完整历史上下文计算指标后返回裁剪页；API 只保持请求顺序、版本和游标。workbench 手动刷新经 `UpdaterClient` 发送校验后的 DTO；updater 在独立路由中校验 Token，带证券身份时同步调用 `MarketIngestion.Refresh`，缺省时通过 `MarketTrigger` 异步触发股票全市场补全扫描。updater 不开放工作台 API 或静态页面。
 
 ## 6. 失败、取消和一致性语义
 
@@ -108,3 +108,9 @@ go test ./api -cover
 ## 图表 STD 契约
 
 图表请求新增 STD(period) 类型，由应用层统一验证/计算，响应单条value序列；HTTP字段形状不变，详细口径见[HTTP契约](../standards/http-api.md)。关联期货仍使用已有market/bars，不新增路由或数据库结构。
+
+## 双服务刷新传输
+
+`updater_router.go` 只注册 `POST /internal/v1/market/refresh` 并校验 Bearer Token（至少 32 字节可打印非空白 ASCII，哈希后常量时间比较）。`updater_client.go` 只调用该固定路径，服务地址来自配置而非请求；限制请求/响应 1MiB、40 秒总超时、专用 Transport 仅用 HTTP/1 且去除 GetBody 重放能力、不重试 POST、不跟随重定向。成功响应以类型化 DTO 重建，错误仅允许既定状态/message，不透传上游错误正文。
+
+网络故障为 503 UPDATER_UNAVAILABLE，超时为 504 UPDATER_TIMEOUT，认证或响应异常为 502 UPDATER_BAD_RESPONSE。内部 401 不作为浏览器认证问题返回。单证券取消随请求传播，全市场受理后的生命周期属于 updater 根 context，断线不保证未执行。详细协议以 HTTP 契约为准。

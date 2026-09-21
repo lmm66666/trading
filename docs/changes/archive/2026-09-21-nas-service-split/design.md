@@ -1,11 +1,11 @@
 ---
 id: CHG-2026-09-21-NAS-SERVICE-SPLIT-DESIGN
-approval_status: draft
-authority: proposed
-approved_by: null
-approved_at: null
-approved_revision: null
-approved_scope: []
+approval_status: approved
+authority: normative
+approved_by: user
+approved_at: "2026-09-21T11:55:59+08:00"
+approved_revision: "03abaed"
+approved_scope: ["REQ-SPLIT-001–010", "design.md sections 1–8"]
 ---
 
 # NAS 服务拆分目标设计
@@ -120,4 +120,10 @@ NAS Compose 示例只启动 updater，设置 `restart: unless-stopped`，连接�
 
 ## 9. 批准范围与证据
 
-已确认的需求不重复审批。需用户审阅的是本方案新增的共享 MySQL、内部刷新 HTTP、仅 updater 初始化 schema、CLI/配置与镜像、网络错误语义及局域网安全边界。批准应绑定 [需求](requirements.md) 与本设计的内容版本；目前保持 draft。
+用户已批准提交 `03abaed` 中 [需求](requirements.md) 与本设计，覆盖共享 MySQL、内部刷新 HTTP、schema 初始化归属、CLI/配置/镜像和局域网边界。
+
+用户于 2026-09-21 在本任务回复“ok 执行吧”，批准提交 `03abaed` 中需求与设计的完整范围；审批元数据记录该决定。
+
+## 本次交付验收调整（用户明确授权）
+
+实施期间用户确认“现在连不上 nas。代码编译成功就行”。该决定覆盖本次 REQ-SPLIT-010 / 设计第 8 节中的外部验收前置要求：本次以 Go 本机编译、linux/amd64 交叉编译及前端构建作为交付门槛，不等待真实 NAS/MySQL、Docker 镜像构建或现场部署。已经执行的测试如实记录，不把缺失验证标为通过；独立代码评审继续执行。允许按此范围完成并合回 main。服务运行设计和其他变更的通用工程门禁不因此改变，NAS 实际部署另待环境恢复。

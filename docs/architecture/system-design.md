@@ -6,7 +6,7 @@ approval_provenance: inherited-current-design
 approved_by: null
 approved_at: null
 approved_revision: null
-owns: ["main.go", "main_test.go", "config/", "config.example.yaml"]
+owns: ["main.go", "main_test.go", "service.go", "service_test.go", "updater.go", "config/", "config.example.yaml", "config.updater.example.yaml"]
 related: []
 ---
 
@@ -22,7 +22,7 @@ related: []
 
 一个个人行情研究平台：从新浪采集 A 股与期货连续合约的日线和复权因子，保存为可追溯的数据版本；在其上计算指标、运行版本化策略，通过扫描得到候选名单、通过回测检验历史表现、通过图表浏览行情。全部结果绑定创建时的输入（行情版本、策略版本、参数、引擎版本），因此可以复查和解释，而不是只给一个答案。
 
-`main.go` 是组合根：加载配置、连接 MySQL、装配适配器与调度器、启动 HTTP 服务和任务 Worker、优雅停机。它不承载业务规则。
+`main.go`、`service.go` 与 `updater.go` 是组合根：显式选择 `-service updater|workbench`，验证配置、连接 MySQL、按角色装配并管理生命周期。updater 运行采集与调度，workbench 运行前端/API 与计算 Worker；不提供 all 模式。
 
 ```text
 外部数据源 ──> Broker Adapter ──> Application ──> Port ──> MySQL
@@ -111,7 +111,7 @@ API 校验证券、周期、价格视图、范围、版本和指标预算 → �
 - 可重试只适用于明确的临时、超时、死锁或连接类错误；取消、失租和确定性业务错误不重试。
 - 错误沿调用链用 `%w` 保留原因，只在有处理责任的边界记录一次；API 和持久化结果不得泄露 SQL、凭据、路径、响应正文或堆栈。
 - 批量任务汇总成功与失败数量，不在高频循环逐 Bar 或逐 SQL 输出 Info 日志。
-- 进程内刷新守卫与租约只对本进程有效；本系统按单实例部署设计，不引入跨进程协调。
+- 行情刷新守卫只对 updater 进程有效；每个目标库保持一个 updater 和一个 workbench，不引入跨进程刷新协调。计算任务继续使用现有数据库租约。
 
 ## 6. 部署与迁移
 
@@ -119,6 +119,14 @@ API 校验证券、周期、价格视图、范围、版本和指标预算 → �
 - 镜像不包含本地配置、凭据、转储或导出包，进程以非 root 用户运行，配置只读挂载。
 - 本项目允许停机更新。数据库语义变化默认按“停服务、备份、迁移、校验、启动”执行。
 - 不默认建设双写、影子表、灰度读、在线回填或长期跨版本兼容；只有明确不停机需求或数据量证明确需在线迁移时才增加复杂度。
+
+### 6.1 NAS 与电脑职责
+
+updater 在 NAS Docker 上运行并连接已有 MySQL；workbench 在电脑按需运行，连接同一 NAS 业务库读取 COMPLETE 行情并保存看板、自选与计算结果。浏览器只访问本机 API。关闭电脑不影响行情更新；扫描/回测在 workbench 运行期间执行。
+
+updater 独占启动 schema 初始化与行情写入；workbench 只连接数据库，不执行 DDL，不装配 Broker/调度器。工作台手动刷新经固定 HTTP 客户端调用 NAS 内部接口，接口、Token、超时和错误契约见 [HTTP 契约](../standards/http-api.md)。updater 暂时不可达不阻止工作台启动、查询和计算，但数据库必须可达且已初始化。
+
+默认 updater 监听 `:8081`，workbench 监听 `127.0.0.1:8080`，均可由 `Server.ListenAddress` 修改。`Updater.Token` 两端共享，workbench 额外配置 `Updater.URL`。本地 mock 库保持独立，不自动同步、覆盖或降级切换。首次部署先停旧单体，再启动 updater 完成初始化，最后启动 workbench；详细步骤见运行手册。本阶段只开放所需局域网访问，未来外网接入另行设计。
 
 ## 7. 质量门禁
 

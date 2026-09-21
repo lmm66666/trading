@@ -47,6 +47,9 @@ related: []
 | 409 | RUN_RESULT_NOT_READY | 回测结果尚未成功发布，包括失败/取消 |
 | 409 | AMBIGUOUS_INSTRUMENT | 六位代码匹配多个活跃交易所证券 |
 | 429 | MARKET_REFRESH_ALREADY_RUNNING | 已有定时或手工行情刷新运行中（全市场或同一证券） |
+| 502 | UPDATER_BAD_RESPONSE | 更新服务认证失败、未知错误或响应不合法 |
+| 503 | UPDATER_UNAVAILABLE | 无法连接更新服务或刷新请求已取消 |
+| 504 | UPDATER_TIMEOUT | 等待更新服务超时 |
 | 500 | internal server error | 未分类内部错误；不含 SQL、凭据、路径或堆栈 |
 
 JSON 创建请求限制1MiB（含空白），拒绝未知字段、超大 body 和尾随第二个 JSON 值。时间使用 RFC3339，输入时区规范化为 UTC；日期范围最多20年。身份精确区分大小写和尾空格：策略/Run/SnapshotID 最多64字节，策略版本32字节，幂等键128字节。证券使用完整 `SSE:600000`、`SZSE:000001` 或 `BSE:920001`；期货主力连续使用 `SHFE:AU.MAIN` 这类完整身份。
@@ -224,3 +227,9 @@ curl -X POST http://localhost:8080/api/v1/market/refresh \
 - 单证券：`exchange` 合法值为 SSE、SZSE、BSE，`code` 为六位数字；经活跃证券主数据精确解析，零结果或唯一匹配的交易所与请求身份不符返回404，同一代码匹配多个活跃交易所返回409，同一证券正在刷新返回429。成功返回 `{"instrument","version","quality","daily_bars","weekly_bars"}`，与既有刷新结果结构一致。
 - 请求 JSON 限制1MiB，拒绝未知字段和尾随第二个 JSON 值。
 
+
+#### NAS 内部刷新与连接故障
+
+工作台 `/api/v1/market/refresh` 保留上述请求和业务成功/失败语义，改为转发至 updater 的 `POST /internal/v1/market/refresh`；全市场仍指股票调度范围，期货独立定时刷新。NAS 接口只供服务调用，需 `Authorization: Bearer <token>`；缺失或不匹配返回 `401 {"code":401,"message":"UNAUTHORIZED","data":null}`。
+
+工作台固定目标 URL，不传递浏览器 Cookie/认证头；请求/响应上限 1MiB，总超时 40 秒，不重试 POST、不跟随重定向。503 表示连接不可用，504 表示等待超时，502 表示上游认证或响应异常；错误正文统一脱敏。超时可能发生在请求已受理或数据已提交之后，不能推断未执行。已受理的全市场刷新不随电脑关闭或请求断开而取消；单证券请求沿 HTTP context 传播取消。

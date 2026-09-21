@@ -24,10 +24,13 @@ func TestKernelCompositionKeepsDurableIdempotencyReader(t *testing.T) {
 	defer sqlDB.Close()
 	db, err := gorm.Open(mysql.New(mysql.Config{Conn: sqlDB, SkipInitializeWithVersion: true}), &gorm.Config{})
 	require.NoError(t, err)
-	kernel, err := newKernel(context.Background(), db, config.WorkerConfig{}, config.MarketConfig{})
+	cfg := serviceConfig()
+	settings, err := resolveServiceConfig("workbench", cfg)
+	require.NoError(t, err)
+	kernel, err := newServiceKernel(context.Background(), db, cfg, settings)
 	require.NoError(t, err)
 	require.NotNil(t, kernel.workers)
-	require.NotNil(t, kernel.marketScheduler)
+	require.Nil(t, kernel.marketScheduler)
 	require.Nil(t, kernel.futuresScheduler)
 	router := api.NewRouter(kernel.services)
 	w := httptest.NewRecorder()
@@ -58,7 +61,7 @@ func TestLoadConfigAndStartupValidation(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("["), 0600))
 	_, err = loadConfig(path)
 	require.Error(t, err)
-	require.Error(t, run(context.Background(), filepath.Join(dir, "missing")))
+	require.Error(t, run(context.Background(), filepath.Join(dir, "missing"), "workbench"))
 }
 
 func TestResolveMarketConfigDefaultsAndRejectsUnsafeRate(t *testing.T) {
@@ -92,7 +95,11 @@ func TestKernelCompositionWiresOptionalFuturesScheduler(t *testing.T) {
 	defer sqlDB.Close()
 	db, err := gorm.Open(mysql.New(mysql.Config{Conn: sqlDB, SkipInitializeWithVersion: true}), &gorm.Config{})
 	require.NoError(t, err)
-	kernel, err := newKernel(context.Background(), db, config.WorkerConfig{}, config.MarketConfig{FuturesEnabled: true})
+	cfg := serviceConfig()
+	cfg.Market.FuturesEnabled = true
+	settings, err := resolveServiceConfig("updater", cfg)
+	require.NoError(t, err)
+	kernel, err := newServiceKernel(context.Background(), db, cfg, settings)
 	require.NoError(t, err)
 	require.NotNil(t, kernel.futuresScheduler)
 }

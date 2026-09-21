@@ -1,9 +1,11 @@
 package config
 
 type Config struct {
-	DB     DB           `yaml:"DB"`
-	Worker WorkerConfig `yaml:"Worker"`
-	Market MarketConfig `yaml:"Market"`
+	Server  ServerConfig  `yaml:"Server"`
+	Updater UpdaterConfig `yaml:"Updater"`
+	DB      DB            `yaml:"DB"`
+	Worker  WorkerConfig  `yaml:"Worker"`
+	Market  MarketConfig  `yaml:"Market"`
 }
 
 // MarketConfig controls external market-data pacing. Zero values use safe
@@ -33,4 +35,15 @@ type DB struct {
 	MaxOpenConns           int    `yaml:"MaxOpenConns"`
 	MaxIdleConns           int    `yaml:"MaxIdleConns"`
 	ConnMaxLifetimeMinutes int    `yaml:"ConnMaxLifetimeMinutes"`
+}
+
+// ServerConfig controls the listen address of the selected service.
+type ServerConfig struct {
+	ListenAddress string `yaml:"ListenAddress"`
+}
+
+// UpdaterConfig holds a private service origin and a shared authentication token.
+type UpdaterConfig struct {
+	URL   string `yaml:"URL"`
+	Token string `yaml:"Token"`
 }

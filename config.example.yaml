@@ -1,4 +1,11 @@
+# Workbench configuration: use the same target database as the updater.
 Config:
+  Server:
+    ListenAddress: 127.0.0.1:8080
+  Updater:
+    URL: http://nas.local:8081
+    # Generate a random token (openssl rand -hex 32); use the same on both services.
+    Token: replace_with_a_random_shared_token
   DB:
     Host: 127.0.0.1
     Port: 3306
@@ -19,9 +26,3 @@ Config:
     SyncWaitTimeoutSecs: 2
     # 单次扫描及全市场行情刷新的最大并发数
     ScanBatchSize: 8
-  Market:
-    # 新浪股票日线与复权因子共用全局限频；实测安全下限为每 5 秒 1 次请求
-    StockRequestIntervalSeconds: 5
-    # 新浪期货主力连续日线；8 个品种与股票请求共用同一限频器
-    FuturesEnabled: true
-    FuturesRefreshIntervalHours: 24

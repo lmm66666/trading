@@ -1,12 +1,12 @@
 ---
 id: CHG-2026-09-21-NAS-SERVICE-SPLIT
-status: draft
-approval_status: draft
-authority: proposed
-approved_by: null
-approved_at: null
-approved_revision: null
-approved_scope: []
+status: implemented
+approval_status: approved
+authority: normative
+approved_by: user
+approved_at: "2026-09-21T11:55:59+08:00"
+approved_revision: "03abaed"
+approved_scope: ["REQ-SPLIT-001–010", "design.md sections 1–8"]
 ---
 
 # NAS 数据更新与电脑工作台拆分需求
@@ -57,4 +57,10 @@ NAS 全量库保持原有内容；本次不执行旧行情导入、批量重建�
 
 对话已确认部署目标、现有环境、更新频率与采集范围保持现状、取消单体运行方式。这些决定作为需求输入。
 
-本文件与 [目标设计](design.md) 是待审阅的具体方案；用户尚未批准共享库、内部 HTTP、迁移归属及新配置的完整内容版本，因此审批字段保持空值。后续批准需绑定两文件的内容版本。验收记录见 [验证](verification.md)。
+用户已批准提交 `03abaed` 中本文件与 [目标设计](design.md) 的完整范围；实施与验收见 [验证](verification.md)。
+
+用户于 2026-09-21 在本任务回复“ok 执行吧”，批准提交 `03abaed` 中需求与设计的完整范围；审批元数据记录该决定。
+
+## 本次交付验收调整（用户明确授权）
+
+实施期间用户确认“现在连不上 nas。代码编译成功就行”。该决定覆盖本次 REQ-SPLIT-010 / 设计第 8 节中的外部验收前置要求：本次以 Go 本机编译、linux/amd64 交叉编译及前端构建作为交付门槛，不等待真实 NAS/MySQL、Docker 镜像构建或现场部署。已经执行的测试如实记录，不把缺失验证标为通过；独立代码评审继续执行。允许按此范围完成并合回 main。服务运行设计和其他变更的通用工程门禁不因此改变，NAS 实际部署另待环境恢复。

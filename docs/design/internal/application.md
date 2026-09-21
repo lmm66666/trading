@@ -29,7 +29,7 @@ related: []
 ## 2. 对外能力与使用者
 
 - API 使用行情查询、图表、证券搜索、自选清单、回测和扫描服务。
-- 组合根使用行情采集、股票/期货调度器和持久化 WorkerPool。
+- updater 组合根使用行情采集与股票/期货调度器；workbench 组合根使用持久化 WorkerPool。
 - 服务输入输出只使用领域值对象、应用 DTO 和 `internal/port` 契约，不暴露 ORM Model。
 
 ## 3. 依赖和边界
@@ -118,3 +118,7 @@ go vet ./...
 ## 图表标准差扩展
 
 ChartQueryService 接受 STD(period)，周期1–500，fast/slow/signal必须为0；映射 STDKind + Close 引用，成本按period纳入2000预算。沿用完整历史构建后裁页、正版本固定、取消与16指标上限；总体标准差口径见[指标设计](indicator.md)。
+
+## 拆分后的生命周期
+
+每个目标库单个 updater 持续采集；workbench 只执行查询、工作台操作和扫描/回测。两者各自取消并等待所拥有的后台任务退出，最后关闭自身数据库连接。workbench 的刷新请求通过 HTTP 交给 updater，已受理的全市场任务属于 updater 根 context。工作台停机不取消 NAS 更新；计算任务沿用数据库租约恢复，NAS 不领取计算任务。现有 MarketScheduler、FuturesScheduler 的启动首轮、周期、范围、限频和发布算法不变。

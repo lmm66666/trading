@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/goccy/go-yaml"
-	"golang.org/x/time/rate"
 	"gorm.io/gorm"
 
 	"trading/api"
@@ -23,11 +22,9 @@ import (
 	"trading/internal/application"
 	"trading/internal/backtest"
 	mysqlinfra "trading/internal/infrastructure/mysql"
-	"trading/internal/market"
 	"trading/internal/port"
 	"trading/internal/strategy"
 	"trading/internal/strategy/builtin"
-	"trading/pkg/broker"
 )
 
 const marketRefreshInterval = 24 * time.Hour
@@ -64,24 +61,36 @@ func (t rootMarketTrigger) TriggerNow(workers int) error {
 }
 
 func main() {
+	service := flag.String("service", "", "required service: updater or workbench")
 	configPath := flag.String("config", "config.yaml", "path to config file")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, *configPath); err != nil {
+	if err := run(ctx, *configPath, *service); err != nil {
 		slog.Error("application stopped with an internal error")
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, configPath string) error {
+func run(ctx context.Context, configPath, service string) error {
+	if service != "updater" && service != "workbench" {
+		return errors.New("service must be updater or workbench")
+	}
 
 	cfg, err := loadConfig(configPath)
 	if err != nil {
 		return err
 	}
 
-	d, err := data.New(cfg.DB)
+	settings, err := resolveServiceConfig(service, cfg)
+	if err != nil {
+		return err
+	}
+	connect := data.Open
+	if service == "updater" {
+		connect = data.New
+	}
+	d, err := connect(cfg.DB)
 	if err != nil {
 		return err
 	}
@@ -92,26 +101,38 @@ func run(ctx context.Context, configPath string) error {
 	defer sqlDB.Close()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	kernel, err := newKernel(ctx, d.DB(), cfg.Worker, cfg.Market)
+	kernel, err := newServiceKernel(ctx, d.DB(), cfg, settings)
 	if err != nil {
 		return err
 	}
-	r := api.NewRouter(kernel.services)
-	if err := api.AttachWebUI(r, "web/dist"); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
+	var handler http.Handler
+	if service == "updater" {
+		router, err := api.NewUpdaterRouter(kernel.services, cfg.Updater.Token)
+		if err != nil {
 			return err
 		}
-		slog.Warn("Web UI is not built; API-only mode", "err", err)
+		handler = router
+	} else {
+		router := api.NewRouter(kernel.services)
+		if err := api.AttachWebUI(router, "web/dist"); err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			slog.Warn("Web UI is not built; API-only mode")
+		}
+		handler = router
 	}
-
-	slog.Info("Server starting on :8080")
-	server := &http.Server{Addr: ":8080", Handler: r, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
+	slog.Info("service starting", "service", service, "address", settings.address)
+	server := &http.Server{Addr: settings.address, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	err = serve(ctx, server, func(ctx context.Context) error {
-		runners := []func(context.Context) error{
-			kernel.workers.Run,
-			func(ctx context.Context) error {
+		var runners []func(context.Context) error
+		if kernel.workers != nil {
+			runners = append(runners, kernel.workers.Run)
+		}
+		if kernel.marketScheduler != nil {
+			runners = append(runners, func(ctx context.Context) error {
 				return kernel.marketScheduler.Start(ctx, marketRefreshInterval, kernel.services.MarketWorkers)
-			},
+			})
 		}
 		if kernel.futuresScheduler != nil {
 			runners = append(runners, func(ctx context.Context) error {
@@ -121,16 +142,17 @@ func run(ctx context.Context, configPath string) error {
 		return runBackground(ctx, runners...)
 	})
 	cancel()
-	kernel.marketScheduler.Wait()
+	if kernel.marketScheduler != nil {
+		kernel.marketScheduler.Wait()
+	}
 	return err
 }
 
-func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerConfig, marketConfig config.MarketConfig) (kernelRuntime, error) {
-	settings, err := resolveWorkerConfig(workerConfig)
-	if err != nil {
-		return kernelRuntime{}, err
+func newServiceKernel(rootCtx context.Context, db *gorm.DB, cfg *config.Config, service serviceSettings) (kernelRuntime, error) {
+	if service.role == "updater" {
+		return newUpdaterKernel(rootCtx, db, cfg)
 	}
-	marketSettings, err := resolveMarketConfig(marketConfig)
+	settings, err := resolveWorkerConfig(cfg.Worker)
 	if err != nil {
 		return kernelRuntime{}, err
 	}
@@ -173,37 +195,6 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 	if err != nil {
 		return kernelRuntime{}, err
 	}
-	historyStart := time.Now().UTC().AddDate(-(port.MaxBacktestRangeYears - 1), 0, 0).Truncate(time.Microsecond)
-	sinaLimiter := rate.NewLimiter(rate.Every(marketSettings.StockRequestInterval), 1)
-	ingestion, err := application.NewMarketIngestionService(
-		broker.NewSinaMarketSource(sinaLimiter),
-		marketData,
-		marketData,
-		application.MarketIngestionConfig{Source: "sina", HistoryStart: historyStart},
-	)
-	if err != nil {
-		return kernelRuntime{}, err
-	}
-	marketScheduler, err := application.NewMarketScheduler(marketData, ingestion, port.InstrumentScope{Exchanges: []market.Exchange{market.SSE, market.SZSE, market.BSE}, ActiveOnly: true, Limit: port.MaxScanInstruments})
-	if err != nil {
-		return kernelRuntime{}, err
-	}
-	var futuresScheduler *application.FuturesScheduler
-	if marketSettings.FuturesEnabled {
-		futuresIngestion, err := application.NewMarketIngestionService(
-			broker.NewSinaFuturesSource(sinaLimiter),
-			marketData,
-			marketData,
-			application.MarketIngestionConfig{Source: "sina-futures", HistoryStart: historyStart, FullHistoryRefresh: true},
-		)
-		if err != nil {
-			return kernelRuntime{}, err
-		}
-		futuresScheduler, err = application.NewFuturesScheduler(futuresIngestion, application.DefaultSinaFuturesInstruments(), slog.Default())
-		if err != nil {
-			return kernelRuntime{}, err
-		}
-	}
 	services := api.KernelServices{
 		Backtests:         backtests,
 		Scans:             scans,
@@ -211,8 +202,7 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 		Registry:          registry,
 		Instruments:       marketData,
 		SnapshotKeys:      snapshots,
-		MarketIngestion:   ingestion,
-		MarketTrigger:     rootMarketTrigger{ctx: rootCtx, scheduler: marketScheduler},
+		RemoteRefresh:     service.client,
 		MarketQueries:     application.NewMarketQueryService(marketData),
 		InstrumentCatalog: instrumentQueries,
 		ChartQueries:      chartQueries,
@@ -223,7 +213,7 @@ func newKernel(rootCtx context.Context, db *gorm.DB, workerConfig config.WorkerC
 		PollInterval:      settings.PollInterval,
 		Clock:             time.Now,
 	}
-	return kernelRuntime{services: services, workers: workers, marketScheduler: marketScheduler, futuresScheduler: futuresScheduler, futuresRefreshInterval: marketSettings.FuturesRefreshInterval}, nil
+	return kernelRuntime{services: services, workers: workers}, nil
 }
 
 func resolveMarketConfig(input config.MarketConfig) (marketRuntimeConfig, error) {
