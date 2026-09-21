@@ -30,12 +30,12 @@ func TestChartBoardStoreCRUDAndActivation(t *testing.T) {
 			require.Empty(t, state.Boards)
 			require.Zero(t, state.ActiveID)
 
-			// 创建即激活，新看板成为唯一激活行。
+			// 创建即激活，新看板成为唯一激活行；MySQL JSON 保证内容而非原始格式。
 			first, err := store.Create(ctx, "默认看板", chartBoardConfigText("first"))
 			require.NoError(t, err)
 			require.Len(t, first.Boards, 1)
 			require.Equal(t, "默认看板", first.Boards[0].Name)
-			require.Equal(t, chartBoardConfigText("first"), first.Boards[0].Config)
+			require.JSONEq(t, chartBoardConfigText("first"), first.Boards[0].Config)
 			require.Equal(t, first.Boards[0].ID, first.ActiveID)
 
 			second, err := store.Create(ctx, "周线", chartBoardConfigText("second"))
@@ -62,7 +62,7 @@ func TestChartBoardStoreCRUDAndActivation(t *testing.T) {
 			state, err = store.Update(ctx, secondID, &newName, &newConfig)
 			require.NoError(t, err)
 			require.Equal(t, "油价", state.Boards[1].Name)
-			require.Equal(t, chartBoardConfigText("updated"), state.Boards[1].Config)
+			require.JSONEq(t, chartBoardConfigText("updated"), state.Boards[1].Config)
 			require.Equal(t, secondID, state.ActiveID)
 
 			_, err = store.Update(ctx, 999, &newName, nil)
