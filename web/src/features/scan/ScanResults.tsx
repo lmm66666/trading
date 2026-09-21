@@ -97,7 +97,7 @@ export function ScanResults({ run, onSelectInstrument }: ScanResultsProps) {
       <RunMonitor kind={run.kind} status={run} pollingError={null} />
       <div className="results-body">
         <header className="results-heading">
-          <h3>入选 {rows.length} 只</h3>
+          <h3>{loading && rows.length === 0 ? '结果加载中…' : `入选 ${rows.length} 只`}</h3>
           {partial && failures.length > 0 && (
             <span className="failures-badge">{failures.length} 只证券处理失败</span>
           )}
@@ -169,7 +169,7 @@ export function ScanResults({ run, onSelectInstrument }: ScanResultsProps) {
                 <tr>
                   <th>证券</th>
                   <th>名称</th>
-                  <th>代码</th>
+                  <th>失败代码</th>
                   <th>说明</th>
                   <th>可重试</th>
                 </tr>
