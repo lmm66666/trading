@@ -100,7 +100,8 @@ if "$verify_image"; then
       --build-arg "HTTPS_PROXY=$TRADING_DOCKER_BUILD_PROXY"
     )
   fi
-  docker buildx build --platform linux/amd64 --load --no-cache "${build_proxy_args[@]}" -t trading:verify .
+  # ${arr[@]+"${arr[@]}"} 写法兼容 bash 3.2（macOS）下 set -u 展开空数组报错
+  docker buildx build --platform linux/amd64 --load --no-cache ${build_proxy_args[@]+"${build_proxy_args[@]}"} -t trading:verify .
 else
   echo "[10/10] 镜像：未选择（涉及构建或部署时必须使用 --image）"
 fi
