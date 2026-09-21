@@ -1,11 +1,11 @@
 ---
 id: CHG-2026-09-21-scan-workspace-DESIGN
-approval_status: in-review
-authority: proposed
-approved_by: null
-approved_at: null
-approved_revision: null
-approved_scope: []
+approval_status: approved
+authority: normative
+approved_by: user
+approved_at: "2026-09-21"
+approved_revision: "git:5b52fe7"
+approved_scope: [SCAN-001, SCAN-002, SCAN-003, SCAN-004, SCAN-005, SCAN-006, SCAN-007, SCAN-008]
 ---
 
 # 扫描工作台设计
@@ -96,3 +96,5 @@ ScanPanel 管理编辑/执行/展示的协调；扫描专用条件组件管理�
 ## 8. 审批
 
 本文件与 [需求](requirements.md) 同一版本提交评审。2026-09-21 对话中“嗯 继续”支持继续设计，但本文件新增的精确恢复、偏好和并发规则尚待该书面版本确认。
+
+审批记录：用户在收到书面版本 `5b52fe7` 后回复“ok 执行吧”，批准该版本需求/设计及浏览器验证；2026-09-21。上文待审批描述保留为该版本提交时的历史。

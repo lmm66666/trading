@@ -1,12 +1,12 @@
 ---
 id: CHG-2026-09-21-scan-workspace
-status: draft
-approval_status: in-review
-authority: proposed
-approved_by: null
-approved_at: null
-approved_revision: null
-approved_scope: []
+status: implementing
+approval_status: approved
+authority: normative
+approved_by: user
+approved_at: "2026-09-21"
+approved_revision: "git:5b52fe7"
+approved_scope: [SCAN-001, SCAN-002, SCAN-003, SCAN-004, SCAN-005, SCAN-006, SCAN-007, SCAN-008]
 ---
 
 # 扫描工作台需求
@@ -39,3 +39,5 @@ approved_scope: []
 本需求及 [设计](design.md) 为待审批的书面版本；上一轮同意继续不伪记为对尚未展示细节的批准。批准范围为 SCAN-001 至 SCAN-008 及设计的状态、存储、恢复行为。批准后绑定本文件与设计的实际 Git 内容版本，再开始生产实现。
 
 验收证据见 [验证记录](verification.md)。
+
+审批记录：用户在收到书面版本 `5b52fe7` 后回复“ok 执行吧”，批准该版本需求/设计及浏览器验证；2026-09-21。上文待审批描述保留为该版本提交时的历史。
