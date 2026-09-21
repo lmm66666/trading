@@ -4,6 +4,17 @@
 
 本项目是 Go 编写的 A 股与大宗商品期货行情、指标、策略扫描与回测平台。当前阶段为版本化策略内核与行情工作台稳定化；方向和进入条件见 [Roadmap](docs/roadmap.md)。系统运行规则见 [系统设计](docs/architecture/system-design.md)，操作流程见 [运行手册](docs/operations.md)。根目录不创建 `README.md`。
 
+## 用户部署背景与目标
+
+以下背景由用户于 2026-09-21 确认，后续方案设计应直接沿用；尚未明确的信息再单独确认。
+
+- 家用 NAS 支持 Docker，CPU 为 AMD；应用镜像沿用项目的 `linux/amd64` 构建要求。
+- 用户电脑上有一个保存 mock 数据的 MySQL；NAS 上另有一个保存全量股票数据的 MySQL。两者的数据用途不同，不默认同步、覆盖或替换。
+- 当前电脑与 NAS 仅通过局域网访问，后续希望支持外网访问；外网接入方式尚未确定。
+- 目标是拆分为两个独立部署的服务：数据更新服务在 NAS 上持续运行，前后端工作台服务在用户电脑上按需运行，连接后查看数据；电脑关闭不应影响 NAS 数据更新。
+- 用户已确认：更新频率与采集范围保持现状；拆分后只保留数据更新、前后端工作台两种运行方式，不保留一次启动全部功能的单体模式。本地调试可分别启动两个服务。
+- 上述内容是已确认的环境与需求，不代表服务拆分已经实现或详细设计已经批准。目标设计见 [NAS 服务拆分](docs/changes/active/2026-09-21-nas-service-split/design.md)；具体数据规模不作为扩大本次范围或引入新基础设施的依据。
+
 ## 文档驱动开发
 
 使用本机 document-driven-development skill（`~/.codex/skills/document-driven-development/SKILL.md`，位置以全局 `~/.codex/AGENTS.md` 为准）的 Change、Bootstrap 或 Audit 模式；通用流程和模板保存在 skill，项目不复制模板库。若 skill 不可用，先报告缺失；仍可进行只读分析，不自行绕过本文件门禁。
