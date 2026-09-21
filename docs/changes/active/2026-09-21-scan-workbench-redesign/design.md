@@ -1,11 +1,11 @@
 ---
 id: CHG-2026-09-21-scan-workbench-redesign-DESIGN
-approval_status: draft
+approval_status: approved
 authority: proposed
-approved_by: null
-approved_at: null
-approved_revision: null
-approved_scope: []
+approved_by: user
+approved_at: "2026-09-21T16:53:22+08:00"
+approved_revision: "4f9789a"
+approved_scope: ["REQ-SCAN-UI-001–006", "design.md 全部章节"]
 ---
 
 # 扫描工作台重设计 design
@@ -84,4 +84,4 @@ t_signal_snapshot_rows（instrument_id） 读取分页
 
 ## Approval scope and evidence
 
-待批准。批准时记录 requirements.md 与 design.md 的内容版本、批准人、时间与范围。
+用户于 2026-09-21T16:53:22+08:00 批准，批准内容版本 `4f9789a`，范围为 REQ-SCAN-UI-001–006 与 design.md 全部章节。
