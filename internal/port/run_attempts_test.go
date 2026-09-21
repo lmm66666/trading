@@ -16,11 +16,11 @@ func TestJobQueueExposesExpiredLeaseRecovery(t *testing.T) {
 
 func TestRunAttemptsRejectsInvalidPersistedCounts(t *testing.T) {
 	run := port.Run{ID: "run", IdempotencyKey: "key", InputHash: "hash", Kind: port.RunScan, Status: port.RunPending, StrategyID: "s", StrategyVersion: "v", EngineVersion: "v", DataVersion: 1, RequestJSON: []byte(`{}`)}
-	for _, attempts := range []int{-1, 5} {
+	for _, attempts := range []int{-1, port.MaxRunAttempts + 1} {
 		run.Attempts = attempts
 		require.ErrorIs(t, run.Validate(), port.ErrInvalidPortValue)
 	}
-	for attempts := 0; attempts <= 4; attempts++ {
+	for attempts := 0; attempts <= port.MaxRunAttempts; attempts++ {
 		run.Attempts = attempts
 		require.NoError(t, run.Validate())
 	}

@@ -3,6 +3,7 @@ package mysql
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -25,7 +26,7 @@ func TestClaimUsesAtomicOrderedDatabaseLease(t *testing.T) {
 	repo, m := mockRepository(t)
 	q := NewJobQueue(repo.db)
 	m.ExpectBegin()
-	m.ExpectExec("UPDATE t_compute_runs SET .*UTC_TIMESTAMP\\(6\\).*attempts < 4.*ORDER BY created_at, id LIMIT 1").WithArgs("owner ", sqlmock.AnyArg(), int64(60000000)).WillReturnResult(sqlmock.NewResult(0, 1))
+	m.ExpectExec(fmt.Sprintf(`UPDATE t_compute_runs SET .*UTC_TIMESTAMP\(6\).*attempts < %d.*ORDER BY created_at, id LIMIT 1`, port.MaxRunAttempts)).WithArgs("owner ", sqlmock.AnyArg(), int64(60000000)).WillReturnResult(sqlmock.NewResult(0, 1))
 	m.ExpectQuery("SELECT .*t_compute_runs.*lease_owner = .*lease_token =").WillReturnRows(runRows(port.RunRunning))
 	m.ExpectCommit()
 	run, err := q.Claim(context.Background(), "owner ", time.Minute)

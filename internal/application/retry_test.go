@@ -25,6 +25,16 @@ func TestRetryUsesPersistedAttemptsAndTerminalizesFourth(t *testing.T) {
 		}
 	}
 }
+
+func TestRetryScheduleMatchesAttemptLimit(t *testing.T) {
+	require.Len(t, retryDelays, port.MaxRunAttempts-1)
+	for attempt := 1; attempt < port.MaxRunAttempts; attempt++ {
+		_, ok := retryAt(marketDate(1), attempt)
+		require.True(t, ok, "attempt %d should be schedulable", attempt)
+	}
+	_, ok := retryAt(marketDate(1), port.MaxRunAttempts)
+	require.False(t, ok, "final attempt must not be schedulable")
+}
 func TestRetryClassifiesOnlyTransientInfrastructureErrors(t *testing.T) {
 	for _, test := range []struct {
 		err   error

@@ -46,6 +46,10 @@ const (
 	RunCancelled        RunStatus = "CANCELLED"
 )
 
+// MaxRunAttempts 是每个计算任务允许的最大尝试次数：达到上限后队列不再
+// 授予新租约，任务进入 FAILED。重试延迟表长度依赖此值（见 application.retryDelays）。
+const MaxRunAttempts = 4
+
 func (status RunStatus) Validate() error {
 	switch status {
 	case RunPending, RunRunning, RunSucceeded, RunPartialSucceeded, RunFailed, RunCancelled:
@@ -76,8 +80,8 @@ type Run struct {
 }
 
 func (run Run) Validate() error {
-	if run.Attempts < 0 || run.Attempts > 4 {
-		return invalidPortValue("run attempts must be between zero and four")
+	if run.Attempts < 0 || run.Attempts > MaxRunAttempts {
+		return invalidPortValue("run attempts must be between zero and %d", MaxRunAttempts)
 	}
 	for _, field := range []struct {
 		name, value string

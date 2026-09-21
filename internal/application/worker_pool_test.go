@@ -41,7 +41,7 @@ func (q *poolQueue) Renew(context.Context, string, string, time.Duration) error 
 }
 func (q *poolQueue) ReapExpired(context.Context) (int64, error) { q.reaped.Add(1); return 0, nil }
 func TestWorkerPoolPersistsRetryScheduleAndFourthFailure(t *testing.T) {
-	for _, attempt := range []int{1, 2, 3, 4} {
+	for _, attempt := range []int{1, 2, 3, port.MaxRunAttempts} {
 		s, _, store := newBacktestFixture(t)
 		_, err := s.Create(context.Background(), computeRequest())
 		require.NoError(t, err)
@@ -51,7 +51,7 @@ func TestWorkerPoolPersistsRetryScheduleAndFourthFailure(t *testing.T) {
 		pool, err := NewWorkerPool(store, store, map[port.RunKind]RunHandler{port.RunBacktest: func(context.Context, port.Run) error { return port.ErrTemporary }}, WorkerPoolConfig{Owner: "test", Workers: 1, Lease: time.Second, PollInterval: time.Millisecond, Clock: func() time.Time { return now }})
 		require.NoError(t, err)
 		require.NoError(t, pool.process(context.Background(), run))
-		if attempt < 4 {
+		if attempt < port.MaxRunAttempts {
 			require.Equal(t, port.RunPending, store.run.Status)
 			require.Equal(t, now.Add([]time.Duration{250 * time.Millisecond, time.Second, 4 * time.Second}[attempt-1]), store.retryTime)
 		} else {

@@ -3,6 +3,7 @@ package mysql
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/DATA-DOG/go-sqlmock"
 	driver "github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/require"
@@ -76,7 +77,7 @@ func TestRetryAndRenewCAS(t *testing.T) {
 				m.ExpectBegin()
 				rows := runRows(port.RunRunning)
 				if operation == "last" {
-					rows = sqlmock.NewRows([]string{"run_id", "lease_owner", "lease_token", "attempts"}).AddRow("Run A ", "owner ", "token ", 4)
+					rows = sqlmock.NewRows([]string{"run_id", "lease_owner", "lease_token", "attempts"}).AddRow("Run A ", "owner ", "token ", port.MaxRunAttempts)
 				}
 				m.ExpectQuery("SELECT .*t_compute_runs.*FOR UPDATE").WillReturnRows(rows)
 				m.ExpectExec("UPDATE `t_compute_runs`.*WHERE run_id = .*lease_owner = .*lease_token = .*lease_until > UTC_TIMESTAMP\\(6\\)").WillReturnResult(sqlmock.NewResult(0, affected))
@@ -116,13 +117,13 @@ func TestCancelAndReaper(t *testing.T) {
 	for _, fail := range []bool{false, true} {
 		repo, m := mockRepository(t)
 		m.ExpectBegin()
-		query := m.ExpectQuery("SELECT .*t_compute_runs.*attempts >= 4.*FOR UPDATE")
+		query := m.ExpectQuery(fmt.Sprintf(`SELECT .*t_compute_runs.*attempts >= %d.*FOR UPDATE`, port.MaxRunAttempts))
 		if fail {
 			query.WillReturnError(errors.New("db failed"))
 			m.ExpectRollback()
 		} else {
 			query.WillReturnRows(runRows(port.RunRunning))
-			m.ExpectExec("UPDATE `t_compute_runs`.*lease_owner = .*lease_token = .*attempts >= 4.*lease_until <= UTC_TIMESTAMP\\(6\\)").WillReturnResult(sqlmock.NewResult(0, 1))
+			m.ExpectExec(fmt.Sprintf(`UPDATE `+"`t_compute_runs`"+`.*lease_owner = .*lease_token = .*attempts >= %d.*lease_until <= UTC_TIMESTAMP\(6\)`, port.MaxRunAttempts)).WillReturnResult(sqlmock.NewResult(0, 1))
 			m.ExpectCommit()
 		}
 		count, err := NewJobQueue(repo.db).ReapExpired(context.Background())

@@ -60,7 +60,7 @@ func TestDurableQueueMySQLConcurrencyAndLeaseRecovery(t *testing.T) {
 			require.ErrorIs(t, queue.Renew(ctx, old.ID, old.LeaseToken, time.Minute), port.ErrLeaseLost)
 			require.ErrorIs(t, queue.Retry(ctx, old.ID, old.LeaseToken, time.Now().UTC(), port.Failure{Code: "TEMP", Message: "temporary", Retryable: true}), port.ErrLeaseLost)
 			require.NoError(t, queue.Renew(ctx, current.ID, current.LeaseToken, time.Minute))
-			for attempt := 2; attempt < 4; attempt++ {
+			for attempt := 2; attempt < port.MaxRunAttempts; attempt++ {
 				require.NoError(t, queue.Retry(ctx, current.ID, current.LeaseToken, time.Now().UTC().Add(-time.Second), port.Failure{Code: "TEMP", Message: "temporary", Retryable: true}))
 				current, err = queue.Claim(ctx, "next", time.Minute)
 				require.NoError(t, err)
@@ -74,7 +74,7 @@ func TestDurableQueueMySQLConcurrencyAndLeaseRecovery(t *testing.T) {
 			ended, err := store.Get(ctx, current.ID)
 			require.NoError(t, err)
 			require.Equal(t, port.RunFailed, ended.Status)
-			require.Equal(t, 4, ended.Attempts)
+			require.Equal(t, port.MaxRunAttempts, ended.Attempts)
 			for _, id := range []string{"Key", "key", "key "} {
 				run := queuedRun()
 				run.ID = id

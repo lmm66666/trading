@@ -10,10 +10,12 @@ import (
 	"trading/internal/port"
 )
 
+// retryDelays 按尝试次数索引重试延迟，长度必须恰为 port.MaxRunAttempts-1
+//（除首次尝试外每档一条），由 TestRetryScheduleMatchesAttemptLimit 保证。
 var retryDelays = []time.Duration{250 * time.Millisecond, time.Second, 4 * time.Second}
 
 func retryAt(now time.Time, attempt int) (time.Time, bool) {
-	if attempt < 1 || attempt >= 4 {
+	if attempt < 1 || attempt >= port.MaxRunAttempts {
 		return time.Time{}, false
 	}
 	return now.UTC().Add(retryDelays[attempt-1]), true

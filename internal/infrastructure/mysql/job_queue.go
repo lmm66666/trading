@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 
 	driver "github.com/go-sql-driver/mysql"
@@ -104,8 +105,8 @@ func (q *JobQueue) Claim(ctx context.Context, owner string, lease time.Duration)
 	token := hex.EncodeToString(tokenBytes)
 	var row ComputeRunModel
 	err := retryTransaction(ctx, q.db, func(tx *gorm.DB) error {
-		result := tx.Exec(`UPDATE t_compute_runs SET status='RUNNING', lease_owner=?, lease_token=?, lease_until=TIMESTAMPADD(MICROSECOND, ?, UTC_TIMESTAMP(6)), attempts=attempts+1, updated_at=UTC_TIMESTAMP(6)
-WHERE (status='PENDING' OR (status='RUNNING' AND lease_until <= UTC_TIMESTAMP(6))) AND cancel_requested_at IS NULL AND attempts < 4 AND (next_attempt_at IS NULL OR next_attempt_at <= UTC_TIMESTAMP(6)) ORDER BY created_at, id LIMIT 1`, owner, token, lease.Microseconds())
+		result := tx.Exec(fmt.Sprintf(`UPDATE t_compute_runs SET status='RUNNING', lease_owner=?, lease_token=?, lease_until=TIMESTAMPADD(MICROSECOND, ?, UTC_TIMESTAMP(6)), attempts=attempts+1, updated_at=UTC_TIMESTAMP(6)
+WHERE (status='PENDING' OR (status='RUNNING' AND lease_until <= UTC_TIMESTAMP(6))) AND cancel_requested_at IS NULL AND attempts < %[1]d AND (next_attempt_at IS NULL OR next_attempt_at <= UTC_TIMESTAMP(6)) ORDER BY created_at, id LIMIT 1`, port.MaxRunAttempts), owner, token, lease.Microseconds())
 		if result.Error != nil {
 			return result.Error
 		}
@@ -174,7 +175,7 @@ func (q *JobQueue) Retry(ctx context.Context, runID, token string, next time.Tim
 			return err
 		}
 		status := port.RunPending
-		if row.Attempts >= 4 || !failure.Retryable {
+		if row.Attempts >= port.MaxRunAttempts || !failure.Retryable {
 			status = port.RunFailed
 		}
 		update := clearLease(status)
@@ -215,7 +216,7 @@ func (q *JobQueue) ReapExpired(ctx context.Context) (int64, error) {
 	err := retryTransaction(ctx, q.db, func(tx *gorm.DB) error {
 		count = 0
 		var rows []ComputeRunModel
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("status = 'RUNNING' AND attempts >= 4 AND lease_until <= UTC_TIMESTAMP(6)").Order("created_at, id").Limit(1000).Find(&rows).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(fmt.Sprintf("status = 'RUNNING' AND attempts >= %d AND lease_until <= UTC_TIMESTAMP(6)", port.MaxRunAttempts)).Order("created_at, id").Limit(1000).Find(&rows).Error; err != nil {
 			return err
 		}
 		for _, row := range rows {
@@ -226,7 +227,7 @@ func (q *JobQueue) ReapExpired(ctx context.Context) (int64, error) {
 			update := clearLease(status)
 			update["failure_code"] = "LEASE_EXHAUSTED"
 			update["failure_message"] = "execution lease expired after maximum attempts"
-			result := tx.Model(&ComputeRunModel{}).Where("run_id = ? AND lease_owner = ? AND lease_token = ? AND status = 'RUNNING' AND attempts >= 4 AND lease_until <= UTC_TIMESTAMP(6)", row.RunID, row.LeaseOwner, row.LeaseToken).Updates(update)
+			result := tx.Model(&ComputeRunModel{}).Where(fmt.Sprintf("run_id = ? AND lease_owner = ? AND lease_token = ? AND status = 'RUNNING' AND attempts >= %d AND lease_until <= UTC_TIMESTAMP(6)", port.MaxRunAttempts), row.RunID, row.LeaseOwner, row.LeaseToken).Updates(update)
 			if err := affectedLease(result); err != nil {
 				return err
 			}
