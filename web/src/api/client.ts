@@ -1,5 +1,3 @@
-import { mockChartQuery, mockSearchInstruments } from './mock'
-
 export type Timeframe = 'DAY' | 'WEEK'
 export type PriceView = 'RAW' | 'QFQ'
 
@@ -92,20 +90,6 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     throw new Error(envelope.message || `请求失败（HTTP ${response.status}）`)
   }
   return envelope.data
-}
-
-// 仅 vite dev 模式下，后端不可达时回退到演示数据，便于单独预览前端 UI。
-const mockFallbackEnabled = import.meta.env.MODE === 'development'
-
-function withMockFallback<T>(promise: Promise<T>, fallback: () => T): Promise<T> {
-  if (!mockFallbackEnabled) return promise
-  return promise.catch((reason: unknown) => {
-    if (reason instanceof ConnectivityError) {
-      console.warn('[dev] 后端不可达，使用演示数据代替真实接口')
-      return fallback()
-    }
-    throw reason
-  })
 }
 
 // ---- 金额缩放换算：后端 Price/Money 均为缩放 10000 的整数 ----
@@ -371,27 +355,21 @@ export interface EquityPoint {
 
 export function searchInstruments(query: string, signal?: AbortSignal): Promise<InstrumentSummary[]> {
   const params = new URLSearchParams({ q: query.trim(), limit: '20' })
-  return withMockFallback(
-    request<{ items: InstrumentSummary[] }>(`/api/v1/instruments?${params}`, { signal }).then(
-      (result) => result.items,
-    ),
-    () => mockSearchInstruments(query),
+  return request<{ items: InstrumentSummary[] }>(`/api/v1/instruments?${params}`, { signal }).then(
+    (result) => result.items,
   )
 }
 
 export function queryChart(input: ChartQueryInput, signal?: AbortSignal): Promise<ChartResult> {
-  return withMockFallback(
-    request<ChartResult>('/api/v1/chart-queries', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-      signal,
-    }),
-    () => mockChartQuery(input),
-  )
+  return request<ChartResult>('/api/v1/chart-queries', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  })
 }
 
-// ---- 自选清单（无 mock 回退：后端不可用时呈现错误态）----
+// ---- 自选清单（后端不可用时呈现错误态）----
 
 export interface WatchlistItem extends InstrumentSummary {
   close: number | null
@@ -421,7 +399,7 @@ export function removeWatchlistItem(instrument: string): Promise<WatchlistItem[]
   }).then(unwrapItems)
 }
 
-// ---- 行情看板（服务端持久化，无 mock 回退：后端不可用时呈现错误态）----
+// ---- 行情看板（服务端持久化：后端不可用时呈现错误态）----
 
 export interface BoardConfig {
   defaultSymbol: string | null

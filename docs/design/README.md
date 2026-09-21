@@ -29,7 +29,7 @@ related: []
 
 **第一条推荐阅读路线：** [行情怎样进入系统](workflows/market-data.md#完整走一遍) → [扫描结果的含义](workflows/strategy-scan.md#完整走一遍) → [B1 判断规则](strategies/daily-b1.md#如何判断信号)。不需要先理解 Go 包结构。
 
-业务阅读层已覆盖采集、扫描、回测、图表四条链路与三个内置策略。旧行情到版本化内核的一次性迁移（`cmd/migrate-strategy-kernel`）仍只有技术设计，因其属于过渡工具而非长期业务能力。
+业务阅读层已覆盖采集、扫描、回测、图表四条链路与三个内置策略。旧行情到版本化内核的一次性迁移（`cmd/migrate-strategy-kernel`）与本地 mock 行情灌注（`cmd/mock-data`）仍只有技术设计：前者属于过渡工具，后者属于本地测试工具，均非长期业务能力。
 
 ## 当前有哪些值得判断的问题
 
@@ -76,6 +76,7 @@ related: []
 | `pkg/broker` | 新浪外部数据源适配 | port、market、HTTP | [Broker 设计](pkg/broker.md) |
 | `web` | React 行情工作台（图表、服务端看板、扫描、回测、自选）和 API 客户端状态 | React、Lightweight Charts、HTTP API | [前端设计](web.md) |
 | `cmd/migrate-strategy-kernel` | 旧行情到版本化内核的一次性迁移 | config、MySQL adapter、GORM | [迁移设计](cmd/migrate-strategy-kernel.md) |
+| `cmd/mock-data` | 本地测试 mock 行情灌注（3 股票 + 1 期货各 400 根日线） | config、data、MySQL adapter、market | [mock 灌注设计](cmd/mock-data.md) |
 | `scripts` | 验证门禁 | CLI 工具 | [工程标准](../standards/engineering.md) |
 
 ## 边界规则
@@ -124,6 +125,7 @@ internal/
 pkg/
   broker/                       # 外部来源解析与限频
 cmd/migrate-strategy-kernel/     # 离线旧行情迁移入口
+cmd/mock-data/                   # 本地 mock 行情灌注入口
 web/
   src/api/                      # HTTP 客户端与 DTO
   src/features/search/          # 证券搜索交互
