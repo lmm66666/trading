@@ -50,8 +50,12 @@ export function ScanPanel({ runId, onRunIdChange, onSelectInstrument }: ScanPane
       setFormError(dateError)
       return
     }
-    if (!selection.strategy || !paramsValid) {
-      setFormError('请选择策略并检查参数')
+    if (!selection.strategy) {
+      setFormError('请选择策略')
+      return
+    }
+    if (!paramsValid) {
+      setFormError('策略参数超出范围，请修正后重试')
       return
     }
     const parsedLimit = Number(limit)

@@ -57,6 +57,13 @@ export function StrategyForm({ definitions, loading, error, value, onChange, dis
     setRaw({})
   }, [value.strategy, value.version])
 
+  // 目录就绪且调用方未选中策略时，自动选中第一项，避免下拉显示与状态不一致
+  useEffect(() => {
+    if (definitions.length === 0 || value.strategy) return
+    const first = definitions[0]
+    onChange({ strategy: first.strategy, version: first.version, parameters: {} }, true)
+  }, [definitions, value.strategy, onChange])
+
   const selectStrategy = (strategyId: string) => {
     const definition = definitions.find((item) => item.strategy === strategyId)
     if (!definition) return

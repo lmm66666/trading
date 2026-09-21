@@ -64,8 +64,16 @@ export function BacktestPanel({ runId, onRunIdChange, selectedSymbol, defaultLot
       setFormError(dateError)
       return
     }
-    if (!instrument || !selection.strategy || !paramsValid) {
-      setFormError('请选择证券与策略并检查参数')
+    if (!instrument) {
+      setFormError('请先选择回测标的')
+      return
+    }
+    if (!selection.strategy) {
+      setFormError('请选择策略')
+      return
+    }
+    if (!paramsValid) {
+      setFormError('策略参数超出范围，请修正后重试')
       return
     }
     const initialCashYuan = Number(initialCash)

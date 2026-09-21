@@ -37,6 +37,24 @@ describe('StrategyForm', () => {
     expect(screen.getByRole('combobox', { name: '策略' })).toBeVisible()
   })
 
+  it('未选策略时目录就绪后自动选中第一项', () => {
+    const onChange = vi.fn()
+    render(
+      <StrategyForm
+        definitions={[definition]}
+        value={{ strategy: '', version: '', parameters: {} }}
+        onChange={onChange}
+      />,
+    )
+    expect(onChange).toHaveBeenCalledWith({ strategy: 'daily_b1_buy', version: '1', parameters: {} }, true)
+  })
+
+  it('已有选中策略时不触发自动选中', () => {
+    const onChange = vi.fn()
+    render(<StrategyForm definitions={[definition]} value={baseValue} onChange={onChange} />)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
   it('目录加载失败时显示错误', () => {
     render(<StrategyForm definitions={[]} error="策略目录加载失败" value={baseValue} onChange={vi.fn()} />)
     expect(screen.getByText('策略目录加载失败')).toBeVisible()

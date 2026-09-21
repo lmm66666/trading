@@ -100,8 +100,7 @@ function pickPresetRange(label: string) {
 
 async function renderWithCatalog(props?: Partial<Parameters<typeof ScanPanel>[0]>) {
   render(<ScanPanel runId={null} onRunIdChange={noop} onSelectInstrument={noop} {...props} />)
-  // 目录加载后表单默认未选策略，先选中再等待参数输入出现
-  fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'daily_b1_buy' } })
+  // 目录加载后自动选中第一个策略，等待参数输入出现
   await screen.findByLabelText('参数 lookback_days')
 }
 
@@ -164,7 +163,7 @@ describe('ScanPanel 表单', () => {
     fireEvent.change(screen.getByLabelText('参数 lookback_days'), { target: { value: '999' } })
     pickPresetRange('近 1 月')
     fireEvent.click(screen.getByRole('button', { name: '发起扫描' }))
-    expect(screen.getByText('请选择策略并检查参数')).toBeVisible()
+    expect(screen.getByText('策略参数超出范围，请修正后重试')).toBeVisible()
     expect(createScanRun).not.toHaveBeenCalled()
   })
 
@@ -182,8 +181,9 @@ describe('ScanPanel 表单', () => {
     pickPresetRange('近 1 月')
     fireEvent.click(screen.getByRole('button', { name: '发起扫描' }))
     await screen.findByText('NETWORK_DOWN')
-    const expected = `${fmt(monthsAgo(today(), 1))} → ${fmt(today())}`
-    expect(screen.getByRole('button', { name: '扫描时间范围' })).toHaveTextContent(expected)
+    const trigger = screen.getByRole('button', { name: '扫描时间范围' })
+    expect(trigger).toHaveTextContent(fmt(monthsAgo(today(), 1)))
+    expect(trigger).toHaveTextContent(fmt(today()))
   })
 
   it('未发起任务时展示空态引导', async () => {

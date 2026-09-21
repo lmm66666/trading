@@ -87,7 +87,8 @@ async function renderWithCatalog(props?: Partial<Parameters<typeof BacktestPanel
       {...props}
     />,
   )
-  fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'daily_b1_buy' } })
+  // 目录加载后 StrategyForm 自动选中第一个策略，等待选中后的元信息出现
+  await screen.findByText(/主周期 日线/)
 }
 
 beforeEach(() => {
@@ -176,7 +177,7 @@ describe('BacktestPanel 表单', () => {
     await renderWithCatalog({ selectedSymbol: null })
     pickPresetRange('近 1 月')
     fireEvent.click(screen.getByRole('button', { name: '发起回测' }))
-    expect(screen.getByText('请选择证券与策略并检查参数')).toBeVisible()
+    expect(screen.getByText('请先选择回测标的')).toBeVisible()
     expect(createBacktestRun).not.toHaveBeenCalled()
   })
 
