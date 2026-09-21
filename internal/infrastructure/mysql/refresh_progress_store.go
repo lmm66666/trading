@@ -2,7 +2,6 @@ package mysql
 
 import (
 	"context"
-	"errors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"strings"
@@ -80,11 +79,11 @@ func (s *RefreshProgressStore) GetRefreshRun(ctx context.Context, id string) (po
 		return port.RefreshRun{}, port.ErrInvalidPortValue
 	}
 	var row RefreshRunModel
-	err := s.db.WithContext(ctx).Select(refreshRunColumns).Where("run_id = ?", id).Take(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	result := s.db.WithContext(ctx).Select(refreshRunColumns).Where("run_id = ?", id).Limit(1).Find(&row)
+	if result.Error == nil && result.RowsAffected == 0 {
 		return port.RefreshRun{}, port.ErrRefreshRunNotFound
 	}
-	return row.dto(), err
+	return row.dto(), result.Error
 }
 func (s *RefreshProgressStore) ListRefreshFailures(ctx context.Context, id string, after uint64, limit int) ([]port.RefreshFailure, error) {
 	if limit < 1 || limit > 100 {
@@ -103,9 +102,9 @@ func (s *RefreshProgressStore) LatestRefreshRun(ctx context.Context, kind string
 		return port.RefreshRun{}, port.ErrInvalidPortValue
 	}
 	var row RefreshRunModel
-	err := s.db.WithContext(ctx).Select(refreshRunColumns).Where("kind = ?", kind).Order("started_at DESC, id DESC").Take(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	result := s.db.WithContext(ctx).Select(refreshRunColumns).Where("kind = ?", kind).Order("started_at DESC, id DESC").Limit(1).Find(&row)
+	if result.Error == nil && result.RowsAffected == 0 {
 		return port.RefreshRun{}, port.ErrRefreshRunNotFound
 	}
-	return row.dto(), err
+	return row.dto(), result.Error
 }

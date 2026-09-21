@@ -176,3 +176,5 @@ go test -tags=integration ./internal/infrastructure/mysql/... -count=1
 新增 `t_market_refresh_runs` 与 `t_market_refresh_failures`，Migrate 负责初始化与索引检查。任务 run_id 为 VARBINARY(64) 唯一身份，类型与来源为有限枚举；时间 UTC DATETIME(6)。摘要列包括 kind、trigger_source、state、total、succeeded、failed、started_at、finished_at、heartbeat_at、last_progress_at、snapshot_at、revision、error_code。索引按(kind,id)历史、(kind,started_at,id)最新、(state,id)重启恢复组织。
 
 失败项以(run_id,exchange,code)唯一，按(run_id,id)分页，显示名称 LEFT JOIN 证券主数据，不为成功证券复制明细。SaveRefresh 在单个短事务内插入或锁定任务、拒绝过期 revision/终态回写，以绝对计数更新摘要并按唯一身份写入失败明细；无外部采集调用。重启恢复只匹配固定启动时刻前的非终态。查询固定列、有限分页（最大100）。历史不自动删除，进度表不参与行情筛选、队列或断点恢复。
+
+更新进度的最新任务/指定任务不存在时仍返回 `ErrRefreshRunNotFound`，由应用层映射为空状态或 HTTP 404；这是预期查询结果，不输出 GORM `record not found` 错误日志。真实查询错误仍传播。

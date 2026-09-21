@@ -3,8 +3,12 @@
 package mysql
 
 import (
+	"bytes"
 	"context"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+	"log"
 	"sync"
 	"testing"
 	"time"
@@ -91,4 +95,28 @@ func TestRefreshLatestUsesStartTimeNotDelayedInsertOrder(t *testing.T) {
 	latest, err = store.LatestRefreshRun(ctx, "STOCK")
 	require.NoError(t, err)
 	require.Equal(t, "PREPARING", latest.State)
+}
+
+func TestRefreshMissingRecordsDoNotLogErrors(t *testing.T) {
+	db := dbtest.OpenIsolatedMySQL(t, dbtest.Target)
+	require.NoError(t, Migrate(db))
+	var logs bytes.Buffer
+	db = db.Session(&gorm.Session{Logger: logger.New(log.New(&logs, "", 0), logger.Config{LogLevel: logger.Error})})
+	store := NewRefreshProgressStore(db)
+	ctx := context.Background()
+	for _, kind := range []string{"STOCK", "FUTURES"} {
+		_, err := store.LatestRefreshRun(ctx, kind)
+		require.ErrorIs(t, err, port.ErrRefreshRunNotFound)
+	}
+	_, err := store.GetRefreshRun(ctx, "missing")
+	require.ErrorIs(t, err, port.ErrRefreshRunNotFound)
+	require.Empty(t, logs.String(), "expected absence must not emit SQL errors")
+	require.NoError(t, db.Migrator().DropTable(&RefreshRunModel{}))
+	_, err = store.LatestRefreshRun(ctx, "STOCK")
+	require.Error(t, err)
+	require.NotErrorIs(t, err, port.ErrRefreshRunNotFound)
+	_, err = store.GetRefreshRun(ctx, "missing")
+	require.Error(t, err)
+	require.NotErrorIs(t, err, port.ErrRefreshRunNotFound)
+	require.NotEmpty(t, logs.String(), "real database failures must not be silenced")
 }
