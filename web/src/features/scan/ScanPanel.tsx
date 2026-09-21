@@ -6,7 +6,7 @@ import { useRunPolling } from '../strategy/useRunPolling'
 import { useStrategyCatalog } from '../strategy/useStrategyCatalog'
 import { ScanForm } from './ScanForm'
 import { ScanResults } from './ScanResults'
-import { contextForRun, readScanPreferences, saveScanPreferences, type ScanDraft, type SubmittedScan } from './scanPreferences'
+import { contextForRun, readScanPreferences, saveScanPreferences, type ScanDraft, type ScanContext, type SubmittedScan } from './scanPreferences'
 
 interface ScanPanelProps {
   runId: string | null
@@ -25,7 +25,7 @@ export function ScanPanel({ runId, onRunIdChange, onSelectInstrument, active = t
   const [formError, setFormError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [storageError, setStorageError] = useState(false)
-  const [candidate, setCandidate] = useState<{ run: RunStatus; context: ScanDraft | null } | null>(null)
+  const [candidate, setCandidate] = useState<{ run: RunStatus; context: ScanContext | null } | null>(null)
   const submittingRef = useRef(false)
   const clearedRef = useRef<string | null>(null)
   const polling = useRunPolling('scan', runId, { active, classifyErrors: true })
@@ -63,7 +63,9 @@ export function ScanPanel({ runId, onRunIdChange, onSelectInstrument, active = t
         parameters: Object.keys(frozen.parameters).length ? frozen.parameters : undefined,
         scope: { exchanges: frozen.exchanges, active_only: frozen.activeOnly, limit: Number(frozen.limit) },
       })
-      const next = { runId: reference.run_id, draft: frozen }
+      const definition = catalog.definitions.find((item) => item.strategy === frozen.strategy && item.version === frozen.version)
+      const effectiveParameters = Object.fromEntries(Object.entries(definition?.parameters ?? {}).map(([name, spec]) => [name, frozen.parameters[name] ?? spec.default]))
+      const next = { runId: reference.run_id, draft: frozen, effectiveParameters }
       // 上下文先于任务 ID 落盘；两者不同步时恢复路径拒绝绑定。
       setStorageError(!saveScanPreferences({ draft, submitted: next }))
       setSubmitted(next)
@@ -75,14 +77,17 @@ export function ScanPanel({ runId, onRunIdChange, onSelectInstrument, active = t
   const terminalShown = Boolean(candidate && status && candidate.run.run_id === status.run_id)
   return <section className="scan-workspace" aria-label="策略扫描" hidden={!active}>
     <header className="scan-page-heading"><div><h1>策略扫描</h1><p>调整条件，发现值得进一步观察的证券</p></div><span className="scan-mode">手动扫描</span></header>
-    <ScanForm active={active} draft={draft} onChange={setDraft} definitions={catalog.definitions} loading={catalog.loading} error={catalog.error}
+    <ScanForm onRetryCatalog={catalog.retry} active={active} draft={draft} onChange={setDraft} definitions={catalog.definitions} loading={catalog.loading} error={catalog.error}
       busy={busy} submitting={submitting} onSubmit={() => void submit()} submitError={formError} />
     {storageError && <p className="scan-notice" role="alert">浏览器无法保存设置，刷新后可能无法恢复条件。</p>}
     {notice && <p className="scan-notice" role="status">{notice}</p>}
     <div className="scan-result-area">
       {polling.loading && <p className="scan-notice" role="status">正在加载上次扫描…</p>}
       {!terminalShown && !polling.missing && <RunMonitor key={runId} kind="scan" status={status} pollingError={pollingError} />}
-      {pollingError && !polling.missing && <button type="button" className="table-load-more" onClick={polling.retry}>重新连接</button>}
+      {pollingError && !polling.missing && <div>
+        {terminalShown && <p className="scan-notice" role="alert">任务状态连接中断：{pollingError}（已保留结果）</p>}
+        <button type="button" className="table-load-more" onClick={polling.retry}>重新连接</button>
+      </div>}
       {!runId && !candidate && <div className="scan-idle">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="10" cy="10" r="6" /><path d="m15 15 6 6" /></svg>
         <strong>尚未发起扫描</strong><span>设置上方策略和日期后，点击「发起扫描」。</span>

@@ -1,15 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { listStrategies, type StrategyDefinition } from '../../api/client'
 
 export interface StrategyCatalogState {
   definitions: StrategyDefinition[]
   loading: boolean
   error: string | null
+  retry: () => void
 }
 
 /** 加载服务端策略目录，供扫描与回测面板共用 */
 export function useStrategyCatalog(): StrategyCatalogState {
-  const [state, setState] = useState<StrategyCatalogState>({ definitions: [], loading: true, error: null })
+  const [state, setState] = useState<Omit<StrategyCatalogState, 'retry'>>({ definitions: [], loading: true, error: null })
+
+  const [attempt, setAttempt] = useState(0)
+  const retry = useCallback(() => setAttempt((value) => value + 1), [])
 
   useEffect(() => {
     let cancelled = false
@@ -30,7 +34,7 @@ export function useStrategyCatalog(): StrategyCatalogState {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [attempt])
 
-  return state
+  return { ...state, retry }
 }

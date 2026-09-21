@@ -6,6 +6,7 @@ import { PARAMETER_NAMES, strategyName, type ScanDraft } from './scanPreferences
 
 interface Props {
   active: boolean
+  onRetryCatalog: () => void
   draft: ScanDraft
   onChange: (draft: ScanDraft) => void
   definitions: StrategyDefinition[]
@@ -18,7 +19,7 @@ interface Props {
 }
 const EXCHANGES = [['SSE', '上交所 SSE'], ['SZSE', '深交所 SZSE'], ['BSE', '北交所 BSE']]
 
-export function ScanForm({ active, draft, onChange, definitions, loading, error, busy, submitting, onSubmit, submitError }: Props) {
+export function ScanForm({ onRetryCatalog, active, draft, onChange, definitions, loading, error, busy, submitting, onSubmit, submitError }: Props) {
   const [validation, setValidation] = useState<string | null>(null)
   const [invalid, setInvalid] = useState<Record<string, string>>({})
   const selected = definitions.find((d) => d.strategy === draft.strategy && d.version === draft.version)
@@ -57,7 +58,7 @@ export function ScanForm({ active, draft, onChange, definitions, loading, error,
       <button className="submit-task" type="submit" disabled={submitting || busy || loading || Boolean(error)}>{submitting ? '提交中…' : busy ? '扫描进行中' : '发起扫描'}</button>
     </div>
     {loading && <p role="status">策略目录加载中…</p>}
-    {error && <p className="form-error" role="alert">{error}</p>}
+    {error && <p className="form-error" role="alert">{error} <button type="button" className="table-load-more" onClick={onRetryCatalog}>重试加载策略</button></p>}
     {!loading && !error && !definitions.length && <p>服务端暂无可用策略</p>}
     <div className="scan-secondary-fields">
       <div className="chip-row" role="group" aria-label="交易所范围">

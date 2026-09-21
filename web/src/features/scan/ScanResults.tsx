@@ -5,7 +5,7 @@ import {
 } from '../../api/client'
 import type { RunStatus } from '../../api/client'
 import { RunMonitor } from '../strategy/RunMonitor'
-import { describeScan, sameDraft, strategyName, type ScanDraft } from './scanPreferences'
+import { describeScan, sameDraft, strategyName, type ScanDraft, type ScanContext } from './scanPreferences'
 
 const PAGE_LIMIT = 100
 
@@ -13,7 +13,7 @@ interface ScanResultsProps {
   /** 终态且带 snapshot_id 的扫描任务 */
   run: RunStatus
   onSelectInstrument: (instrument: string) => void
-  context?: ScanDraft | null
+  context?: ScanContext | null
   draft?: ScanDraft
   active?: boolean
 }
@@ -24,7 +24,7 @@ function formatLocalTime(utc: string): string {
 
 /** 扫描结果卡：卡头为任务状态条，卡体按快照 key 分页读取入选行，failures 折叠展示 */
 export function ScanResults({ run, onSelectInstrument, context = null, draft, active = true }: ScanResultsProps) {
-  const [displayed, setDisplayed] = useState<{ run: RunStatus; context: ScanDraft | null; page: SnapshotPage } | null>(null)
+  const [displayed, setDisplayed] = useState<{ run: RunStatus; context: ScanContext | null; page: SnapshotPage } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
