@@ -1,6 +1,6 @@
 ---
 id: CHG-UPDATER-EMBEDDED-CONFIG
-status: implementing
+status: implemented
 approval_status: approved
 authority: proposed
 approved_by: user
