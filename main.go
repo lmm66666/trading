@@ -44,6 +44,7 @@ type marketRuntimeConfig struct {
 }
 
 type kernelRuntime struct {
+	progress               *application.RefreshProgress
 	services               api.KernelServices
 	workers                *application.WorkerPool
 	marketScheduler        *application.MarketScheduler
@@ -56,8 +57,8 @@ type rootMarketTrigger struct {
 	scheduler *application.MarketScheduler
 }
 
-func (t rootMarketTrigger) TriggerNow(workers int) error {
-	return t.scheduler.TriggerNow(t.ctx, workers)
+func (t rootMarketTrigger) TriggerNow(workers int) (port.RefreshReceipt, error) {
+	return t.scheduler.TriggerTracked(t.ctx, workers)
 }
 
 func main() {
@@ -107,6 +108,14 @@ func run(ctx context.Context, configPath, service string) error {
 	}
 	var handler http.Handler
 	if service == "updater" {
+		recoveryBefore := time.Now().UTC().Truncate(time.Microsecond)
+		kernel.progress.SetRecovery(func(ctx context.Context) error {
+			return mysqlinfra.NewRefreshProgressStore(d.DB()).InterruptRefreshRunsBefore(ctx, recoveryBefore)
+		})
+		recoveryCtx, stopRecovery := context.WithTimeout(ctx, 2*time.Second)
+		kernel.progress.Flush(recoveryCtx)
+		stopRecovery()
+
 		router, err := api.NewUpdaterRouter(kernel.services, cfg.Updater.Token)
 		if err != nil {
 			return err
@@ -126,6 +135,9 @@ func run(ctx context.Context, configPath, service string) error {
 	server := &http.Server{Addr: settings.address, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	err = serve(ctx, server, func(ctx context.Context) error {
 		var runners []func(context.Context) error
+		if kernel.progress != nil {
+			runners = append(runners, kernel.progress.Run)
+		}
 		if kernel.workers != nil {
 			runners = append(runners, kernel.workers.Run)
 		}
@@ -144,6 +156,11 @@ func run(ctx context.Context, configPath, service string) error {
 	cancel()
 	if kernel.marketScheduler != nil {
 		kernel.marketScheduler.Wait()
+	}
+	if kernel.progress != nil {
+		flushCtx, stopFlush := context.WithTimeout(context.Background(), 5*time.Second)
+		kernel.progress.Flush(flushCtx)
+		stopFlush()
 	}
 	return err
 }
@@ -203,6 +220,7 @@ func newServiceKernel(rootCtx context.Context, db *gorm.DB, cfg *config.Config, 
 		Instruments:       marketData,
 		SnapshotKeys:      snapshots,
 		RemoteRefresh:     service.client,
+		RefreshQueries:    application.NewRefreshQueries(mysqlinfra.NewRefreshProgressStore(db)),
 		MarketQueries:     application.NewMarketQueryService(marketData),
 		InstrumentCatalog: instrumentQueries,
 		ChartQueries:      chartQueries,

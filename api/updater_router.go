@@ -15,13 +15,17 @@ func NewUpdaterRouter(kernel KernelServices, token string) (*gin.Engine, error) 
 	r := gin.New()
 	r.Use(gin.Recovery())
 	h := &StockHandler{kernel: kernel}
-	r.POST(updaterRefreshPath, func(c *gin.Context) {
+	group := r.Group(updaterRefreshPath)
+	group.Use(func(c *gin.Context) {
 		provided := sha256.Sum256([]byte(c.GetHeader("Authorization")))
 		if len(c.Request.Header.Values("Authorization")) != 1 || subtle.ConstantTimeCompare(expected[:], provided[:]) != 1 {
+			c.Abort()
 			respondError(c, 401, "UNAUTHORIZED")
 			return
 		}
-		h.MarketRefresh(c)
+		c.Next()
 	})
+	group.POST("", h.MarketRefresh)
+	registerRefreshQueries(group, "", h)
 	return r, nil
 }

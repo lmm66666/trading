@@ -229,7 +229,7 @@ curl -X POST http://localhost:8080/api/v1/market/refresh \
 ```
 
 - 请求体可选：`exchange` 与 `code` 必须同时提供或同时缺省，任一单独出现返回400。
-- 全量触发：语义与调度器定时刷新一致；同一进程内定时与手工刷新只允许一个运行实例，运行中返回429；成功受理返回 `202 {"status":"ACCEPTED"}`。
+- 全量触发：语义与调度器定时刷新一致；同一进程内定时与手工刷新只允许一个运行实例，运行中返回429；成功受理返回 `202 {"status":"ACCEPTED","run_id":"<id>","progress_available":true}`。
 - 单证券：`exchange` 合法值为 SSE、SZSE、BSE，`code` 为六位数字；经活跃证券主数据精确解析，零结果或唯一匹配的交易所与请求身份不符返回404，同一代码匹配多个活跃交易所返回409，同一证券正在刷新返回429。成功返回 `{"instrument","version","quality","daily_bars","weekly_bars"}`，与既有刷新结果结构一致。
 - 请求 JSON 限制1MiB，拒绝未知字段和尾随第二个 JSON 值。
 
@@ -239,3 +239,20 @@ curl -X POST http://localhost:8080/api/v1/market/refresh \
 工作台 `/api/v1/market/refresh` 保留上述请求和业务成功/失败语义，改为转发至 updater 的 `POST /internal/v1/market/refresh`；全市场仍指股票调度范围，期货独立定时刷新。NAS 接口只供服务调用，需 `Authorization: Bearer <token>`；缺失或不匹配返回 `401 {"code":401,"message":"UNAUTHORIZED","data":null}`。
 
 工作台固定目标 URL，不传递浏览器 Cookie/认证头；请求/响应上限 1MiB，总超时 40 秒，不重试 POST、不跟随重定向。503 表示连接不可用，504 表示等待超时，502 表示上游认证或响应异常；错误正文统一脱敏。超时可能发生在请求已受理或数据已提交之后，不能推断未执行。已受理的全市场刷新不随电脑关闭或请求断开而取消；单证券请求沿 HTTP context 传播取消。
+
+### 批量更新进度
+
+以下为 data 内容，统一沿用 code/message/data envelope。浏览器使用 /api/v1，NAS 内部认证使用 /internal/v1：
+
+| 路径 | 方法 | 查询与结果 |
+|---|---|---|
+| /market/refresh/status | GET | 无参数；stock/futures 为最近任务或 null，futures_enabled 为 true/false/null（能力查询不可用） |
+| /market/refresh/runs | GET | kind=STOCK/FUTURES 可选；before_id 默认0，limit 默认20、范围1–100；items 按 id 倒序 |
+| /market/refresh/runs/{run_id} | GET | 无参数；返回指定任务，未知404 |
+| /market/refresh/runs/{run_id}/failures | GET | after_id 默认0，limit 默认50、范围1–100；items 按 id 升序，未知任务404 |
+
+列表下一页使用本页末项 id，短页或空页结束；拒绝未知参数、重复参数、非法数字/类型。run_id 最大64字节，精确匹配。
+
+任务字段：id、run_id、kind、trigger(MANUAL/SCHEDULED)、state、total（准备中可null）、succeeded、failed、started_at、finished_at、heartbeat_at、last_progress_at、snapshot_at、snapshot_revision、可选error_code。状态 PREPARING/RUNNING/SUCCEEDED/PARTIAL_SUCCEEDED/FAILED/INTERRUPTED。失败项字段 id/run_id/exchange/code/name（可缺省）/error_code/completed_at。稳定错误码 REFRESH_FAILED 或任务中断 INTERRUPTED，不透传数据库或来源错误。
+
+当前摘要按 started_at/id 定位，与历史的首次落库顺序区分。已处理=成功+失败，不把未派发/取消项记为采集失败。心跳过期/HTTP失败不是任务终态。新全市场 POST 增加 run_id/progress_available；progress_available=false 仍表示采集已受理。工作台不重试 POST，超时先查询，不认定发现的其他任务必然由本次提交触发。

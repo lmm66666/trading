@@ -170,3 +170,9 @@ Docker Hub 或镜像构建阶段需要代理时，宿主侧继续使用标准 `h
 - [系统设计](architecture/system-design.md)
 - [Roadmap](roadmap.md)
 - [API 契约](standards/http-api.md)
+
+## 更新进度的部署与诊断
+
+升级前备份数据库并停止旧 updater，新 updater 启动创建两张更新进度观察表，再升级 workbench。不回填虚构历史，不改变采集周期或已有行情。回滚保留新增表，旧 updater 不提供进度；旧记录过期时只能说明状态未知。
+
+工作台顶栏“数据更新”可手动更新全部股票，查看股票/期货进度与失败记录。关闭电脑不会停止 NAS 任务，重启 updater 后旧任务记为中断、不自动续跑。重新更新仍按原行情规则遍历，并不跳过当天已更新证券。progress_available=false 表示采集已受理但记录暂不可用，不应自动重复提交。进度记录可能落后真实行情，不把百分比当数据库完整性证明。

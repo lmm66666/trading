@@ -85,7 +85,7 @@ func TestRemoteRefreshSanitizesUpstreamFailures(t *testing.T) {
 		{400, `{"code":400,"message":"secret SQL","data":null}`, 502, "UPDATER_BAD_RESPONSE"},
 		{200, `{"code":0,"message":"success","data":{}}`, 502, "UPDATER_BAD_RESPONSE"},
 		{202, `{"code":0,"message":"success","data":{"status":"bad"}}`, 502, "UPDATER_BAD_RESPONSE"},
-		{202, `{"code":0,"message":"success","data":{"status":"ACCEPTED"}} {}`, 502, "UPDATER_BAD_RESPONSE"},
+		{202, `{"code":0,"message":"success","data":{"status":"ACCEPTED","run_id":"run-1","progress_available":true}} {}`, 502, "UPDATER_BAD_RESPONSE"},
 		{202, strings.Repeat(" ", 1<<20) + `{}`, 502, "UPDATER_BAD_RESPONSE"},
 	} {
 		t.Run(fmt.Sprintf("%d-%s", tc.status, tc.body[:min(len(tc.body), 40)]), func(t *testing.T) {
@@ -191,7 +191,7 @@ func TestRemoteRefreshDoesNotReplayOnReusedConnectionFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
 		w.WriteHeader(202)
-		fmt.Fprint(w, `{"code":0,"message":"success","data":{"status":"ACCEPTED"}}`)
+		fmt.Fprint(w, `{"code":0,"message":"success","data":{"status":"ACCEPTED","run_id":"run-1","progress_available":true}}`)
 	}))
 	defer server.Close()
 	client, err := NewUpdaterClient(server.URL, testUpdaterToken)
@@ -228,7 +228,7 @@ func TestRemoteRefreshUsesHTTP1EvenWhenServerOffersHTTP2(t *testing.T) {
 		protocol.Store(int32(r.ProtoMajor))
 		io.Copy(io.Discard, r.Body)
 		w.WriteHeader(202)
-		fmt.Fprint(w, `{"code":0,"message":"success","data":{"status":"ACCEPTED"}}`)
+		fmt.Fprint(w, `{"code":0,"message":"success","data":{"status":"ACCEPTED","run_id":"run-1","progress_available":true}}`)
 	}))
 	server.EnableHTTP2 = true
 	server.StartTLS()

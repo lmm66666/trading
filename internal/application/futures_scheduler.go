@@ -12,6 +12,7 @@ import (
 )
 
 type FuturesScheduler struct {
+	progress  *RefreshProgress
 	refresher MarketRefresher
 	ids       []market.InstrumentID
 	logger    *slog.Logger
@@ -52,6 +53,8 @@ func NewFuturesScheduler(refresher MarketRefresher, ids []market.InstrumentID, l
 	return &FuturesScheduler{refresher: refresher, ids: owned, logger: logger}, nil
 }
 
+func (scheduler *FuturesScheduler) SetProgress(p *RefreshProgress) { scheduler.progress = p }
+
 func (scheduler *FuturesScheduler) RunOnce(ctx context.Context) RefreshSummary {
 	startedAt := time.Now()
 	summary := RefreshSummary{
@@ -64,6 +67,9 @@ func (scheduler *FuturesScheduler) RunOnce(ctx context.Context) RefreshSummary {
 		return summary
 	}
 	defer scheduler.running.Store(false)
+	observation, _ := scheduler.progress.Begin(ctx, "FUTURES", "SCHEDULED")
+	observation.Prepared(len(scheduler.ids))
+	defer func() { observation.End(summary.Err) }()
 	defer func() {
 		scheduler.mu.Lock()
 		scheduler.last = cloneRefreshSummary(summary)
@@ -88,6 +94,7 @@ func (scheduler *FuturesScheduler) RunOnce(ctx context.Context) RefreshSummary {
 			break
 		}
 		result, err := scheduler.refresher.Refresh(ctx, id)
+		observation.Completed(id, err)
 		if err != nil {
 			summary.Failures[id] = err
 			if ctx.Err() != nil {

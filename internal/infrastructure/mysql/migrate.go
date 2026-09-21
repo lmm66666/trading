@@ -34,6 +34,8 @@ var migrationModels = []struct {
 	{&OutboxEventModel{}, []string{"uq_outbox_event", "idx_outbox_pending"}},
 	{&WatchlistModel{}, []string{"uq_watchlist"}},
 	{&ChartBoardModel{}, nil},
+	{&RefreshRunModel{}, []string{"uq_refresh_run", "idx_refresh_kind", "idx_refresh_state", "idx_refresh_latest"}},
+	{&RefreshFailureModel{}, []string{"uq_refresh_failure", "idx_refresh_failure_page"}},
 }
 
 // Migrate creates tables in dependency order without dropping legacy tables.

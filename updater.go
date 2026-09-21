@@ -42,6 +42,9 @@ func newUpdaterKernel(rootCtx context.Context, db *gorm.DB, cfg *config.Config) 
 	if err != nil {
 		return kernelRuntime{}, err
 	}
+	progressStore := mysqlinfra.NewRefreshProgressStore(db)
+	progress := application.NewRefreshProgress(progressStore)
+	marketScheduler.SetProgress(progress)
 	var futuresScheduler *application.FuturesScheduler
 	if marketSettings.FuturesEnabled {
 		futuresIngestion, err := application.NewMarketIngestionService(
@@ -59,6 +62,9 @@ func newUpdaterKernel(rootCtx context.Context, db *gorm.DB, cfg *config.Config) 
 		}
 	}
 
-	services := api.KernelServices{MarketIngestion: ingestion, MarketTrigger: rootMarketTrigger{ctx: rootCtx, scheduler: marketScheduler}, Instruments: marketData, MarketWorkers: workers}
-	return kernelRuntime{services: services, marketScheduler: marketScheduler, futuresScheduler: futuresScheduler, futuresRefreshInterval: marketSettings.FuturesRefreshInterval}, nil
+	if futuresScheduler != nil {
+		futuresScheduler.SetProgress(progress)
+	}
+	services := api.KernelServices{RefreshQueries: application.NewRefreshQueries(progressStore), FuturesEnabled: &marketSettings.FuturesEnabled, MarketIngestion: ingestion, MarketTrigger: rootMarketTrigger{ctx: rootCtx, scheduler: marketScheduler}, Instruments: marketData, MarketWorkers: workers}
+	return kernelRuntime{progress: progress, services: services, marketScheduler: marketScheduler, futuresScheduler: futuresScheduler, futuresRefreshInterval: marketSettings.FuturesRefreshInterval}, nil
 }

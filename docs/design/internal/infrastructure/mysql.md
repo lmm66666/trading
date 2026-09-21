@@ -51,7 +51,7 @@ related: []
 
 ### 5.1 初始化、行情发布与读取
 
-`Migrate` 按依赖顺序创建 15 张内核表，检查关键索引，并幂等建立版本 0 锁行。版本 0 的状态为 `INTERNAL_LOCK`、来源为 `__kernel_version_lock__`，只用于序列化发布，永远不能作为已完成数据版本读取。updater 正常启动仅迁移证券主数据和新内核表；旧技术 K 线表只供迁移或回滚读取，不创建、不变更。
+`Migrate` 按依赖顺序创建 17 张内核表，检查关键索引，并幂等建立版本 0 锁行。版本 0 的状态为 `INTERNAL_LOCK`、来源为 `__kernel_version_lock__`，只用于序列化发布，永远不能作为已完成数据版本读取。updater 正常启动仅迁移证券主数据和新内核表；旧技术 K 线表只供迁移或回滚读取，不创建、不变更。
 
 `Publish` 是增量 upsert：未提供的 Bar、因子或事件表示本次未观测，不表示删除；当前端口没有权威快照或删除语义。批次先复制、排序、校验并计算 SHA-256；提供的 Digest 必须匹配 `MarketBatchDigest`。输入版本号不参与摘要，发布版本由仓储分配。仅该证券最近一条 COMPLETE 发布可命中摘要幂等，重新提交较老内容会形成新版本。
 
@@ -170,3 +170,9 @@ go test -tags=integration ./internal/infrastructure/mysql/... -count=1
 ## 双服务共享库
 
 两个角色共用同一 NAS 业务库，版本、证券关联、队列、看板与结果索引不变。updater 通过 data.New 完成启动迁移并独占行情发布；workbench 通过 data.Open 只连接，读取已发布行情并写入工作台和计算表。本次不新增表/列/索引，也不拆分数据库；上线先初始化 updater，再启动 workbench。DDL 归属变化由 `data/service_integration_test.go` 在远端随机隔离库验证，禁止在 NAS 业务库执行测试。
+
+### 更新进度观察存储
+
+新增 `t_market_refresh_runs` 与 `t_market_refresh_failures`，Migrate 负责初始化与索引检查。任务 run_id 为 VARBINARY(64) 唯一身份，类型与来源为有限枚举；时间 UTC DATETIME(6)。摘要列包括 kind、trigger_source、state、total、succeeded、failed、started_at、finished_at、heartbeat_at、last_progress_at、snapshot_at、revision、error_code。索引按(kind,id)历史、(kind,started_at,id)最新、(state,id)重启恢复组织。
+
+失败项以(run_id,exchange,code)唯一，按(run_id,id)分页，显示名称 LEFT JOIN 证券主数据，不为成功证券复制明细。SaveRefresh 在单个短事务内插入或锁定任务、拒绝过期 revision/终态回写，以绝对计数更新摘要并按唯一身份写入失败明细；无外部采集调用。重启恢复只匹配固定启动时刻前的非终态。查询固定列、有限分页（最大100）。历史不自动删除，进度表不参与行情筛选、队列或断点恢复。

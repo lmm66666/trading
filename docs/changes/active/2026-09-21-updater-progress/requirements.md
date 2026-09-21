@@ -1,12 +1,12 @@
 ---
 id: CHG-2026-09-21-UPDATER-PROGRESS
-status: draft
-approval_status: draft
+status: implementing
+approval_status: approved
 authority: proposed
-approved_by: null
-approved_at: null
-approved_revision: null
-approved_scope: []
+approved_by: user
+approved_at: "2026-09-21T13:47:23Z"
+approved_revision: da153aedc4441daecbfb248617f986b357ddf786
+approved_scope: ["REQ-UP-001 至 REQ-UP-008；设计全文，进度仅观察记录"]
 ---
 
 # 行情更新进度：需求
@@ -51,4 +51,6 @@ approved_scope: []
 
 现有空请求触发、单证券同步请求、HTTP 状态和错误语义保留；异步受理结果增加 run_id。新页面需要对应版本的 updater，升级按停止旧 updater、备份、启动新 updater、升级工作台进行，不设计长期新旧协议适配层。
 
-本文件与 [设计](design.md) 为待评审草稿；不得覆盖现行批准契约或据此开始生产实现。待用户确认具体文档版本后记录批准范围、版本、批准人及时间。验证进展见 [验证记录](verification.md)。
+本文件与 [设计](design.md) 已获准实施，批准范围和原始内容版本见元数据；本次仅覆盖进度观察与操作入口，不改变行情更新语义。验证进展见 [验证记录](verification.md)。
+
+实际批准：用户在查看两张表及记录内容说明后回复“ok 没问题，执行吧”，批准上述版本需求与设计实施。此前待评审措辞保留为草案形成历史，以本批准记录为准。

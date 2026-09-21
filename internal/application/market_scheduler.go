@@ -22,6 +22,7 @@ type RefreshSummary struct {
 	Err      error
 }
 type MarketScheduler struct {
+	progress  *RefreshProgress
 	data      port.MarketData
 	refresher MarketRefresher
 	scope     port.InstrumentScope
@@ -55,35 +56,39 @@ func (s *MarketScheduler) RunOnce(ctx context.Context, workers int) RefreshSumma
 		return summary
 	}
 	defer marketRefreshRunning.Store(false)
-	return s.runOnce(ctx, workers)
+	h, _ := s.progress.Begin(ctx, "STOCK", "SCHEDULED")
+	return s.runOnce(ctx, workers, h)
 }
 
 // TriggerNow starts one managed refresh without tying its lifetime to an HTTP
 // request. The caller supplies the application root context; Wait joins all
 // accepted manual triggers before the database is closed.
+func (s *MarketScheduler) SetProgress(p *RefreshProgress) { s.progress = p }
 func (s *MarketScheduler) TriggerNow(ctx context.Context, workers int) error {
+	_, err := s.TriggerTracked(ctx, workers)
+	return err
+}
+func (s *MarketScheduler) TriggerTracked(ctx context.Context, workers int) (port.RefreshReceipt, error) {
 	if workers < 1 || workers > MaxMarketWorkers {
-		return invalidRequest("invalid worker count")
+		return port.RefreshReceipt{}, invalidRequest("invalid worker count")
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return port.RefreshReceipt{}, err
 	}
 	if !marketRefreshRunning.CompareAndSwap(false, true) {
-		return ErrRefreshAlreadyRunning
+		return port.RefreshReceipt{}, ErrRefreshAlreadyRunning
 	}
+	h, receipt := s.progress.Begin(ctx, "STOCK", "MANUAL")
 	s.async.Add(1)
-	go func() {
-		defer s.async.Done()
-		defer marketRefreshRunning.Store(false)
-		s.runOnce(ctx, workers)
-	}()
-	return nil
+	go func() { defer s.async.Done(); defer marketRefreshRunning.Store(false); s.runOnce(ctx, workers, h) }()
+	return receipt, nil
 }
 
 func (s *MarketScheduler) Wait() { s.async.Wait() }
 
-func (s *MarketScheduler) runOnce(ctx context.Context, workers int) RefreshSummary {
+func (s *MarketScheduler) runOnce(ctx context.Context, workers int, observation *RefreshObservation) RefreshSummary {
 	summary := RefreshSummary{Results: map[market.InstrumentID]RefreshResult{}, Failures: map[market.InstrumentID]error{}}
+	defer func() { observation.End(summary.Err) }()
 	defer func() { s.mu.Lock(); s.last = cloneRefreshSummary(summary); s.mu.Unlock() }()
 	if err := ctx.Err(); err != nil {
 		summary.Err = err
@@ -119,6 +124,7 @@ func (s *MarketScheduler) runOnce(ctx context.Context, workers int) RefreshSumma
 		}
 	}
 	summary.Total = len(queue)
+	observation.Prepared(summary.Total)
 	if len(queue) == 0 {
 		return summary
 	}
@@ -156,6 +162,7 @@ func (s *MarketScheduler) runOnce(ctx context.Context, workers int) RefreshSumma
 	}()
 	go func() { wg.Wait(); close(outcomes) }()
 	for item := range outcomes {
+		observation.Completed(item.id, item.err)
 		if item.err != nil {
 			summary.Failures[item.id] = item.err
 		} else {

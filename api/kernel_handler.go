@@ -30,7 +30,7 @@ type MarketIngestion interface {
 	Refresh(context.Context, market.InstrumentID) (application.RefreshResult, error)
 }
 type MarketTrigger interface {
-	TriggerNow(workers int) error
+	TriggerNow(workers int) (port.RefreshReceipt, error)
 }
 type MarketQueries interface {
 	Prices(context.Context, application.PriceQuery) (application.PriceResult, error)
@@ -57,6 +57,8 @@ type ChartBoards interface {
 
 // KernelServices 显式注入持久化用例；旧接口不再回退到旧技术策略引擎。
 type KernelServices struct {
+	RefreshQueries    *application.RefreshQueries
+	FuturesEnabled    *bool
 	RemoteRefresh     *UpdaterClient
 	Backtests         BacktestRuns
 	Scans             ScanRuns
@@ -97,7 +99,7 @@ func writeApplicationError(c *gin.Context, op string, err error) {
 		respondError(c, 429, "MARKET_REFRESH_ALREADY_RUNNING")
 	case errors.Is(err, application.ErrInvalidRequest), errors.Is(err, application.ErrDateRangeTooLarge), errors.Is(err, port.ErrInvalidPortValue), errors.Is(err, strategy.ErrInvalidParameter), errors.Is(err, strategy.ErrUnknownParameter), errors.Is(err, market.ErrInvalidInstrument), errors.Is(err, market.ErrExchangeRequired), errors.Is(err, backtest.ErrInvalidConfig):
 		respondError(c, 400, "INVALID_REQUEST")
-	case errors.Is(err, strategy.ErrUnknownStrategy), errors.Is(err, port.ErrRunNotFound), errors.Is(err, port.ErrMarketDataNotFound), errors.Is(err, port.ErrChartBoardNotFound):
+	case errors.Is(err, strategy.ErrUnknownStrategy), errors.Is(err, port.ErrRunNotFound), errors.Is(err, port.ErrMarketDataNotFound), errors.Is(err, port.ErrChartBoardNotFound), errors.Is(err, port.ErrRefreshRunNotFound):
 		respondError(c, 404, "NOT_FOUND")
 	default:
 		respondInternalError(c, op, err)

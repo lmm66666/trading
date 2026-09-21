@@ -107,10 +107,14 @@ go test ./api -cover
 
 ## 双服务刷新传输
 
-`updater_router.go` 只注册 `POST /internal/v1/market/refresh` 并校验 Bearer Token（至少 32 字节可打印非空白 ASCII，哈希后常量时间比较）。`updater_client.go` 只调用该固定路径，服务地址来自配置而非请求；限制请求/响应 1MiB、40 秒总超时、专用 Transport 仅用 HTTP/1 且去除 GetBody 重放能力、不重试 POST、不跟随重定向。成功响应以类型化 DTO 重建，错误仅允许既定状态/message，不透传上游错误正文。
+`updater_router.go` 注册 `POST /internal/v1/market/refresh` 与更新进度 GET 路由 并校验 Bearer Token（至少 32 字节可打印非空白 ASCII，哈希后常量时间比较）。`updater_client.go` 只调用该固定路径，服务地址来自配置而非请求；限制请求/响应 1MiB、40 秒总超时、专用 Transport 仅用 HTTP/1 且去除 GetBody 重放能力、不重试 POST、不跟随重定向。成功响应以类型化 DTO 重建，错误仅允许既定状态/message，不透传上游错误正文。
 
 网络故障为 503 UPDATER_UNAVAILABLE，超时为 504 UPDATER_TIMEOUT，认证或响应异常为 502 UPDATER_BAD_RESPONSE。内部 401 不作为浏览器认证问题返回。单证券取消随请求传播，全市场受理后的生命周期属于 updater 根 context，断线不保证未执行。详细协议以 HTTP 契约为准。
 
 ## 双价格 Z-score 传输契约
 
 图表请求新增可选comparison（已有国内期货身份），指标使用ZSCORE及period/smooth/regime/lag。返回原series三分量与zscores诊断数组，关联错误只通过诊断warning展示。严格JSON、分页及固定版本不变，STD/RETZ不再支持。完整参数/错误/诊断口径见[HTTP契约](../standards/http-api.md#图表查询)。
+
+## 更新进度查询
+
+工作台通过 RefreshQueries 查询同一 MySQL 的股票/期货最新摘要、历史、任务详情和失败分页；updater 内部路由提供同组查询，统一 Bearer 验证。工作台仅向固定 updater status 地址读取 futures_enabled，2秒失败降级 unknown，不影响数据库历史读取。所有查询拒绝重复/未知参数，分页有界。新采集受理增加 run_id/progress_available，单证券同步刷新不变。详情见 [HTTP 契约](../standards/http-api.md)。

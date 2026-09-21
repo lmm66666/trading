@@ -137,3 +137,7 @@ updater 启动只做 schema 初始化与调度注册，不立即采集行情；�
 - [Roadmap](../roadmap.md)
 - [项目导航](../design/README.md)
 - [文档治理需求](../changes/archive/legacy/REQ-2026-001-document-governance.md)
+
+## 更新进度观察
+
+updater 将批量股票/期货任务的进度摘要与失败项写入独立观察表，workbench 从同一数据库只读查询；期货启用能力通过认证内部状态接口读取，不可达时为 unknown。进度记录不筛选证券、不恢复执行、不触发采集重试，写入失败不影响原行情发布。重启仅将启动前遗留任务标记中断，失败时有界重试；新任务仍按现有首周期等待和手动触发规则运行。数据流及事务见 [MySQL 设计](../design/internal/infrastructure/mysql.md)，接口见 [HTTP 契约](../standards/http-api.md)。

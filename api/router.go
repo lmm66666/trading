@@ -32,5 +32,6 @@ func NewRouter(kernel KernelServices) *gin.Engine {
 	r.DELETE("/api/v1/chart-boards/:id", h.DeleteChartBoard)
 	r.GET("/api/v1/market/bars", h.GetMarketBars)
 	r.POST("/api/v1/market/refresh", h.MarketRefresh)
+	registerRefreshQueries(r, "/api/v1/market/refresh", h)
 	return r
 }

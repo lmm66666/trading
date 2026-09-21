@@ -12,6 +12,7 @@ import (
 
 	"trading/internal/application"
 	"trading/internal/market"
+	"trading/internal/port"
 )
 
 type refreshIngestionFake struct {
@@ -32,9 +33,9 @@ type refreshTriggerFake struct {
 	err     error
 }
 
-func (f *refreshTriggerFake) TriggerNow(workers int) error {
+func (f *refreshTriggerFake) TriggerNow(workers int) (port.RefreshReceipt, error) {
 	f.workers = workers
-	return f.err
+	return port.RefreshReceipt{Status: "ACCEPTED", RunID: "run-1", ProgressAvailable: true}, f.err
 }
 
 type refreshLookupFake struct {

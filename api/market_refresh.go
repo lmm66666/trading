@@ -52,11 +52,12 @@ func (h *StockHandler) MarketRefresh(c *gin.Context) {
 			writeApplicationError(c, "trigger market refresh", errKernelNotConfigured)
 			return
 		}
-		if err := h.kernel.MarketTrigger.TriggerNow(h.kernel.MarketWorkers); err != nil {
+		receipt, err := h.kernel.MarketTrigger.TriggerNow(h.kernel.MarketWorkers)
+		if err != nil {
 			writeApplicationError(c, "trigger market refresh", err)
 			return
 		}
-		respondAccepted(c, gin.H{"status": "ACCEPTED"})
+		respondAccepted(c, receipt)
 		return
 	}
 	if h.kernel.MarketIngestion == nil || h.kernel.Instruments == nil {

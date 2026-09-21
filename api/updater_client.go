@@ -13,6 +13,7 @@ import (
 
 	"trading/internal/application"
 	"trading/internal/market"
+	"trading/internal/port"
 )
 
 const updaterRefreshPath = "/internal/v1/market/refresh"
@@ -114,10 +115,8 @@ func (client *UpdaterClient) refresh(ctx context.Context, input marketRefreshReq
 			return 0, nil, bad
 		}
 		if input.Exchange == "" && resp.StatusCode == 202 {
-			var data struct {
-				Status string `json:"status"`
-			}
-			if json.Unmarshal(envelope.Data, &data) != nil || data.Status != "ACCEPTED" {
+			var data port.RefreshReceipt
+			if json.Unmarshal(envelope.Data, &data) != nil || data.Status != "ACCEPTED" || port.ValidateIdentity(data.RunID, "run_id", 64, false) != nil {
 				return 0, nil, bad
 			}
 			return 202, data, nil
@@ -136,4 +135,36 @@ func (client *UpdaterClient) refresh(ctx context.Context, input marketRefreshReq
 		return 0, nil, &updaterError{resp.StatusCode, message}
 	}
 	return 0, nil, bad
+}
+
+// Capability failures do not prevent database-backed progress/history reads.
+func (client *UpdaterClient) futuresEnabled(ctx context.Context) *bool {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, client.endpoint+"/status", nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Authorization", "Bearer "+client.token)
+	resp, err := client.http.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil
+	}
+	payload, err := io.ReadAll(io.LimitReader(resp.Body, refreshBodyLimit+1))
+	if err != nil || len(payload) > refreshBodyLimit {
+		return nil
+	}
+	var envelope struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    struct {
+			FuturesEnabled *bool `json:"futures_enabled"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(payload, &envelope) != nil || envelope.Code != 0 || envelope.Message != "success" {
+		return nil
+	}
+	return envelope.Data.FuturesEnabled
 }

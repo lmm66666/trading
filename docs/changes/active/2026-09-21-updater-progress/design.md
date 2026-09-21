@@ -1,14 +1,14 @@
 ---
 id: CHG-2026-09-21-UPDATER-PROGRESS-DESIGN
-approval_status: draft
+approval_status: approved
 authority: proposed
-approved_by: null
-approved_at: null
-approved_revision: null
-approved_scope: []
+approved_by: user
+approved_at: "2026-09-21T13:47:23Z"
+approved_revision: da153aedc4441daecbfb248617f986b357ddf786
+approved_scope: ["REQ-UP-001 至 REQ-UP-008；设计全文，进度仅观察记录"]
 ---
 
-# 行情更新进度：目标设计草稿
+# 行情更新进度：目标设计
 
 ## 1. 设计原则与当前基线
 
@@ -32,7 +32,7 @@ approved_scope: []
 
 `t_market_refresh_runs`：自增 id、唯一 run_id、kind(STOCK/FUTURES)、trigger(MANUAL/SCHEDULED)、state、total(准备中为空)、succeeded、failed、started_at、finished_at、heartbeat_at、last_progress_at、snapshot_at、snapshot_revision，以及可选脱敏批次错误码。时间使用 UTC DATETIME(6)，不透明 run_id 使用项目既有二进制身份规则。
 
-索引：唯一 run_id；(kind,id) 查询分类型历史；(state,id) 定位重启遗留任务。按 id 倒序分页，默认 20、最大 100 条。
+索引：唯一 run_id；(kind,id) 查询分类型历史；(kind,started_at,id) 按启动时间定位最新任务，防止延迟首次落库改变任务先后；(state,id) 定位重启遗留任务。按 id 倒序分页，默认 20、最大 100 条。
 
 `t_market_refresh_failures`：自增 id、run_id、exchange、code、error_code、completed_at。唯一键(run_id,exchange,code)，分页索引(run_id,id)。通过 run_id 关联任务；证券名称读取时按完整证券身份批量查主数据，不逐行查询，不复制行情。每任务失败项上限为本轮证券总数。
 
@@ -42,11 +42,11 @@ approved_scope: []
 
 运行中每 10 秒保存一次最新累计快照，并在状态转换和结束时尝试立即保存。心跳来自进度组件存活，不代表某只证券已经完成；last_progress_at 只在处理结果推进时更新。前端显示 snapshot_at，明确进度不是零延迟。
 
-每轮一个受管理的保存执行流，快照带单调 revision；摘要和新增失败明细在同一短事务提交，按证券唯一键与 revision 防止重复保存导致重复计数。重试的是最新可观测快照，不是采集任务。内存仅保留当轮统计和至多范围上限个失败项，不建立无界事件队列。
+每轮一个受管理的保存执行流，快照带单调 revision；摘要和新增失败明细在同一短事务提交，按证券唯一键与 revision 防止重复保存导致重复计数。重试的是最新可观测快照，不是采集任务。内存仅保留当轮统计和至多范围上限个失败项，不建立无界事件队列。最多保留 64 个尚未成功保存终态的观察任务；长期存储故障达到上限时新采集仍执行、返回 progress_available=false 并告警，不无限积累记录。
 
 进度写失败记录脱敏告警，采集继续，后续保存最新快照。初始记录不可写时仍可受理已有语义下的采集，返回 run_id 及 progress_available=false；UI 提示“更新已受理，进度记录暂不可用”，不得再次自动 POST。终态无法保存时不能伪报持久化完成，旧记录随后显示过期；进程仍存活时继续有界周期尝试保存。
 
-此处细化并修正最初聊天方案的“进度写失败停止派发”：观察记录故障不应改变行情更新执行。该细节待文档评审。
+此处细化并修正最初聊天方案的“进度写失败停止派发”：观察记录故障不应改变行情更新执行。该细节随本版设计获准实施。
 
 行情提交与进度快照非原子关系：崩溃时进度可以落后实际行情，不能据此回滚、补偿或跳过证券。已中断任务的计数统一标注“最后记录进度”。
 
@@ -60,11 +60,11 @@ approved_scope: []
 
 运行记录与采集状态通过明确事件映射，不改变原采集结果和对调用方的错误契约。
 
-电脑关闭不影响 NAS 生命周期。正常退出有界尝试保存中断；新 updater 启动后在接受新任务前把遗留非终态标为中断，再进入原首周期等待。不自动补跑。单实例部署前提不变。
+电脑关闭不影响 NAS 生命周期。正常退出有界尝试保存中断；新 updater 启动后在接受新任务前尝试把启动时刻以前的遗留非终态标为中断，再进入原首周期等待。暂时失败时继续有界周期重试，截止时刻固定为本进程启动时刻，不会把本进程的新任务标为中断。不自动补跑。单实例部署前提不变。
 
 股票定时和手动仍共享 guard，重复触发保持 429。期货保持自己的 guard，两类仍共享来源限频器。进度记录中的状态不替代这些 guard。
 
-## 5. 接口草案与兼容
+## 5. 接口与兼容
 
 现有 POST /api/v1/market/refresh 和 /internal/v1/market/refresh 请求不变。全市场 202 响应 data 增加 run_id、progress_available，保留 status=ACCEPTED；正常进度初始化时 progress_available=true。单证券 200 结果结构不变。客户端更新类型化白名单重建逻辑，不直接透传上游 JSON。
 
@@ -103,8 +103,12 @@ updater 内部端点全部校验既有 Bearer Token。workbench 进度主查询�
 
 只新增进度相关表，不迁移行情，不填造历史任务。首次部署先备份并停止旧 updater，启动新版本建表，再升级工作台。回滚时保留新增表、不 DROP，不让旧 updater 被误认为支持进度查询；历史非终态显示记录过期。
 
-实现后回填系统设计、应用/port/MySQL/API/web 设计与 HTTP 契约、运行手册、导航。文档草稿暂不改写现行批准文档。
+实现后回填系统设计、应用/port/MySQL/API/web 设计与 HTTP 契约、运行手册、导航。实现完成后同步当前文档。
 
 单元/竞态测试覆盖事件计数、单实例防重、重复快照、单证券失败、空范围、取消、过期响应和周期不重置。真实远端 MySQL 测试覆盖事务、唯一约束、分页、崩溃残留与快照重放；前端覆盖触发、未知提交结果、轮询、失联和重开恢复。生产验收需 scripts/verify.sh --full、规定覆盖率及独立子 Agent review；长任务用受控时钟与阻塞假数据源验证，NAS 长时间运行另行实测，不能拿短测替代其运行证据。
 
 审批依据见 [需求](requirements.md)，实施与验证证据见 [验证记录](verification.md)。
+
+实际批准：用户在查看两张表及记录内容说明后回复“ok 没问题，执行吧”，批准上述版本需求与设计实施。此前待评审措辞保留为草案形成历史，以本批准记录为准。
+
+实现澄清：物理列 trigger_source 避免 SQL 保留字，API 字段仍为 trigger。历史按落库 id 分页，当前摘要按 started_at/id 排序。记录过期或初次查询失败时允许用户显式触发，真正并发准入仍由 updater guard 决定；不会自动重发。上述细节落实既定观察边界和恢复语义。
