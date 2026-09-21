@@ -174,7 +174,7 @@ func (s *MarketScheduler) runOnce(ctx context.Context, workers int) RefreshSumma
 }
 
 // Start 同步运行到取消；调用方可用一个受管理的 goroutine 启动，并在关闭数据库前等待返回。
-// 首次立即执行。重复 Start 不会留下多余 ticker；证券级失败保存在 LastSummary。
+// 首次等待 interval 到达后执行。重复 Start 不会留下多余 ticker；证券级失败保存在 LastSummary。
 func (s *MarketScheduler) Start(ctx context.Context, interval time.Duration, workers int) error {
 	if interval <= 0 || workers < 1 || workers > MaxMarketWorkers {
 		return invalidRequest("invalid scheduler interval or workers")
@@ -186,14 +186,14 @@ func (s *MarketScheduler) Start(ctx context.Context, interval time.Duration, wor
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		summary := s.RunOnce(ctx, workers)
-		if summary.Err != nil && !errors.Is(summary.Err, ErrRefreshAlreadyRunning) {
-			return summary.Err
-		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+		}
+		summary := s.RunOnce(ctx, workers)
+		if summary.Err != nil && !errors.Is(summary.Err, ErrRefreshAlreadyRunning) {
+			return summary.Err
 		}
 	}
 }

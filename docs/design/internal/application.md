@@ -71,7 +71,7 @@ WorkerPool 使用固定 worker、周期 reaper 和活跃任务续租。续租周
 
 行情查询的零版本只解析一次最新 COMPLETE 版本，之后始终读取该确切版本。零 To 默认当前 UTC，零 From 默认向前 20 年，零 Limit 默认 5000；返回最近 Limit 根并按收盘时间升序。复权查询缺因子或版本不符直接失败。
 
-调度器使用 1–64 个固定 worker，范围最多 5000 个去重证券。`Start` 立即执行一次后按 interval 同步循环；逐证券失败进入汇总但不终止后续周期，全局读取或生命周期错误才结束循环。
+调度器使用 1–64 个固定 worker，范围最多 5000 个去重证券。`Start` 启动后先等待 interval，首个 tick 到达才执行首轮，后续按原 ticker 同步循环；逐证券失败进入汇总但不终止后续周期，全局读取或生命周期错误才结束循环。
 
 ### 5.4 自选清单
 
@@ -121,4 +121,4 @@ ChartQueryService 接受 STD(period)，周期1–500，fast/slow/signal必须为
 
 ## 拆分后的生命周期
 
-每个目标库单个 updater 持续采集；workbench 只执行查询、工作台操作和扫描/回测。两者各自取消并等待所拥有的后台任务退出，最后关闭自身数据库连接。workbench 的刷新请求通过 HTTP 交给 updater，已受理的全市场任务属于 updater 根 context。工作台停机不取消 NAS 更新；计算任务沿用数据库租约恢复，NAS 不领取计算任务。现有 MarketScheduler、FuturesScheduler 的启动首轮、周期、范围、限频和发布算法不变。
+每个目标库单个 updater 持续采集；workbench 只执行查询、工作台操作和扫描/回测。两者各自取消并等待所拥有的后台任务退出，最后关闭自身数据库连接。workbench 的刷新请求通过 HTTP 交给 updater，已受理的全市场任务属于 updater 根 context。工作台停机不取消 NAS 更新；计算任务沿用数据库租约恢复，NAS 不领取计算任务。MarketScheduler、FuturesScheduler 启动不立即采集，首个周期后才自动执行；手动股票刷新可立即触发且不重置定时节拍。周期、范围、限频和发布算法不变。

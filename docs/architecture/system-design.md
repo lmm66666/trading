@@ -124,7 +124,7 @@ API 校验证券、周期、价格视图、范围、版本和指标预算 → �
 
 updater 在 NAS Docker 上运行并连接已有 MySQL；workbench 在电脑按需运行，连接同一 NAS 业务库读取 COMPLETE 行情并保存看板、自选与计算结果。浏览器只访问本机 API。关闭电脑不影响行情更新；扫描/回测在 workbench 运行期间执行。
 
-updater 独占启动 schema 初始化与行情写入；workbench 只连接数据库，不执行 DDL，不装配 Broker/调度器。工作台手动刷新经固定 HTTP 客户端调用 NAS 内部接口，接口、Token、超时和错误契约见 [HTTP 契约](../standards/http-api.md)。updater 暂时不可达不阻止工作台启动、查询和计算，但数据库必须可达且已初始化。
+updater 启动只做 schema 初始化与调度注册，不立即采集行情；股票、期货等待各自首个周期后执行，手动股票刷新仍可立即触发且不重置周期。updater 独占行情写入；workbench 只连接数据库，不执行 DDL，不装配 Broker/调度器。工作台手动刷新经固定 HTTP 客户端调用 NAS 内部接口，接口、Token、超时和错误契约见 [HTTP 契约](../standards/http-api.md)。updater 暂时不可达不阻止工作台启动、查询和计算，但数据库必须可达且已初始化。
 
 默认 updater 监听 `:8081`，workbench 监听 `127.0.0.1:8080`，均可由 `Server.ListenAddress` 修改。`Updater.Token` 两端共享，workbench 额外配置 `Updater.URL`。本地 mock 库保持独立，不自动同步、覆盖或降级切换。首次部署先停旧单体，再启动 updater 完成初始化，最后启动 workbench；详细步骤见运行手册。本阶段只开放所需局域网访问，未来外网接入另行设计。
 

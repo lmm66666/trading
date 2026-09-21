@@ -111,7 +111,7 @@ func TestMarketSchedulerLifecycleErrorAndEmptyUniverse(t *testing.T) {
 	cancel()
 	require.ErrorIs(t, s.RunOnce(ctx, 1).Err, context.Canceled)
 	data.errorRead = port.ErrTemporary
-	require.ErrorIs(t, s.Start(context.Background(), time.Hour, 1), port.ErrTemporary)
+	require.ErrorIs(t, s.Start(context.Background(), time.Millisecond, 1), port.ErrTemporary)
 	data.errorRead = nil
 	s.scope.Limit = 1
 	data.ids = []market.InstrumentID{marketID, marketID}

@@ -27,7 +27,7 @@ openssl rand -hex 32
 
 将生成的随机 Token 填入两份配置的 `Config.Updater.Token`。正常查看全量数据时，两份配置的 `DB` 都指向 NAS 同一业务库；workbench 的 `Updater.URL` 指向 NAS 更新服务（如 `http://nas.local:8081`）。示例中的 Token 和数据库密码均需替换，不能当作正式凭据。沿用旧配置的 Market/Worker 数值；不要因为示例默认值而改变已有期货开关、更新间隔或限频。
 
-本地调试时将两个服务指向本地 mock 库，URL 改为 `http://127.0.0.1:8081`；mock 库与 NAS 库独立，不自动同步或回退切换。updater 启动会按现有逻辑立即采集并更新目标库，因此纯查看 mock 数据只启动 workbench，手动刷新会显示更新服务不可达。
+本地调试时将两个服务指向本地 mock 库，URL 改为 `http://127.0.0.1:8081`；mock 库与 NAS 库独立，不自动同步或回退切换。updater 启动后先等待首个刷新周期；需要立即更新股票时，通过 workbench 的手动刷新接口触发。纯查看 mock 数据也可只启动 workbench，届时手动刷新会显示更新服务不可达。
 
 ```bash
 go mod download
@@ -58,7 +58,7 @@ workbench 默认监听 `127.0.0.1:8080`，同源提供页面与 API。前端开�
 - `Updater.Token`：两端相同、至少 32 字节非空白可打印 ASCII；使用随机生成值。`Updater.URL`：workbench 必填，只接受 http/https 源地址，不含用户名密码、路径、query 或 fragment。
 - `Worker`：workbench 使用原任务并发、租约、轮询、同步等待和扫描批次；updater 只使用 `ScanBatchSize` 作为行情并发。
 - `Market`：仅 updater 使用，股票与期货共享限频，默认且不得低于每 5 秒一次；期货开关与周期保留原配置。
-- 股票启动首轮加 24 小时 ticker、最近 20 根日线重叠刷新；期货沿用固定八品种和全历史刷新。全市场手动刷新仍只触发股票调度。
+- 股票启动满 24 小时后首次自动更新，再按原 ticker 更新，仍重抓最近 20 根日线；期货启动后等待配置的刷新间隔，沿用固定八品种和全历史刷新。重启重新计时。全市场手动刷新仍只触发股票调度，立即执行且不重置定时节拍。
 - Token、密码、内网地址、完整配置、转储和导出包不得提交或进入镜像。服务调用 Token 不进入浏览器。
 
 ## 5. NAS Docker 部署
