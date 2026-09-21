@@ -15,7 +15,7 @@ export default defineConfig({
     css: true,
     coverage: {
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['src/**/*.test.{ts,tsx}', 'src/test/**', 'src/main.tsx', 'src/vite-env.d.ts', 'src/api/mock.ts'],
+      exclude: ['src/**/*.test.{ts,tsx}', 'src/test/**', 'src/main.tsx', 'src/vite-env.d.ts'],
       thresholds: { statements: 80, branches: 80, functions: 80, lines: 80 },
     },
   },
