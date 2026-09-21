@@ -34,6 +34,14 @@ npm --prefix web run dev
 
 Vite 将 `/api` 代理到 `:8080`。
 
+本地库没有行情数据时，可先灌注固定种子的演示行情（3 只股票与 1 个期货主力连续各 400 根日线）：
+
+```bash
+go run ./cmd/mock-data -config config.yaml.local
+```
+
+`config.yaml.local` 指向本地测试 MySQL，同样不得提交；数据生成与发布规则见 [mock 灌注设计](design/cmd/mock-data.md)。
+
 ## 3. 启动与停机语义
 
 - 启动时只迁移证券主数据和新策略内核表；不创建、不变更、不写入旧技术 K 线表。
