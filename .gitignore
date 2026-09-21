@@ -2,7 +2,6 @@
 .worktrees/
 config.yaml
 config.updater.yaml
-config-nas.yaml
 config.yaml.local
 docs/superpowers/
 trading
