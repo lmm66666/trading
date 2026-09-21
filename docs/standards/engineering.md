@@ -6,7 +6,7 @@ approval_provenance: inherited-current-design
 approved_by: null
 approved_at: null
 approved_revision: null
-owns: ["scripts/", "documentation_test.go", "verification_test.go", "Dockerfile", ".dockerignore"]
+owns: ["scripts/", "documentation_test.go", "verification_test.go", "Dockerfile", ".dockerignore", "compose.nas.yaml", "Makefile"]
 related: []
 ---
 
@@ -65,3 +65,7 @@ related: []
 - [项目入口](../../AGENTS.md)
 - [系统设计](../architecture/system-design.md)
 - [运行手册](../operations.md)
+
+## 双服务镜像验收
+
+Dockerfile 提供 updater/workbench 两个目标；updater 镜像不构建或包含前端，workbench 包含静态产物。两者按 linux/amd64 构建，非 root 运行，只读挂载本地配置。`--image` 必须实际构建两目标，不能只验证默认末阶段。`--mysql` 同时执行 MySQL 模块与 data 的隔离集成测试，以覆盖 workbench 不执行 DDL 的职责。NAS Compose 使用已存在的 MySQL，不声明新的 MySQL 容器或数据卷。

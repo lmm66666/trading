@@ -80,3 +80,7 @@ go test ./data -cover
 - [系统设计](../architecture/system-design.md)
 - [MySQL 新内核设计](internal/infrastructure/mysql.md)
 - [迁移命令设计](cmd/migrate-strategy-kernel.md)
+
+## 双服务连接与迁移归属
+
+`New` 连接并执行现有 schema 初始化，仅由 updater 的正常启动调用。`Open` 只建立连接与设置连接池，workbench 使用它而不执行 AutoMigrate；目标库需先由 updater 初始化。共享 `initializeData` 的迁移函数为 nil 时跳过 DDL。连接失败和迁移失败均不将连接所有权交给调用者；成功后由各自进程关闭自己的连接池。列、表、索引和历史迁移语义不变。真实隔离 MySQL 测试验证空库 Open 不建表、New 初始化可由后续 Open 读取，以及连接独立关闭。

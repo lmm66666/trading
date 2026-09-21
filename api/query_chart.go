@@ -10,6 +10,7 @@ import (
 )
 
 type chartQueryRequest struct {
+	Comparison  string                         `json:"comparison,omitempty"`
 	Instrument  string                         `json:"instrument"`
 	Timeframe   string                         `json:"timeframe"`
 	PriceView   string                         `json:"price_view"`
@@ -44,7 +45,7 @@ func (h *StockHandler) QueryChart(c *gin.Context) {
 		writeApplicationError(c, "query chart", application.ErrInvalidRequest)
 		return
 	}
-	query := application.ChartQuery{Instrument: instrument, Timeframe: timeframe, View: view, Limit: request.Limit, DataVersion: request.DataVersion, Indicators: request.Indicators}
+	query := application.ChartQuery{Comparison: request.Comparison, Instrument: instrument, Timeframe: timeframe, View: view, Limit: request.Limit, DataVersion: request.DataVersion, Indicators: request.Indicators}
 	if request.Before != nil {
 		query.Before = request.Before.UTC().Truncate(time.Microsecond)
 	}
@@ -60,6 +61,7 @@ func (h *StockHandler) QueryChart(c *gin.Context) {
 		"data_version": result.DataVersion,
 		"bars":         result.Bars,
 		"series":       result.Series,
+		"zscores":      result.ZScores,
 		"has_more":     result.HasMore,
 		"next_before":  result.NextBefore,
 	})

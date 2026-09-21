@@ -29,7 +29,7 @@ related: []
 ## 2. 对外能力与使用者
 
 - API 使用行情查询、图表、证券搜索、自选清单、回测和扫描服务。
-- 组合根使用行情采集、股票/期货调度器和持久化 WorkerPool。
+- updater 组合根使用行情采集与股票/期货调度器；workbench 组合根使用持久化 WorkerPool。
 - 服务输入输出只使用领域值对象、应用 DTO 和 `internal/port` 契约，不暴露 ORM Model。
 
 ## 3. 依赖和边界
@@ -71,7 +71,7 @@ WorkerPool 使用固定 worker、周期 reaper 和活跃任务续租。续租周
 
 行情查询的零版本只解析一次最新 COMPLETE 版本，之后始终读取该确切版本。零 To 默认当前 UTC，零 From 默认向前 20 年，零 Limit 默认 5000；返回最近 Limit 根并按收盘时间升序。复权查询缺因子或版本不符直接失败。
 
-调度器使用 1–64 个固定 worker，范围最多 5000 个去重证券。`Start` 立即执行一次后按 interval 同步循环；逐证券失败进入汇总但不终止后续周期，全局读取或生命周期错误才结束循环。
+调度器使用 1–64 个固定 worker，范围最多 5000 个去重证券。`Start` 启动后先等待 interval，首个 tick 到达才执行首轮，后续按原 ticker 同步循环；逐证券失败进入汇总但不终止后续周期，全局读取或生命周期错误才结束循环。
 
 ### 5.4 自选清单
 
@@ -115,6 +115,14 @@ go vet ./...
 - [Broker 设计](../pkg/broker.md)
 
 
-## 图表标准差扩展
+## 拆分后的生命周期
 
-ChartQueryService 接受 STD(period)，周期1–500，fast/slow/signal必须为0；映射 STDKind + Close 引用，成本按period纳入2000预算。沿用完整历史构建后裁页、正版本固定、取消与16指标上限；总体标准差口径见[指标设计](indicator.md)。
+每个目标库单个 updater 持续采集；workbench 只执行查询、工作台操作和扫描/回测。两者各自取消并等待所拥有的后台任务退出，最后关闭自身数据库连接。workbench 的刷新请求通过 HTTP 交给 updater，已受理的全市场任务属于 updater 根 context。工作台停机不取消 NAS 更新；计算任务沿用数据库租约恢复，NAS 不领取计算任务。MarketScheduler、FuturesScheduler 启动不立即采集，首个周期后才自动执行；手动股票刷新可立即触发且不重置定时节拍。周期、范围、限频和发布算法不变。
+
+## 双价格 Z-score
+
+ChartQueryService 的 comparison 限已有八项国内期货。`ZSCORE(period,smooth,regime,lag)` 在相同正版本读取股票、商品完整历史，商品仅读取一次。按UTC日期取不晚于股票日期的最近已知商品Bar，再滞后lag根商品Bar；股票RAW/QFQ、商品RAW，计算后按股票页裁剪。历史下界固定为服务UTC当前时刻向前20年，不随分页before移动；边界之前返回空页。
+
+参数 band2–500、smooth1–500、regime>band且≤500、lag0–5；其他类型不得带smooth/regime/lag。成本 `2*period+regime+68` 含诊断，仍受2000/16/并发4约束。三分量与其他指标按请求顺序返回；key包含两腿身份、复权及所有参数。
+
+未选关联、周线、商品缺历史/读取失败/版本不符只返回ZSCORE诊断warning；股票和其他指标保留。取消和超时继续传播。zscores返回最新股票点上的主Z、长期Z、63期相对表现、5期收益相关、商品日期、lag和状态，未定义字段为null。旧STD/RETZ不再接受新增/保存；读取看板不改库，客户端修正草稿后手动保存，复用原表/SQL。

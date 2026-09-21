@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -25,6 +26,27 @@ func (h *StockHandler) MarketRefresh(c *gin.Context) {
 		writeApplicationError(c, "market refresh identity", application.ErrInvalidRequest)
 		return
 	}
+	if req.Exchange != "" {
+		id := market.InstrumentID{Exchange: market.Exchange(req.Exchange), Code: req.Code}
+		if err := id.Validate(); err != nil {
+			writeApplicationError(c, "market refresh instrument", err)
+			return
+		}
+	}
+	if h.kernel.RemoteRefresh != nil {
+		status, data, err := h.kernel.RemoteRefresh.refresh(c.Request.Context(), req)
+		if err != nil {
+			var upstream *updaterError
+			if errors.As(err, &upstream) {
+				respondError(c, upstream.status, upstream.message)
+			} else {
+				respondError(c, 503, "UPDATER_UNAVAILABLE")
+			}
+			return
+		}
+		c.JSON(status, response{Code: 0, Message: "success", Data: data})
+		return
+	}
 	if req.Exchange == "" {
 		if h.kernel.MarketTrigger == nil {
 			writeApplicationError(c, "trigger market refresh", errKernelNotConfigured)
@@ -42,10 +64,6 @@ func (h *StockHandler) MarketRefresh(c *gin.Context) {
 		return
 	}
 	id := market.InstrumentID{Exchange: market.Exchange(req.Exchange), Code: req.Code}
-	if err := id.Validate(); err != nil {
-		writeApplicationError(c, "market refresh instrument", err)
-		return
-	}
 	ids, err := h.kernel.Instruments.ResolveCode(c.Request.Context(), req.Code)
 	if err != nil {
 		writeApplicationError(c, "resolve market refresh instrument", err)

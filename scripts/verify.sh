@@ -86,7 +86,7 @@ grep -q '^\*.tar$' .dockerignore
 if "$verify_mysql"; then
   echo "[9/10] 远端 MySQL 8.4/x86_64 兼容性与隔离集成测试"
   go test -tags=deployment ./internal/infrastructure/mysql -run '^TestDeploymentMySQLCompatibility$' -count=1
-  go test -tags=integration ./internal/infrastructure/mysql/... -count=1
+  go test -tags=integration ./internal/infrastructure/mysql/... ./data -count=1
 else
   echo "[9/10] MySQL：未选择（涉及数据库语义时必须使用 --mysql）"
 fi
@@ -100,8 +100,10 @@ if "$verify_image"; then
       --build-arg "HTTPS_PROXY=$TRADING_DOCKER_BUILD_PROXY"
     )
   fi
-  # ${arr[@]+"${arr[@]}"} 写法兼容 bash 3.2（macOS）下 set -u 展开空数组报错
-  docker buildx build --platform linux/amd64 --load --no-cache ${build_proxy_args[@]+"${build_proxy_args[@]}"} -t trading:verify .
+  for service in updater workbench; do
+    # ${arr[@]+"${arr[@]}"} 写法兼容 bash 3.2（macOS）下 set -u 展开空数组报错
+    docker buildx build --platform linux/amd64 --target "$service" --load --no-cache ${build_proxy_args[@]+"${build_proxy_args[@]}"} -t "trading-$service:verify" .
+  done
 else
   echo "[10/10] 镜像：未选择（涉及构建或部署时必须使用 --image）"
 fi

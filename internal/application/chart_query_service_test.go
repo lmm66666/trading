@@ -42,6 +42,24 @@ func TestChartQueryRejectsInvalidRequests(t *testing.T) {
 		func(q *ChartQuery) {
 			q.Indicators = []IndicatorRequest{{Kind: IndicatorMACD, Fast: 26, Slow: 12, Signal: 9}}
 		},
+		func(q *ChartQuery) {
+			q.Indicators = []IndicatorRequest{{Kind: IndicatorZSCORE, Period: 1, Smooth: 5, Regime: 252}}
+		},
+		func(q *ChartQuery) {
+			q.Indicators = []IndicatorRequest{{Kind: IndicatorZSCORE, Period: 126, Smooth: 0, Regime: 252}}
+		},
+		func(q *ChartQuery) {
+			q.Indicators = []IndicatorRequest{{Kind: IndicatorZSCORE, Period: 126, Smooth: 5, Regime: 126}}
+		},
+		func(q *ChartQuery) {
+			q.Indicators = []IndicatorRequest{{Kind: IndicatorZSCORE, Period: 126, Smooth: 5, Regime: 501}}
+		},
+		func(q *ChartQuery) {
+			q.Indicators = []IndicatorRequest{{Kind: IndicatorZSCORE, Period: 126, Smooth: 5, Regime: 252, Fast: 12}}
+		},
+		func(q *ChartQuery) {
+			q.Indicators = []IndicatorRequest{{Kind: IndicatorZSCORE, Period: 126, Smooth: 5, Regime: 252}, {Kind: IndicatorZSCORE, Period: 126, Smooth: 5, Regime: 252}}
+		},
 	}
 	for index, mutate := range mutations {
 		query := valid
@@ -59,6 +77,14 @@ func TestChartQueryRejectsInvalidRequests(t *testing.T) {
 	query = valid
 	for period := 485; period <= 500; period++ {
 		query.Indicators = append(query.Indicators, IndicatorRequest{Kind: IndicatorKDJ, Period: period})
+	}
+	_, err = service.Query(context.Background(), query)
+	assert.ErrorIs(t, err, ErrInvalidRequest)
+
+	// ZSCORE 成本为 band+regime：6 个 126+252 超出 2000 预算。
+	query = valid
+	for index := 0; index < 6; index++ {
+		query.Indicators = append(query.Indicators, IndicatorRequest{Kind: IndicatorZSCORE, Period: 126 + index, Smooth: 5, Regime: 252 + index})
 	}
 	_, err = service.Query(context.Background(), query)
 	assert.ErrorIs(t, err, ErrInvalidRequest)
@@ -133,39 +159,4 @@ func TestChartQueryAppliesForwardAdjustmentToBarsAndIndicators(t *testing.T) {
 	require.Len(t, result.Series, 1)
 	require.Len(t, result.Series[0].Points, 1)
 	assert.Equal(t, 5.0, result.Series[0].Points[0].Value)
-}
-
-func TestChartSTDComputesBeforeTrimmingAndPinsVersion(t *testing.T) {
-	bars := make([]market.Bar, 105)
-	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for index := range bars {
-		at := start.AddDate(0, 0, index)
-		price := market.Price((index + 1) * int(market.ValueScale))
-		bars[index] = market.Bar{Instrument: marketID, Timeframe: market.Day, OpenTime: at, CloseTime: at, Open: price, High: price + 1000, Low: price - 1000, Close: price, Volume: int64(index + 1), Amount: market.Money(price), Trading: market.Tradable}
-	}
-	data := &marketReadFake{latest: 7, stored: map[market.Timeframe][]market.Bar{market.Day: bars}}
-	service, err := NewChartQueryService(data, chartCatalogFake{item: port.InstrumentSummary{ID: marketID, Name: "浦发银行", Active: true, LotSize: 100}})
-	require.NoError(t, err)
-
-	result, err := service.Query(context.Background(), ChartQuery{Instrument: marketID, Timeframe: market.Day, View: market.Raw, Limit: 100, Indicators: []IndicatorRequest{{Kind: IndicatorKind("STD"), Period: 5}}})
-	require.NoError(t, err)
-	assert.EqualValues(t, 7, result.DataVersion)
-	require.Len(t, result.Bars, 100)
-	assert.Equal(t, start.AddDate(0, 0, 5), result.Bars[0].CloseTime)
-	assert.True(t, result.HasMore)
-	require.NotNil(t, result.NextBefore)
-	assert.Equal(t, result.Bars[0].CloseTime, *result.NextBefore)
-	require.Len(t, result.Series, 1)
-	require.NotEmpty(t, result.Series[0].Points)
-	assert.Equal(t, result.Bars[0].CloseTime, result.Series[0].Points[0].Time)
-	assert.InDelta(t, 1.4142135623730951, result.Series[0].Points[0].Value, 1e-10)
-
-	data.read = func(_ market.InstrumentID, _ market.Timeframe, _ time.Time, to time.Time, version market.DataVersion) {
-		assert.Equal(t, result.Bars[0].CloseTime.Add(-time.Microsecond), to)
-		assert.EqualValues(t, 7, version)
-	}
-	older, err := service.Query(context.Background(), ChartQuery{Instrument: marketID, Timeframe: market.Day, View: market.Raw, Before: result.Bars[0].CloseTime, Limit: 100, DataVersion: result.DataVersion})
-	require.NoError(t, err)
-	require.Len(t, older.Bars, 5)
-	assert.Equal(t, start, older.Bars[0].CloseTime)
 }

@@ -49,11 +49,11 @@ POST /api/v1/chart-queries
 
 ## 指标怎样计算
 
-支持的指标：`SMA`、`EMA`（单序列，参数 `period`）、`MACD`（`fast`/`slow`/`signal`，返回 DIF、DEA、Histogram 三条）、`KDJ`（`period`，返回 K、D、J 三条）。
+支持的指标：`SMA`、`EMA`、`MACD`（`fast`/`slow`/`signal`，返回 DIF、DEA、Histogram 三条）、`KDJ`（`period`，返回 K、D、J 三条），以及 `ZSCORE`（双价格相对偏差，返回柱、平滑、长期三条）。
 
 关键语义：**指标在截取本页之前的完整历史上计算**。请求 MA20 时，即使本页只有 400 根，服务端也从 20 年历史的第一根可用数据开始累积。所以本页第一根的 MA20 是真实的历史均值，不是用页内数据重新预热的结果；这与回测“预热后开窗”的思路一致（见 [回测流程](backtesting.md)）。
 
-为防止一次请求算爆，有两条预算：指标成本总和 ≤ 2000（SMA/EMA 每个记 1，MACD 记 3，KDJ 记 `period × 3`），以及进程内同时进行的指标构建最多 4 个，超出的请求排队等待。重复参数组合（同 kind 同参数）的指标会被拒绝而不是去重。
+为防止一次请求算爆，有两条预算：指标成本总和 ≤ 2000（SMA/EMA 每个记 1，MACD 记 3，KDJ 记 `period × 3`，ZSCORE 记 `2*period + regime + 68`），以及进程内同时进行的指标构建最多 4 个，超出的请求排队等待。重复参数组合（同 kind 同参数）的指标会被拒绝而不是去重。
 
 ## 失败与边界
 
@@ -86,3 +86,7 @@ POST /api/v1/chart-queries
 | 请求/响应字段 | [query_chart_test.go](../../../api/query_chart_test.go) | 传输层 |
 
 本文依据本地 `de5a212` 代码整理，见 [本批验证记录](../../changes/archive/2026-09-19-readable-design-continuation/verification.md)。
+
+## 怎样理解涨幅偏差
+
+添加“Z-score 126,5,252”后，选择关联期货，副图衡量股票与期货价格比值偏离历史均值的标准差数。仅支持日线，期货缺日时使用最近已知收盘价，显示实际商品日期。平滑线是主Z的EMA，长期线是更长窗口的比值Z；附相对表现、相关性和状态。完整契约见[指标设计](../internal/indicator.md#双价格相对-z-score)。旧STD/RETZ在本地草稿替换，手动保存后落库。

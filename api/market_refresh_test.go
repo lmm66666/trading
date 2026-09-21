@@ -24,7 +24,7 @@ func (f *refreshIngestionFake) Refresh(_ context.Context, id market.InstrumentID
 	if f.err != nil {
 		return application.RefreshResult{}, f.err
 	}
-	return application.RefreshResult{Instrument: id, Version: 5, DailyBars: 10, WeeklyBars: 2}, nil
+	return application.RefreshResult{Instrument: id, Version: 5, Quality: "COMPLETE", DailyBars: 10, WeeklyBars: 2}, nil
 }
 
 type refreshTriggerFake struct {

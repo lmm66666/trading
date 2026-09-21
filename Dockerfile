@@ -29,7 +29,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -trimpath -ldflags="-s -w" -o /out/trading .
 
 
-FROM alpine:3.20
+FROM alpine:3.20 AS runtime
 
 RUN apk add --no-cache ca-certificates tzdata \
     && addgroup -S app && adduser -S -G app app
@@ -39,11 +39,16 @@ ENV TZ=Asia/Shanghai
 WORKDIR /app
 
 COPY --from=builder /out/trading /app/trading
-COPY --from=web-builder /src/web/dist /app/web/dist
 
 USER app
 
-EXPOSE 8080
+FROM runtime AS updater
+EXPOSE 8081
+ENTRYPOINT ["/app/trading", "-service", "updater"]
+CMD ["-config", "/app/config.yaml"]
 
-ENTRYPOINT ["/app/trading"]
+FROM runtime AS workbench
+COPY --from=web-builder /src/web/dist /app/web/dist
+EXPOSE 8080
+ENTRYPOINT ["/app/trading", "-service", "workbench"]
 CMD ["-config", "/app/config.yaml"]

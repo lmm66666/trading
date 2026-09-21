@@ -57,6 +57,7 @@ type ChartBoards interface {
 
 // KernelServices 显式注入持久化用例；旧接口不再回退到旧技术策略引擎。
 type KernelServices struct {
+	RemoteRefresh     *UpdaterClient
 	Backtests         BacktestRuns
 	Scans             ScanRuns
 	Runs              port.RunStore

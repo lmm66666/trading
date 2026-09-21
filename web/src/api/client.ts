@@ -27,7 +27,7 @@ export type IndicatorRequest =
   | { kind: 'EMA'; period: number }
   | { kind: 'MACD'; fast: number; slow: number; signal: number }
   | { kind: 'KDJ'; period: number }
-  | { kind: 'STD'; period: number }
+  | { kind: 'ZSCORE'; period: number; smooth: number; regime: number; lag?: number }
 
 export interface ChartPoint {
   time: string
@@ -41,7 +41,23 @@ export interface ChartSeries {
   points: ChartPoint[]
 }
 
+export interface ZScoreDiagnostic {
+  key: string
+  comparison: string
+  period: number
+  regime: number
+  lag: number
+  commodity_date: string
+  z: number | null
+  long_z: number | null
+  relative_performance: number | null
+  correlation: number | null
+  state: string
+  warning?: string
+}
+
 export interface ChartResult {
+  zscores?: ZScoreDiagnostic[] | null
   instrument: InstrumentSummary
   timeframe: Timeframe
   price_view: PriceView
@@ -59,6 +75,7 @@ interface Envelope<T> {
 }
 
 export interface ChartQueryInput {
+  comparison?: string
   instrument: string
   timeframe: Timeframe
   price_view: PriceView

@@ -9,7 +9,7 @@ import {
   type ChartBoard,
   type ChartBoardState,
 } from '../../api/client'
-import { defaultBoardConfig, validConfig } from './boards'
+import { defaultBoardConfig, validConfig, migrateBoardConfig, hasLegacyIndicators } from './boards'
 
 export type BoardStatus = 'loading' | 'ready' | 'error'
 
@@ -64,7 +64,7 @@ export function useBoards(initial: Partial<BoardConfig>, onSelectSymbol?: (symbo
     setBoards(state.boards)
     setActiveId(state.active_id)
     const next = state.boards.find((b) => b.id === state.active_id)
-    setConfigState(next ? structuredClone(next.config) : null)
+    setConfigState(next ? migrateBoardConfig(next.config) : null)
   }, [])
 
   useEffect(() => {
@@ -224,6 +224,7 @@ export function useBoards(initial: Partial<BoardConfig>, onSelectSymbol?: (symbo
     config,
     busy,
     dirty,
+    migrationNotice: active && hasLegacyIndicators(active.config) ? "旧 STD、涨幅Z 已替换为双价格 Z-score，请选择关联期货并保存看板。" : "",
     error,
     reload: useCallback(() => setReloadTick((t) => t + 1), []),
     setConfig,
@@ -233,7 +234,7 @@ export function useBoards(initial: Partial<BoardConfig>, onSelectSymbol?: (symbo
     rename,
     remove,
     restore: useCallback(() => {
-      if (active) setConfigState(structuredClone(active.config))
+      if (active) setConfigState(migrateBoardConfig(active.config))
     }, [active]),
   }
 }

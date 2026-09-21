@@ -67,7 +67,8 @@ export function mergeSeries(existing: ChartSeries[], older: ChartSeries[]): Char
 
 export function indicatorLabel(indicator: IndicatorRequest): string {
   if (indicator.kind === 'SMA' || indicator.kind === 'EMA') return `${indicator.kind} ${indicator.period}`
-  if (indicator.kind === 'KDJ' || indicator.kind === 'STD') return `${indicator.kind} ${indicator.period}`
+  if (indicator.kind === 'KDJ') return `${indicator.kind} ${indicator.period}`
+  if (indicator.kind === 'ZSCORE') return `Z-score ${indicator.period},${indicator.smooth},${indicator.regime}`
   return `MACD ${indicator.fast}, ${indicator.slow}, ${indicator.signal}`
 }
 
@@ -75,10 +76,11 @@ export function indicatorIdentity(indicator: IndicatorRequest): string {
   if (
     indicator.kind === 'SMA' ||
     indicator.kind === 'EMA' ||
-    indicator.kind === 'KDJ' ||
-    indicator.kind === 'STD'
+    indicator.kind === 'KDJ'
   ) {
     return `${indicator.kind}:${indicator.period}`
   }
+  if (indicator.kind === 'ZSCORE')
+    return `${indicator.kind}:${indicator.period}:${indicator.smooth}:${indicator.regime}:${indicator.lag ?? 0}`
   return `${indicator.kind}:${indicator.fast}:${indicator.slow}:${indicator.signal}`
 }

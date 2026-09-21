@@ -69,3 +69,42 @@ func TestQueryChartRejectsInvalidAndNonStrictBodies(t *testing.T) {
 		require.Contains(t, w.Body.String(), "INVALID_REQUEST")
 	}
 }
+
+func TestQueryChartZSCORETransport(t *testing.T) {
+	f := newKernelFixture(t)
+	queries := &apiChartQueries{result: application.ChartResult{Timeframe: market.Day, View: market.Raw, DataVersion: 7}}
+	for _, component := range []string{"histogram", "smooth", "regime"} {
+		queries.result.Series = append(queries.result.Series, application.ChartSeries{Kind: application.IndicatorZSCORE, Component: component})
+	}
+	queries.result.ZScores = []application.ZScoreDiagnostic{{Comparison: "SHFE:AU.MAIN", Warning: "关联期货暂无历史数据"}}
+	f.services.ChartQueries = queries
+	f.router = NewRouter(f.services)
+	body := `{"instrument":"SSE:600000","comparison":"SHFE:AU.MAIN","timeframe":"DAY","price_view":"RAW","indicators":[{"kind":"ZSCORE","period":126,"smooth":5,"regime":252,"lag":1}]}`
+	w := kernelRequest(t, f, "POST", "/api/v1/chart-queries", body)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Equal(t, []application.IndicatorRequest{{Kind: application.IndicatorZSCORE, Period: 126, Smooth: 5, Regime: 252, Lag: 1}}, queries.query.Indicators)
+	for _, component := range []string{"histogram", "smooth", "regime"} {
+		require.Contains(t, w.Body.String(), `"component":"`+component+`"`)
+	}
+	require.Equal(t, "SHFE:AU.MAIN", queries.query.Comparison)
+	require.Contains(t, w.Body.String(), `"zscores":[`)
+	require.Contains(t, w.Body.String(), `"z":null`)
+	queries.err = application.ErrInvalidRequest
+	require.Equal(t, 400, kernelRequest(t, f, "POST", "/api/v1/chart-queries", body).Code)
+}
+
+func TestQueryChartAllowsUnselectedComparison(t *testing.T) {
+	// Omitted, empty and null comparison all represent an unselected board.
+	// Real application behavior is covered by TestZScoreFailureIsolation/missing.
+	for _, comparison := range []string{"", `,"comparison":""`, `,"comparison":null`} {
+		f := newKernelFixture(t)
+		queries := &apiChartQueries{result: application.ChartResult{Timeframe: market.Day, View: market.Raw, ZScores: []application.ZScoreDiagnostic{{Warning: "请选择看板关联期货后计算 Z-score"}}}}
+		f.services.ChartQueries = queries
+		f.router = NewRouter(f.services)
+		body := `{"instrument":"SZSE:300750","timeframe":"DAY","price_view":"RAW","indicators":[{"kind":"ZSCORE","period":126,"smooth":5,"regime":252}]` + comparison + `}`
+		w := kernelRequest(t, f, "POST", "/api/v1/chart-queries", body)
+		require.Equal(t, 200, w.Code, w.Body.String())
+		require.Empty(t, queries.query.Comparison)
+		require.Contains(t, w.Body.String(), "请选择看板关联期货")
+	}
+}

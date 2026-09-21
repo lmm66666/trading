@@ -18,7 +18,7 @@ const overlayPresets: IndicatorRequest[] = [
 const panePresets: IndicatorRequest[] = [
   { kind: 'MACD', fast: 12, slow: 26, signal: 9 },
   { kind: 'KDJ', period: 9 },
-  { kind: 'STD', period: 20 },
+  { kind: 'ZSCORE', period: 126, smooth: 5, regime: 252, lag: 0 },
 ]
 
 export function IndicatorManager({ indicators, onChange }: IndicatorManagerProps) {
@@ -27,7 +27,14 @@ export function IndicatorManager({ indicators, onChange }: IndicatorManagerProps
   const apply = (next: IndicatorRequest[]) => {
     const cost = next.reduce(
       (sum, i) =>
-        sum + (i.kind === 'KDJ' ? i.period * 3 : i.kind === 'STD' ? i.period : i.kind === 'MACD' ? 3 : 1),
+        sum +
+        (i.kind === 'KDJ'
+          ? i.period * 3
+          : i.kind === 'ZSCORE'
+              ? 2 * i.period + i.regime + 68
+              : i.kind === 'MACD'
+                ? 3
+                : 1),
       0,
     )
     if (
@@ -130,12 +137,19 @@ export function IndicatorManager({ indicators, onChange }: IndicatorManagerProps
           </section>
           {error && <p role="alert">{error}</p>}
           <p className="indicator-hint">
-            STD 为收盘价总体标准差；指标跟随当前股票。参数模板由服务端统一计算，图表只负责展现。
+            Z-score 衡量股票与关联期货价格比值偏离历史均值的程度，仅支持日线。
+            period 为主窗口，smooth 为平滑周期，regime 为更长窗口；lag 为期货交易日滞后（0–5）。
+            在“同图叠加”中选择关联期货。使用最近已知期货收盘价，股票跟随当前复权方式。
           </p>
         </div>
       )}
     </div>
   )
+}
+
+const parameterLabels: Record<string, string> = {
+  fast: '快线周期', slow: '慢线周期', signal: '信号周期',
+  period: '主窗口', smooth: '平滑周期', regime: '长期窗口', lag: '期货滞后',
 }
 
 function IndicatorEditor({
@@ -151,42 +165,51 @@ function IndicatorEditor({
 }) {
   const [draft, setDraft] = useState(indicator)
   const label = indicatorLabel(indicator)
-  const fields = indicator.kind === 'MACD' ? ['fast', 'slow', 'signal'] : ['period']
+  const fields =
+    indicator.kind === 'MACD'
+      ? ['fast', 'slow', 'signal']
+      : indicator.kind === 'ZSCORE'
+        ? ['period', 'smooth', 'regime', 'lag']
+        : ['period']
   return (
     <form
-      className="indicator-editor"
+      className={`indicator-editor${fields.length > 1 ? " indicator-editor--multi" : ""}`}
       onSubmit={(e) => {
         e.preventDefault()
         onApply(draft)
       }}
     >
       <strong>{label}</strong>
-      {fields.map((field) => (
-        <label key={field}>
-          {field}
-          <input
-            aria-label={`${label} ${field}`}
-            type="number"
-            min={1}
-            max={500}
-            required
-            value={Number((draft as unknown as Record<string, unknown>)[field])}
-            onChange={(e) => setDraft({ ...draft, [field]: Number(e.target.value) })}
-          />
-        </label>
-      ))}
-      <button aria-label={`应用 ${label} 参数`} type="submit">
-        应用
-      </button>
-      <button aria-label={`上移 ${label}`} onClick={() => onMove(-1)} type="button">
-        ↑
-      </button>
-      <button aria-label={`下移 ${label}`} onClick={() => onMove(1)} type="button">
-        ↓
-      </button>
-      <button aria-label={`删除 ${label}`} onClick={onRemove} type="button">
-        删除
-      </button>
+      <div className={`indicator-fields${indicator.kind === 'MACD' ? ' indicator-fields--macd' : ''}`}>
+        {fields.map((field) => (
+          <label key={field}>
+            <span>{fields.length > 1 ? parameterLabels[field] : field}</span>
+            <input
+              aria-label={`${label} ${field}`}
+              type="number"
+              min={field === 'lag' ? 0 : 1}
+              max={field === 'lag' ? 5 : 500}
+              required
+              value={Number((draft as unknown as Record<string, unknown>)[field] ?? 0)}
+              onChange={(e) => setDraft({ ...draft, [field]: Number(e.target.value) })}
+            />
+          </label>
+        ))}
+      </div>
+      <div className="indicator-actions">
+        <button aria-label={`应用 ${label} 参数`} type="submit">
+          应用
+        </button>
+        <button aria-label={`上移 ${label}`} onClick={() => onMove(-1)} type="button">
+          ↑
+        </button>
+        <button aria-label={`下移 ${label}`} onClick={() => onMove(1)} type="button">
+          ↓
+        </button>
+        <button aria-label={`删除 ${label}`} onClick={onRemove} type="button">
+          删除
+        </button>
+      </div>
     </form>
   )
 }

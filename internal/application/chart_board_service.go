@@ -194,7 +194,7 @@ func validateChartBoardConfig(config *ChartBoardConfig) error {
 		if err := validateIndicatorRequest(indicator); err != nil {
 			return err
 		}
-		key := fmt.Sprintf("%s/%d/%d/%d/%d", indicator.Kind, indicator.Period, indicator.Fast, indicator.Slow, indicator.Signal)
+		key := fmt.Sprintf("%s/%d/%d/%d/%d/%d/%d/%d", indicator.Kind, indicator.Period, indicator.Fast, indicator.Slow, indicator.Signal, indicator.Smooth, indicator.Regime, indicator.Lag)
 		if seen[key] {
 			return invalidRequest("duplicate chart board indicator")
 		}

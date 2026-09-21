@@ -8,7 +8,8 @@ const mocks = vi.hoisted(() => {
   let paneHeights = [100, 100, 100]
   const setData = vi.fn()
   const applyOptions = vi.fn()
-  const series = { setData, priceScale: () => ({ applyOptions }) }
+  const createPriceLine = vi.fn()
+  const series = { attachPrimitive: vi.fn(), setData, createPriceLine, priceScale: () => ({ applyOptions }) }
   const setStretchFactor = vi.fn()
   const getStretchFactor = () => 1
   const timeScale = {
@@ -39,6 +40,7 @@ const mocks = vi.hoisted(() => {
   return {
     chart,
     createChart,
+    createPriceLine,
     setData,
     setStretchFactor,
     timeScale,
@@ -592,16 +594,137 @@ it.each([
   style.textContent = styles
   document.head.append(style)
   try {
-    const bar = { open_time: '2026-09-10T00:00:00Z', open: 31, high: 35, low: 27, volume: 100, amount: 3000, trading_status: 0 }
+    const bar = {
+      open_time: '2026-09-10T00:00:00Z',
+      open: 31,
+      high: 35,
+      low: 27,
+      volume: 100,
+      amount: 3000,
+      trading_status: 0,
+    }
     const bars = [
       { ...bar, close_time: '2026-09-10T07:00:00Z', close: 30 },
       { ...bar, close_time: '2026-09-11T07:00:00Z', close },
     ]
     const { container } = render(<FinancialChart bars={bars} series={[]} onLoadMore={vi.fn()} />)
-    const change = Array.from(container.querySelectorAll('.chart-legend-main b')).find((node) => node.textContent?.includes('%'))!
+    const change = Array.from(container.querySelectorAll('.chart-legend-main b')).find((node) =>
+      node.textContent?.includes('%'),
+    )!
     expect(change).toHaveClass(tone)
     expect(getComputedStyle(change).color).toBe(color)
   } finally {
     style.remove()
   }
+})
+
+it('renders ZSCORE components together with threshold colors, sigma values and five reference lines', () => {
+  vi.clearAllMocks()
+  const values = [-2.1, -2, -1.99, 0, 1.99, 2, 2.1]
+  const bars = values.map((_, i) => ({
+    open_time: `2026-09-${10 + i}`,
+    close_time: `2026-09-${10 + i}`,
+    open: 100,
+    high: 101,
+    low: 99,
+    close: 100,
+    volume: 100,
+    amount: 10000,
+    trading_status: 0,
+  }))
+  const series = ['histogram', 'smooth', 'regime'].map((component) => ({
+    key: `zscore/day/raw/${component}/p=126/sm=5/rg=252`,
+    kind: 'ZSCORE' as const,
+    component,
+    points: values.map((value, i) => ({ time: bars[i].close_time, value })),
+  }))
+  const { container, rerender } = render(<FinancialChart bars={bars} series={series} onLoadMore={vi.fn()} />)
+  expect(mocks.chart.addSeries.mock.calls.slice(2).map((call) => (call as unknown[])[2])).toEqual([2, 2, 2])
+  expect(mocks.setData).toHaveBeenCalledWith(
+    values.map((value, i) => ({
+      time: bars[i].close_time,
+      value,
+      color: value >= 2 ? '#fb923c' : value <= -2 ? '#22d3ee' : '#c0c4cc',
+    })),
+  )
+  expect(mocks.chart.addSeries).toHaveBeenCalledWith(
+    'line',
+    expect.objectContaining({ color: '#C084FC', lineWidth: 1 }),
+    2,
+  )
+  expect(mocks.chart.addSeries).toHaveBeenCalledWith(
+    'line',
+    expect.objectContaining({ color: '#e2e8f0', lineWidth: 1 }),
+    2,
+  )
+  expect(
+    mocks.createPriceLine.mock.calls.map(([options]) => [options.price, options.color, options.lineStyle]),
+  ).toEqual([
+    [2, '#fb923c', 2],
+    [1, '#fb923c', 2],
+    [0, '#c0c4cc', 0],
+    [-1, '#22d3ee', 2],
+    [-2, '#22d3ee', 2],
+  ])
+  expect(container.querySelector('.chart-legend-pane')).toHaveTextContent('Z-score 126,5,252')
+  expect(container.querySelectorAll('.chart-legend-pane b')).toHaveLength(3)
+  container
+    .querySelectorAll('.chart-legend-pane b')
+    .forEach((value) => expect(value).toHaveTextContent('2.10σ'))
+  rerender(
+    <FinancialChart
+      bars={bars}
+      series={series.map((item) => ({ ...item, points: [] }))}
+      onLoadMore={vi.fn()}
+    />,
+  )
+  container.querySelectorAll('.chart-legend-pane b').forEach((value) => expect(value).toHaveTextContent('—'))
+  expect(mocks.createPriceLine).toHaveBeenCalledTimes(5)
+})
+
+it('keeps ZSCORE reference lines visible without clipping real extremes', () => {
+  vi.clearAllMocks()
+  const bar = {
+    open_time: '2026-09-21',
+    close_time: '2026-09-21',
+    open: 100,
+    high: 101,
+    low: 99,
+    close: 100,
+    volume: 1,
+    amount: 100,
+    trading_status: 0,
+  }
+  render(
+    <FinancialChart
+      bars={[bar]}
+      series={[
+        {
+          key: 'zscore/day/raw/histogram/p=2/sm=1/rg=3',
+          kind: 'ZSCORE',
+          component: 'histogram',
+          points: [{ time: bar.close_time, value: 1 }],
+        },
+      ]}
+      onLoadMore={vi.fn()}
+    />,
+  )
+  const options = (
+    mocks.chart.addSeries.mock.calls[2] as unknown as [
+      unknown,
+      { autoscaleInfoProvider?: import('lightweight-charts').AutoscaleInfoProvider },
+    ]
+  )[1]
+  expect(options.autoscaleInfoProvider).toBeTypeOf('function')
+  expect(options.autoscaleInfoProvider!(() => ({ priceRange: { minValue: -1, maxValue: 1 } }))).toEqual({
+    priceRange: { minValue: -2, maxValue: 2 },
+  })
+  expect(
+    options.autoscaleInfoProvider!(() => ({
+      priceRange: { minValue: -4, maxValue: 5 },
+      margins: { above: 5, below: 3 },
+    })),
+  ).toEqual({ priceRange: { minValue: -4, maxValue: 5 }, margins: { above: 5, below: 3 } })
+  expect(options.autoscaleInfoProvider!(() => null)).toEqual({ priceRange: { minValue: -2, maxValue: 2 } })
+  expect(options.autoscaleInfoProvider!(() => ({priceRange: null}))).toEqual({priceRange:{minValue:-2,maxValue:2}})
 })

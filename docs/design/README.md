@@ -63,7 +63,7 @@ related: []
 
 | 模块 | 核心职责 | 允许依赖 | 设计或契约 |
 |---|---|---|---|
-| 组合根（`main.go`、`config`） | 配置、依赖装配、进程生命周期 | 所有需要装配的具体实现 | [系统设计](../architecture/system-design.md) |
+| 组合根（`main.go`、`service.go`、`updater.go`、`config`） | 配置、依赖装配、进程生命周期 | 所有需要装配的具体实现 | [系统设计](../architecture/system-design.md) |
 | `api` | HTTP 校验、应用调用、响应映射 | application、backtest、market、port、strategy、Gin | [API 设计](api.md)、[HTTP 契约](../standards/http-api.md) |
 | `data` / `model` | 连接初始化；旧库迁移链路依赖的兼容模型 | config、MySQL adapter、GORM、model | [兼容数据访问设计](data.md) |
 | `internal/market` | 行情值对象、Bar、Dataset、复权和周线 | Go 标准库 | [行情领域设计](internal/market.md) |
@@ -107,7 +107,9 @@ related: []
 ## 源码目录与职责
 
 ```text
-main.go                         # 组合根、进程与依赖生命周期
+main.go                         # 角色选择、工作台装配与进程生命周期
+service.go                      # 角色配置校验与刷新客户端装配
+updater.go                      # NAS 行情采集与调度装配
 config/                         # 本地配置解析，归系统设计
 api/                            # HTTP 与静态前端传输适配
 data/                           # 连接初始化与迁移链路桥接
@@ -139,8 +141,10 @@ web/
   src/                          # App、启动与样式
   vite.config.ts                # 构建和测试配置，归 web
 scripts/                        # 完整验收，归工程标准
-Dockerfile、.dockerignore        # 镜像与构建边界，归工程标准
-config.example.yaml             # 非敏感配置样例，归系统设计
+Dockerfile、.dockerignore        # 两种角色镜像与构建边界，归工程标准
+compose.nas.yaml、Makefile        # NAS 部署与本地启动，归工程标准
+config.example.yaml             # 工作台配置样例，归系统设计
+config.updater.example.yaml     # 更新服务配置样例，归系统设计
 *_test.go、*.test.ts(x)          # 测试与其被测模块共享归属
 ```
 

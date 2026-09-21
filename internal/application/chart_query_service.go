@@ -24,11 +24,11 @@ const (
 type IndicatorKind string
 
 const (
-	IndicatorSTD  IndicatorKind = "STD"
-	IndicatorSMA  IndicatorKind = "SMA"
-	IndicatorEMA  IndicatorKind = "EMA"
-	IndicatorMACD IndicatorKind = "MACD"
-	IndicatorKDJ  IndicatorKind = "KDJ"
+	IndicatorSMA    IndicatorKind = "SMA"
+	IndicatorEMA    IndicatorKind = "EMA"
+	IndicatorMACD   IndicatorKind = "MACD"
+	IndicatorKDJ    IndicatorKind = "KDJ"
+	IndicatorZSCORE IndicatorKind = "ZSCORE"
 )
 
 type IndicatorRequest struct {
@@ -37,9 +37,13 @@ type IndicatorRequest struct {
 	Fast   int           `json:"fast,omitempty"`
 	Slow   int           `json:"slow,omitempty"`
 	Signal int           `json:"signal,omitempty"`
+	Smooth int           `json:"smooth,omitempty"`
+	Lag    int           `json:"lag,omitempty"`
+	Regime int           `json:"regime,omitempty"`
 }
 
 type ChartQuery struct {
+	Comparison  string
 	Instrument  market.InstrumentID
 	Timeframe   market.Timeframe
 	View        market.PriceView
@@ -62,6 +66,7 @@ type ChartSeries struct {
 }
 
 type ChartResult struct {
+	ZScores     []ZScoreDiagnostic
 	Instrument  port.InstrumentSummary
 	Timeframe   market.Timeframe
 	View        market.PriceView
@@ -109,13 +114,19 @@ func (s *ChartQueryService) Query(ctx context.Context, query ChartQuery) (ChartR
 	if query.DataVersion == 0 {
 		return ChartResult{}, ErrIncompleteMarketData
 	}
+	now := s.clock().UTC().Truncate(time.Microsecond)
 	to := query.Before
-	if to.IsZero() {
-		to = s.clock().UTC().Truncate(time.Microsecond)
+	if to.IsZero() || to.After(now) {
+		to = now
 	} else {
 		to = to.Add(-time.Microsecond)
 	}
-	from := to.AddDate(-MaxBacktestRangeYears, 0, 0)
+	// Keep the history origin independent of the page cursor. Otherwise each
+	// older page would re-seed EMA with additional, previously excluded history.
+	from := now.AddDate(-MaxBacktestRangeYears, 0, 0)
+	if to.Before(from) {
+		return ChartResult{Instrument: instrument, Timeframe: query.Timeframe, View: query.View, DataVersion: query.DataVersion, Bars: []PriceBar{}, Series: []ChartSeries{}}, nil
+	}
 	dataset, factors, _, err := s.data.Dataset(ctx, query.Instrument, query.Timeframe, from, to, query.DataVersion)
 	if err != nil {
 		return ChartResult{}, err
@@ -147,7 +158,7 @@ func (s *ChartQueryService) Query(ctx context.Context, query ChartQuery) (ChartR
 		result.NextBefore = &next
 	}
 	refs, descriptors := chartIndicatorRefs(query, query.Indicators)
-	if len(refs) == 0 {
+	if len(query.Indicators) == 0 {
 		return result, nil
 	}
 	select {
@@ -171,10 +182,40 @@ func (s *ChartQueryService) Query(ctx context.Context, query ChartQuery) (ChartR
 		}
 		result.Series = append(result.Series, series)
 	}
+	if err := s.addZScores(ctx, query, dataset, factors, from, to, start, &result); err != nil {
+		return ChartResult{}, err
+	}
+	// Restore request ordering after independently computing the pair indicators.
+	byKey := make(map[string]ChartSeries, len(result.Series))
+	for _, series := range result.Series {
+		byKey[series.Key] = series
+	}
+	result.Series = []ChartSeries{}
+	for _, request := range query.Indicators {
+		keys := []string{}
+		if request.Kind == IndicatorZSCORE {
+			for _, name := range []string{"histogram", "smooth", "regime"} {
+				keys = append(keys, zScoreKey(query, request, name))
+			}
+		} else {
+			refs, _ := chartIndicatorRefs(query, []IndicatorRequest{request})
+			for _, ref := range refs {
+				keys = append(keys, ref.Key())
+			}
+		}
+		for _, key := range keys {
+			if series, ok := byKey[key]; ok {
+				result.Series = append(result.Series, series)
+			}
+		}
+	}
 	return result, nil
 }
 
 func validateChartQuery(query *ChartQuery) error {
+	if query.Comparison != "" && !chartBoardComparisons[query.Comparison] {
+		return invalidRequest("unsupported comparison")
+	}
 	if query.Instrument.Validate() != nil || (query.Timeframe != market.Day && query.Timeframe != market.Week) || (query.View != market.Raw && query.View != market.ForwardAdjusted) {
 		return invalidRequest("invalid chart identity, timeframe or price view")
 	}
@@ -195,7 +236,7 @@ func validateChartQuery(query *ChartQuery) error {
 		if err := validateIndicatorRequest(*request); err != nil {
 			return err
 		}
-		key := fmt.Sprintf("%s/%d/%d/%d/%d", request.Kind, request.Period, request.Fast, request.Slow, request.Signal)
+		key := fmt.Sprintf("%s/%d/%d/%d/%d/%d/%d/%d", request.Kind, request.Period, request.Fast, request.Slow, request.Signal, request.Smooth, request.Regime, request.Lag)
 		if seen[key] {
 			return invalidRequest("duplicate chart indicator")
 		}
@@ -210,10 +251,10 @@ func validateChartQuery(query *ChartQuery) error {
 
 func chartIndicatorCost(request IndicatorRequest) int {
 	switch request.Kind {
-	case IndicatorSTD:
-		return request.Period
 	case IndicatorKDJ:
 		return request.Period * 3
+	case IndicatorZSCORE:
+		return 2*request.Period + request.Regime + 68
 	case IndicatorMACD:
 		return 3
 	default:
@@ -222,8 +263,11 @@ func chartIndicatorCost(request IndicatorRequest) int {
 }
 
 func validateIndicatorRequest(request IndicatorRequest) error {
+	if request.Kind != IndicatorZSCORE && (request.Smooth != 0 || request.Regime != 0 || request.Lag != 0) {
+		return invalidRequest("unexpected ZSCORE parameters")
+	}
 	switch request.Kind {
-	case IndicatorSMA, IndicatorEMA, IndicatorSTD:
+	case IndicatorSMA, IndicatorEMA:
 		if request.Period < 1 || request.Period > MaxIndicatorPeriod || request.Fast != 0 || request.Slow != 0 || request.Signal != 0 {
 			return invalidRequest("invalid moving average parameters")
 		}
@@ -234,6 +278,10 @@ func validateIndicatorRequest(request IndicatorRequest) error {
 	case IndicatorKDJ:
 		if request.Period < 1 || request.Period > MaxIndicatorPeriod || request.Fast != 0 || request.Slow != 0 || request.Signal != 0 {
 			return invalidRequest("invalid KDJ parameters")
+		}
+	case IndicatorZSCORE:
+		if request.Lag < 0 || request.Lag > 5 || request.Period < 2 || request.Period > MaxIndicatorPeriod || request.Smooth < 1 || request.Smooth > MaxIndicatorPeriod || request.Regime < 2 || request.Regime > MaxIndicatorPeriod || request.Regime <= request.Period || request.Fast != 0 || request.Slow != 0 || request.Signal != 0 {
+			return invalidRequest("invalid ZSCORE parameters")
 		}
 	default:
 		return invalidRequest("unsupported chart indicator")
@@ -268,11 +316,8 @@ func chartIndicatorRefs(query ChartQuery, requests []IndicatorRequest) ([]indica
 	}
 	for _, request := range requests {
 		switch request.Kind {
-		case IndicatorSMA, IndicatorEMA, IndicatorSTD:
+		case IndicatorSMA, IndicatorEMA:
 			kind := indicator.SMAKind
-			if request.Kind == IndicatorSTD {
-				kind = indicator.STDKind
-			}
 			if request.Kind == IndicatorEMA {
 				kind = indicator.EMAKind
 			}
@@ -291,6 +336,7 @@ func chartIndicatorRefs(query ChartQuery, requests []IndicatorRequest) ([]indica
 			}{{indicator.K, "k"}, {indicator.D, "d"}, {indicator.J, "j"}} {
 				add(indicator.Ref{Kind: indicator.KDJKind, Timeframe: query.Timeframe, PriceView: query.View, Field: component.field, Period: request.Period}, request.Kind, component.name)
 			}
+
 		}
 	}
 	return refs, descriptors

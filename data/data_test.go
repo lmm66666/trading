@@ -86,3 +86,18 @@ func TestInitializationTransfersConnectionOnlyOnSuccess(t *testing.T) {
 		})
 	}
 }
+
+func TestConnectionOnlyInitializationDoesNotMigrate(t *testing.T) {
+	conn, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	db, err := gorm.Open(mysqlgorm.New(mysqlgorm.Config{Conn: conn, SkipInitializeWithVersion: true}), &gorm.Config{DisableAutomaticPing: true})
+	require.NoError(t, err)
+	// No SQL expectations: any accidental DDL or migration must fail this path.
+	got, err := initializeData(config.DB{MaxOpenConns: 3}, db, nil)
+	require.NoError(t, err)
+	require.Same(t, db, got.DB())
+	require.Equal(t, 3, conn.Stats().MaxOpenConnections)
+	mock.ExpectClose()
+	require.NoError(t, conn.Close())
+	require.NoError(t, mock.ExpectationsWereMet())
+}

@@ -119,14 +119,14 @@ func (scheduler *FuturesScheduler) Start(ctx context.Context, interval time.Dura
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		summary := scheduler.RunOnce(ctx)
-		if summary.Err != nil && !errors.Is(summary.Err, ErrRefreshAlreadyRunning) {
-			return summary.Err
-		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+		}
+		summary := scheduler.RunOnce(ctx)
+		if summary.Err != nil && !errors.Is(summary.Err, ErrRefreshAlreadyRunning) {
+			return summary.Err
 		}
 	}
 }

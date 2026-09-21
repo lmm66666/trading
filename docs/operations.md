@@ -13,26 +13,35 @@
 - MySQL 8.4.x LTS
 - 远端集成验证需要可达的获批 MySQL 服务；镜像构建需要可用的 Docker daemon
 
-## 2. 本地启动
+## 2. 两种服务与本地启动
 
-创建 `trading` 数据库后：
+服务角色必须通过 `-service updater|workbench` 指定，不再支持旧的单体命令或 all 模式。数据库初始化归 updater；workbench 只连接已经初始化的数据库。
+
+先准备两份本地配置（不得提交）：
 
 ```bash
+cp config.updater.example.yaml config.updater.yaml
 cp config.example.yaml config.yaml
-# 编辑本地 config.yaml；该文件不得提交或进入镜像
+openssl rand -hex 32
+```
+
+将生成的随机 Token 填入两份配置的 `Config.Updater.Token`。正常查看全量数据时，两份配置的 `DB` 都指向 NAS 同一业务库；workbench 的 `Updater.URL` 指向 NAS 更新服务（如 `http://nas.local:8081`）。示例中的 Token 和数据库密码均需替换，不能当作正式凭据。沿用旧配置的 Market/Worker 数值；不要因为示例默认值而改变已有期货开关、更新间隔或限频。
+
+本地调试时将两个服务指向本地 mock 库，URL 改为 `http://127.0.0.1:8081`；mock 库与 NAS 库独立，不自动同步或回退切换。updater 启动后先等待首个刷新周期；需要立即更新股票时，通过 workbench 的手动刷新接口触发。纯查看 mock 数据也可只启动 workbench，届时手动刷新会显示更新服务不可达。
+
+```bash
 go mod download
 npm --prefix web ci
 npm --prefix web run build
-go run . -config config.yaml
+# 两个终端分别运行；首次初始化先启动 updater
+make run-updater
+make run-workbench
+# 等价命令
+# go run . -service updater -config config.updater.yaml
+# go run . -service workbench -config config.yaml
 ```
 
-服务默认监听 `:8080`，同源提供行情工作台和 API。前端开发模式：
-
-```bash
-npm --prefix web run dev
-```
-
-Vite 将 `/api` 代理到 `:8080`。
+workbench 默认监听 `127.0.0.1:8080`，同源提供页面与 API。前端开发仍可 `npm --prefix web run dev`，Vite 将 `/api` 代理到 `:8080`。
 
 本地库没有行情数据时，可先灌注固定种子的演示行情（3 只股票与 1 个期货主力连续各 400 根日线）：
 
@@ -42,48 +51,59 @@ go run ./cmd/mock-data -config config.yaml.local
 
 `config.yaml.local` 指向本地测试 MySQL，同样不得提交；数据生成与发布规则见 [mock 灌注设计](design/cmd/mock-data.md)。
 
-## 3. 启动与停机语义
+## 3. 启动、断网与停机
 
-- 启动时只迁移证券主数据和新策略内核表；不创建、不变更、不写入旧技术 K 线表。
-- `main.go` 启动 HTTP、持久化任务 Worker、股票行情调度和可选期货调度。
-- 停机先取消根 context，等待 HTTP、Worker 和调度 goroutine 退出，最后关闭数据库。
-- 已持久化但未完成的任务不会因某个 HTTP 请求断开而消失；服务停机中断由租约和后续接管处理。
+- updater 先执行现有证券主数据/内核 schema 初始化，再运行内部刷新 HTTP 和股票/可选期货调度；不运行扫描/回测 Worker。不创建或变更旧技术 K 线表。
+- workbench 不执行 DDL、不装配 Broker/调度，运行业务 HTTP、静态前端与持久化计算 Worker。启动不要求 updater 在线，但 MySQL 必须可达且已初始化。
+- updater 不可达时，仍可使用已保存的行情与工作台功能；手动刷新返回 503。等待刷新超时为 504，服务认证或响应异常为 502。不会自动切到本地 mock 库。
+- 刷新 POST 不自动重试。超时/断线不等于 NAS 未执行；全市场 202 只代表接受，已接受的任务不因工作台关闭而取消。单证券刷新沿请求 context 取消。
+- 两服务分别取消根 context，等待自己拥有的 HTTP/后台工作退出，最后关闭自身数据库连接。电脑关闭不影响 NAS 更新；扫描/回测等电脑服务重启后按现有租约机制恢复。
+- 每个目标库只部署一个 updater 和一个 workbench。updater 升级先停旧实例，不做新旧实例重叠的滚动更新；进程内刷新防重不支持多副本。
 
 ## 4. 配置边界
 
-- `Worker` 配置任务 Worker 数、租约、轮询、兼容接口同步等待，以及扫描/行情刷新的有界并发。
-- `Market.StockRequestIntervalSeconds` 控制新浪行情共享限频，默认且不得低于 5 秒。
-- `Market.FuturesEnabled` 开启固定期货主力连续日线；`Market.FuturesRefreshIntervalHours` 控制刷新周期。
-- 期货来源按配置历史起点重读完整快照；股票按最近 20 根日线重叠增量刷新。
-- 本地配置、密码、Token、数据库转储和导出包不得提交或写入镜像层。
+- `Server.ListenAddress`：updater 默认 `:8081`，workbench 默认 `127.0.0.1:8080`。容器中运行工作台时改为 `:8080`，宿主只映射回环地址。
+- `Updater.Token`：两端相同、至少 32 字节非空白可打印 ASCII；使用随机生成值。`Updater.URL`：workbench 必填，只接受 http/https 源地址，不含用户名密码、路径、query 或 fragment。
+- `Worker`：workbench 使用原任务并发、租约、轮询、同步等待和扫描批次；updater 只使用 `ScanBatchSize` 作为行情并发。
+- `Market`：仅 updater 使用，股票与期货共享限频，默认且不得低于每 5 秒一次；期货开关与周期保留原配置。
+- 股票启动满 24 小时后首次自动更新，再按原 ticker 更新，仍重抓最近 20 根日线；期货启动后等待配置的刷新间隔，沿用固定八品种和全历史刷新。重启重新计时。全市场手动刷新仍只触发股票调度，立即执行且不重置定时节拍。
+- Token、密码、内网地址、完整配置、转储和导出包不得提交或进入镜像。服务调用 Token 不进入浏览器。
 
-具体模块语义见 [应用层设计](design/internal/application.md) 和 [Broker 设计](design/pkg/broker.md)。
+## 5. NAS Docker 部署
 
-## 5. Docker
-
-构建 amd64 镜像：
-
-```bash
-docker buildx build --platform linux/amd64 -t trading:latest --load .
-```
-
-以只读方式挂载配置：
+Dockerfile 有两个目标。NAS 只需 updater 镜像，不构建或携带前端：
 
 ```bash
-docker run -d --name trading -p 8080:8080 \
-  -v "$PWD/config.yaml:/app/config.yaml:ro" \
-  trading:latest
+make image-updater
+# 若需要容器化工作台，另行构建
+make image-workbench
 ```
 
-也可以覆盖容器命令指定其他容器内路径：
+镜像按 linux/amd64 构建、以非 root 运行。NAS 已有 MySQL，Compose 不新建 MySQL 容器或数据库卷。
+
+部署前备份业务库，停止旧单体，将 `config.updater.yaml` 放在 Compose 文件同目录；容器中的 DB.Host 使用可达的 NAS/MySQL 地址，不能误填容器自己的 127.0.0.1。配置文件需对容器 app 用户可读，只读挂载，不要设为所有人可写。
 
 ```bash
-docker run -d --name trading -p 8080:8080 \
-  -v "$PWD/config.yaml:/run/secrets/trading.yaml:ro" \
-  trading:latest -config /run/secrets/trading.yaml
+# 将 nas.local 解析到的局域网 IP 填入环境变量，不能填写公网 IP。
+export UPDATER_BIND_IP='<NAS_LAN_IP>'
+docker compose -f compose.nas.yaml config --quiet
+docker compose -f compose.nas.yaml up -d --build updater
+docker compose -f compose.nas.yaml logs --tail=50 updater
 ```
 
-镜像进程以非 root 用户运行；配置只在运行时挂载。
+Compose 在变量未设置或本地配置文件不存在时拒绝启动，不自动创建空配置目录。端口只绑定选定 NAS 局域网接口；NAS 防火墙限定 MySQL 与 8081 的所需访问来源。本次不开放公网。未来外网接入需另行配置安全网络通道或经过设计的网关，不直接映射数据库端口。
+
+updater 初始化成功后，在电脑配置 NAS DB/Updater.URL，运行 `make run-workbench`。可选工作台容器：
+
+```bash
+# 配置中 Server.ListenAddress 使用 :8080
+docker run --rm --name trading-workbench -p 127.0.0.1:8080:8080 \
+  -v "$PWD/config.yaml:/app/config.yaml:ro" trading-workbench:latest
+```
+
+切换验收：图表读取已有 COMPLETE 版本；手动刷新走 NAS；扫描/回测和工作台写入正常；关闭电脑服务不影响 updater；停 updater 时工作台仍可读数据而刷新明确失败。首次初始化尚无 COMPLETE 数据时沿用无行情语义，不把 schema 创建成功当成行情已准备好。
+
+回滚时先停止两个新服务，再启动旧发布版本单体和旧配置。本次不改变数据格式或表结构，保持业务数据；若同时做了其他迁移，按对应迁移的恢复要求处理。新版本本身不保留 all 模式。
 
 ## 6. 数据库变更
 

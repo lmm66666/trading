@@ -92,13 +92,13 @@ func TestFuturesSchedulerPreventsOverlappingRunsAndCancels(t *testing.T) {
 	require.ErrorIs(t, summary.Err, context.Canceled)
 }
 
-func TestFuturesSchedulerStartRunsImmediatelyAndStops(t *testing.T) {
+func TestFuturesSchedulerStartRunsOnIntervalAndStops(t *testing.T) {
 	fake := &futuresRefresherFake{started: make(chan struct{}, 1)}
 	scheduler, err := NewFuturesScheduler(fake, DefaultSinaFuturesInstruments()[:1], slog.Default())
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- scheduler.Start(ctx, time.Hour) }()
+	go func() { done <- scheduler.Start(ctx, 10*time.Millisecond) }()
 	<-fake.started
 	cancel()
 	require.ErrorIs(t, <-done, context.Canceled)
