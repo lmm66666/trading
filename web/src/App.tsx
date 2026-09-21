@@ -52,6 +52,8 @@ export default function App() {
   const [timeframe, setTimeframe] = useState<Timeframe>(initial.timeframe)
   const [priceView, setPriceView] = useState<PriceView>(initial.priceView)
   const [view, setView] = useState<WorkbenchView>(initial.view)
+  const [scanVisited, setScanVisited] = useState(initial.view === 'scan')
+  useEffect(() => { if (view === 'scan') setScanVisited(true) }, [view])
   const [instrumentInfo, setInstrumentInfo] = useState<InstrumentSummary | null>(null)
   const [scanRunId, setScanRunId] = useState<string | null>(() => readStoredRunId('scan'))
   const [backtestRunId, setBacktestRunId] = useState<string | null>(() => readStoredRunId('backtest'))
@@ -321,13 +323,15 @@ export default function App() {
             </section>
           )}
         </div>
-        {view === 'scan' ? (
+        {(scanVisited || view === 'scan') && (
           <ScanPanel
+            active={view === 'scan'}
             runId={scanRunId}
             onRunIdChange={changeScanRunId}
             onSelectInstrument={(instrument) => selectSymbol(instrument, 'chart')}
           />
-        ) : view === 'backtest' ? (
+        )}
+        {view === 'backtest' ? (
           <BacktestPanel
             runId={backtestRunId}
             onRunIdChange={changeBacktestRunId}

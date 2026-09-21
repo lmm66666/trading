@@ -646,3 +646,70 @@ button:disabled { cursor:not-allowed; opacity:.45; }
 .zscore-summary small { color: var(--muted, #94a3b8); }
 .zscore-thresholds span:first-child { color: #fb923c; background: #fb923c18; }
 .zscore-thresholds span:last-child { color: #22d3ee; background: #22d3ee18; }
+
+/* 扫描工作台：常用条件在顶部，结果占据主体；不改变回测双栏。 */
+.scan-workspace { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 24px; color: var(--text); font-size: 14px; }
+.scan-workspace[hidden] { display: none; }
+.scan-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.scan-page-heading h1 { margin: 0 0 6px; font-size: 22px; font-weight: 600; }
+.scan-page-heading p { margin: 0; color: var(--muted); font-size: 13px; }
+.scan-mode { border: 1px solid var(--line); color: var(--muted); padding: 5px 10px; border-radius: 6px; font-size: 12px; white-space: nowrap; }
+.scan-form { padding: 20px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.scan-primary-fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
+.scan-primary-fields label { display: flex; flex-direction: column; gap: 8px; color: var(--muted); font-size: 12px; }
+.scan-strategy-field { flex: 1 1 220px; }
+.scan-workspace input:not([type=checkbox]), .scan-workspace select { min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--text); font: inherit; font-size: 14px; color-scheme: dark; }
+.scan-workspace input:focus-visible, .scan-workspace select:focus-visible, .scan-workspace button:focus-visible, .scan-workspace summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.scan-date-fields { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; flex: 2 1 480px; min-width: 0; }
+.scan-date-fields label { flex: 1 1 140px; min-width: 0; }
+.scan-date-arrow { color: var(--muted); padding-bottom: 9px; }
+.scan-calendar { flex: 1 1 200px; min-width: 0; }
+.scan-calendar .range-trigger { height: 36px; font-size: 12px; }
+.scan-primary-fields .submit-task { width: auto; height: 36px; padding: 0 24px; margin: 0; flex-shrink: 0; font-size: 14px; }
+.scan-secondary-fields { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 24px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.scan-secondary-fields .chip-row { gap: 8px; align-items: center; }
+.scan-secondary-fields .chip-row > span { color: var(--muted); font-size: 12px; margin-right: 4px; }
+.scan-workspace .chip { min-height: 32px; font-size: 12px; }
+.scan-workspace summary { cursor: pointer; min-height: 32px; line-height: 32px; color: var(--muted); font-size: 13px; }
+.scan-workspace details[open] > summary { color: var(--text); }
+.scan-parameters, .scan-advanced { min-width: 0; }
+.scan-parameters[open], .scan-advanced[open] { flex-basis: 100%; }
+.scan-parameters .param-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-top: 12px; }
+.scan-parameters .field { font-size: 13px; min-width: 0; }
+.scan-parameters .field input { width: 100%; box-sizing: border-box; }
+.scan-workspace .form-hint, .scan-workspace .field-error { font-size: 12px; }
+.scan-workspace .form-error { font-size: 13px; margin: 16px 0 0; }
+.scan-explanation { color: var(--muted); margin: 16px 0 0; font-size: 12px; line-height: 1.6; }
+.scan-advanced .scope-inline { justify-content: flex-start; gap: 24px; margin-top: 12px; }
+.scan-advanced label { display: flex; gap: 10px; align-items: center; }
+.scan-advanced input[type=number] { width: 110px; }
+.scan-result-area { margin-top: 20px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.scan-notice { padding: 10px 14px; margin: 0; border-left: 2px solid var(--accent); background: var(--panel); color: var(--muted); font-size: 13px; line-height: 1.6; }
+.scan-idle { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 56px 16px; color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; text-align: center; }
+.scan-idle svg { width: 28px; height: 28px; flex: none; }
+.scan-idle strong { font-size: 15px; color: var(--text); }
+.scan-idle span { font-size: 13px; }
+.scan-workspace .scan-results { padding: 20px; border: 1px solid var(--line); }
+.scan-result-source { font-size: 13px; line-height: 1.8; color: var(--text); overflow-wrap: anywhere; margin: 12px 0 4px; }
+.scan-source-note { font-size: 12px; color: var(--muted); display: block; margin-bottom: 12px; }
+.scan-workspace .run-error, .scan-workspace .run-badge, .scan-workspace .run-details summary { font-size: 12px; }
+.scan-workspace .run-strategy { font-size: 13px; }
+.scan-workspace .results-heading h3 { font-size: 16px; }
+.scan-workspace .results-empty span { font-size: 13px; color: var(--muted); }
+.scan-table-scroll, .scan-workspace .failures { overflow-x: auto; }
+.scan-workspace .results-table { font-size: 14px; }
+.scan-workspace .results-table th { font-size: 12px; color: var(--muted); }
+.scan-workspace .results-table td { padding-top: 14px; padding-bottom: 14px; }
+.scan-workspace .results-table .instrument-link { font-size: 13px; }
+.scan-workspace .results-error { font-size: 13px; }
+.scan-workspace .results-error button { margin-left: 12px; padding: 6px 10px; color: var(--text); background: var(--raised); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; }
+@media (max-width: 767px) {
+  .scan-workspace { padding: 16px; }
+  .scan-form { padding: 14px; }
+  .scan-page-heading h1 { font-size: 20px; }
+  .scan-date-fields { flex-basis: 100%; }
+  .scan-date-fields label { flex-basis: 110px; }
+  .scan-primary-fields .submit-task { width: 100%; height: 42px; }
+  .scan-workspace input:not([type=checkbox]), .scan-workspace select { font-size: 16px; }
+  .scan-workspace .scan-results { padding: 14px; }
+}
