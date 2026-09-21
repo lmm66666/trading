@@ -293,6 +293,8 @@ export interface SnapshotKey {
 
 export interface SnapshotRow {
   instrument: string
+  /** 读取时点解析的证券名称；缺失时省略，前端回退显示证券代码 */
+  name?: string
   signal_time: string
   reason: string
   values?: Record<string, number>
@@ -300,6 +302,8 @@ export interface SnapshotRow {
 
 export interface SnapshotFailure {
   instrument: string
+  /** 读取时点解析的证券名称；缺失时省略，前端回退显示证券代码 */
+  name?: string
   code: string
   message: string
   retryable: boolean

@@ -20,7 +20,7 @@ interface ScanPanelProps {
   onSelectInstrument: (instrument: string) => void
 }
 
-/** 扫描视图：左配置栏（策略/时间/范围）→ 右侧状态条 + 入选名单 */
+/** 扫描视图：左配置栏（策略/时间/范围）→ 右侧任务状态条，终态合并为单张结果卡 */
 export function ScanPanel({ runId, onRunIdChange, onSelectInstrument }: ScanPanelProps) {
   const catalog = useStrategyCatalog()
   const [selection, setSelection] = useState<StrategyFormValue>({ strategy: '', version: '', parameters: {} })
@@ -169,7 +169,7 @@ export function ScanPanel({ runId, onRunIdChange, onSelectInstrument }: ScanPane
         </section>
       </aside>
       <div className="result-column">
-        <RunMonitor kind="scan" status={status} pollingError={pollingError} />
+        {!terminalResult && <RunMonitor kind="scan" status={status} pollingError={pollingError} />}
         {!status && !pollingError && (
           <div className="result-empty">
             <svg className="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   cancelRun,
@@ -39,13 +39,13 @@ const snapshotKey = {
   as_of: '2026-06-01T00:00:00Z',
 }
 
-const pageOf = (instruments: string[], nextSequence?: number) => ({
+const pageOf = (instruments: Array<string | { instrument: string; name?: string }>, nextSequence?: number) => ({
   snapshot_id: 'snap-1',
   run_id: 'r1',
   key: snapshotKey,
   data_version: 7,
-  rows: instruments.map((instrument) => ({
-    instrument,
+  rows: instruments.map((item) => ({
+    ...(typeof item === 'string' ? { instrument: item } : item),
     signal_time: '2026-06-01T00:00:00Z',
     reason: 'b1-buy',
     values: {},
@@ -190,6 +190,11 @@ describe('ScanPanel 表单', () => {
     await renderWithCatalog()
     expect(screen.getByText('尚未发起扫描')).toBeVisible()
   })
+
+  it('配置栏策略标签不重复', async () => {
+    await renderWithCatalog()
+    expect(screen.getAllByText('策略')).toHaveLength(1)
+  })
 })
 
 describe('ScanPanel 任务跟踪', () => {
@@ -325,11 +330,55 @@ describe('ScanPanel 结果', () => {
     expect(screen.getByText(expected)).toBeVisible()
   })
 
+  it('终态结果合并为单张结果卡且状态条唯一', async () => {
+    vi.mocked(fetchSnapshotPage).mockResolvedValue(pageOf(['SSE:600000']))
+    await renderSucceeded(succeededStatus)
+    expect(screen.getAllByLabelText('任务状态')).toHaveLength(1)
+    const card = screen.getByLabelText('扫描结果')
+    expect(within(card).getByText('daily_b1_buy v1')).toBeVisible()
+  })
+
+  it('结果表格展示代码、名称、信号时间与信号原因', async () => {
+    vi.mocked(fetchSnapshotPage).mockResolvedValue(pageOf([{ instrument: 'SSE:600000', name: '浦发银行' }]))
+    await renderSucceeded(succeededStatus)
+    expect(screen.getByRole('columnheader', { name: '代码' })).toBeVisible()
+    expect(screen.getByRole('columnheader', { name: '名称' })).toBeVisible()
+    expect(screen.getByRole('columnheader', { name: '信号时间' })).toBeVisible()
+    expect(screen.getByRole('columnheader', { name: '信号原因' })).toBeVisible()
+    expect(screen.getByText('浦发银行')).toBeVisible()
+    expect(screen.getByText('b1-buy')).toBeVisible()
+  })
+
+  it('名称缺失时名称列回退显示证券代码', async () => {
+    vi.mocked(fetchSnapshotPage).mockResolvedValue(pageOf(['SSE:600000']))
+    await renderSucceeded(succeededStatus)
+    // 代码列按钮与名称列均显示证券身份
+    expect(screen.getAllByText('SSE:600000')).toHaveLength(2)
+  })
+
+  it('入选 0 只时展示空态与调整建议而非空表头', async () => {
+    vi.mocked(fetchSnapshotPage).mockResolvedValue(pageOf([]))
+    vi.mocked(getRun).mockResolvedValue(succeededStatus)
+    render(<ScanPanel runId="r1" onRunIdChange={noop} onSelectInstrument={noop} />)
+    await screen.findByText('无入选证券')
+    expect(screen.getByText(/调整时间范围、策略参数或交易所范围/)).toBeVisible()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+
+  it('结果加载中展示骨架行', async () => {
+    vi.mocked(fetchSnapshotPage).mockReturnValue(new Promise(() => {}))
+    vi.mocked(getRun).mockResolvedValue(succeededStatus)
+    render(<ScanPanel runId="r1" onRunIdChange={noop} onSelectInstrument={noop} />)
+    const status = await screen.findByRole('status', { name: '结果加载中' })
+    expect(status).toBeVisible()
+    expect(status.querySelectorAll('.skeleton-bar').length).toBeGreaterThan(0)
+  })
+
   it('部分成功时展示失败计数，failures 默认折叠', async () => {
     vi.mocked(fetchSnapshotPage).mockResolvedValue({
       ...pageOf(['SSE:600000']),
       failures: [
-        { instrument: 'SZSE:002399', code: 'DATA_MISSING', message: '缺少行情', retryable: true },
+        { instrument: 'SZSE:002399', code: 'DATA_MISSING', message: '缺少行情', retryable: true, name: '广发证券' },
       ],
     })
     await renderSucceeded(partialStatus)
@@ -339,6 +388,7 @@ describe('ScanPanel 结果', () => {
     expect(detail).not.toBeVisible()
     fireEvent.click(screen.getByText('处理失败 1 只'))
     expect(detail).toBeVisible()
+    expect(screen.getByText('广发证券')).toBeVisible()
     expect(screen.getByText('是')).toBeVisible()
   })
 })

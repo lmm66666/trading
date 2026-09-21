@@ -83,26 +83,27 @@ export function StrategyForm({ definitions, loading, error, value, onChange, dis
 
   return (
     <div className="strategy-form">
-      <label className="field">
-        策略
-        <select
-          value={value.strategy}
-          disabled={disabled}
-          onChange={(event) => selectStrategy(event.target.value)}
-        >
-          {definitions.map((definition) => (
-            <option key={`${definition.strategy}@${definition.version}`} value={definition.strategy}>
-              {definition.strategy} v{definition.version}
-            </option>
-          ))}
-        </select>
-      </label>
+      <select
+        className="strategy-select"
+        aria-label="策略"
+        value={value.strategy}
+        disabled={disabled}
+        onChange={(event) => selectStrategy(event.target.value)}
+      >
+        {definitions.map((definition) => (
+          <option key={`${definition.strategy}@${definition.version}`} value={definition.strategy}>
+            {definition.strategy} v{definition.version}
+          </option>
+        ))}
+      </select>
       {selected && (
-        <p className="strategy-meta">
-          主周期 {TIMEFRAME_LABELS[selected.primary_timeframe] ?? selected.primary_timeframe}
-          {' · '}预热 {selected.warmup_bars} 根
-          {' · '}默认持有 {selected.default_hold_bars} 根
-        </p>
+        <div className="strategy-meta">
+          <span className="meta-chip">
+            主周期 {TIMEFRAME_LABELS[selected.primary_timeframe] ?? selected.primary_timeframe}
+          </span>
+          <span className="meta-chip">预热 {selected.warmup_bars} 根</span>
+          <span className="meta-chip">默认持有 {selected.default_hold_bars} 根</span>
+        </div>
       )}
       {params.length > 0 && (
         <div className="param-grid">

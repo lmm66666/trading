@@ -25,10 +25,16 @@ describe('StrategyForm', () => {
   it('渲染策略目录与参数定义', () => {
     setup()
     expect(screen.getByRole('combobox')).toBeVisible()
-    expect(screen.getByText(/主周期 日线/)).toBeVisible()
-    expect(screen.getByText(/预热 60 根/)).toBeVisible()
-    expect(screen.getByText(/默认持有 10 根/)).toBeVisible()
+    expect(screen.getByText('主周期 日线')).toHaveClass('meta-chip')
+    expect(screen.getByText('预热 60 根')).toHaveClass('meta-chip')
+    expect(screen.getByText('默认持有 10 根')).toHaveClass('meta-chip')
     expect(screen.getByLabelText('参数 lookback_days')).toHaveAttribute('placeholder', '默认 20')
+  })
+
+  it('不渲染重复的策略字段标签，选择器保留可访问名', () => {
+    setup()
+    expect(screen.queryByText('策略')).toBeNull()
+    expect(screen.getByRole('combobox', { name: '策略' })).toBeVisible()
   })
 
   it('目录加载失败时显示错误', () => {

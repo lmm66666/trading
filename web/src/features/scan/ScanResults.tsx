@@ -6,6 +6,7 @@ import {
   type SnapshotRow,
 } from '../../api/client'
 import type { RunStatus } from '../../api/client'
+import { RunMonitor } from '../strategy/RunMonitor'
 
 const PAGE_LIMIT = 100
 
@@ -19,7 +20,7 @@ function formatLocalTime(utc: string): string {
   return new Date(utc).toLocaleString('zh-CN', { hour12: false })
 }
 
-/** 扫描结果：按快照 key 分页读取入选行，failures 折叠展示 */
+/** 扫描结果卡：卡头为任务状态条，卡体按快照 key 分页读取入选行，failures 折叠展示 */
 export function ScanResults({ run, onSelectInstrument }: ScanResultsProps) {
   const [rows, setRows] = useState<SnapshotRow[]>([])
   const [failures, setFailures] = useState<SnapshotFailure[]>([])
@@ -93,73 +94,101 @@ export function ScanResults({ run, onSelectInstrument }: ScanResultsProps) {
 
   return (
     <section className="scan-results" aria-label="扫描结果">
-      <header className="results-heading">
-        <h3>入选 {rows.length} 只</h3>
-        {partial && failures.length > 0 && (
-          <span className="failures-badge">{failures.length} 只证券处理失败</span>
+      <RunMonitor kind={run.kind} status={run} pollingError={null} />
+      <div className="results-body">
+        <header className="results-heading">
+          <h3>入选 {rows.length} 只</h3>
+          {partial && failures.length > 0 && (
+            <span className="failures-badge">{failures.length} 只证券处理失败</span>
+          )}
+        </header>
+        {error && (
+          <p className="results-error">
+            {error}
+            {rows.length > 0 ? '（已保留已加载结果）' : ''}
+          </p>
         )}
-      </header>
-      {loading && rows.length === 0 && <p className="results-hint">结果加载中…</p>}
-      {error && (
-        <p className="results-error">
-          {error}
-          {rows.length > 0 ? '（已保留已加载结果）' : ''}
-        </p>
-      )}
-      <table className="results-table">
-        <thead>
-          <tr>
-            <th>证券</th>
-            <th>信号时间</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.instrument}>
-              <td>
-                <button
-                  className="instrument-link"
-                  onClick={() => onSelectInstrument(row.instrument)}
-                  type="button"
-                >
-                  {row.instrument}
-                </button>
-              </td>
-              <td>{formatLocalTime(row.signal_time)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {nextSequence !== null && (
-        <button className="table-load-more" onClick={loadMore} disabled={loading} type="button">
-          {loading ? '加载中…' : '加载更多'}
-        </button>
-      )}
-      {failures.length > 0 && (
-        <details className="failures">
-          <summary>处理失败 {failures.length} 只</summary>
-          <table>
+        {loading && rows.length === 0 && (
+          <div className="results-skeleton" role="status" aria-label="结果加载中">
+            {[0, 1, 2].map((index) => (
+              <div className="skeleton-row" key={index} aria-hidden="true">
+                <span className="skeleton-bar" />
+                <span className="skeleton-bar" />
+                <span className="skeleton-bar" />
+                <span className="skeleton-bar" />
+              </div>
+            ))}
+          </div>
+        )}
+        {!loading && rows.length === 0 && !error && (
+          <div className="results-empty">
+            <strong>无入选证券</strong>
+            <span>可调整时间范围、策略参数或交易所范围后重新扫描</span>
+          </div>
+        )}
+        {rows.length > 0 && (
+          <table className="results-table">
             <thead>
               <tr>
-                <th>证券</th>
                 <th>代码</th>
-                <th>说明</th>
-                <th>可重试</th>
+                <th>名称</th>
+                <th>信号时间</th>
+                <th>信号原因</th>
               </tr>
             </thead>
             <tbody>
-              {failures.map((failure) => (
-                <tr key={failure.instrument}>
-                  <td>{failure.instrument}</td>
-                  <td>{failure.code}</td>
-                  <td>{failure.message}</td>
-                  <td>{failure.retryable ? '是' : '否'}</td>
+              {rows.map((row) => (
+                <tr key={row.instrument}>
+                  <td>
+                    <button
+                      className="instrument-link"
+                      onClick={() => onSelectInstrument(row.instrument)}
+                      type="button"
+                    >
+                      {row.instrument}
+                    </button>
+                  </td>
+                  <td className="col-name">{row.name ?? row.instrument}</td>
+                  <td>{formatLocalTime(row.signal_time)}</td>
+                  <td>{row.reason}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </details>
-      )}
+        )}
+        {nextSequence !== null && (
+          <button className="table-load-more" onClick={loadMore} disabled={loading} type="button">
+            {loading ? '加载中…' : '加载更多'}
+          </button>
+        )}
+        {failures.length > 0 && (
+          <details className="failures">
+            <summary>处理失败 {failures.length} 只</summary>
+            <table>
+              <thead>
+                <tr>
+                  <th>证券</th>
+                  <th>名称</th>
+                  <th>代码</th>
+                  <th>说明</th>
+                  <th>可重试</th>
+                </tr>
+              </thead>
+              <tbody>
+                {failures.map((failure) => (
+                  <tr key={failure.instrument}>
+                    <td>{failure.instrument}</td>
+                    <td>{failure.name ?? failure.instrument}</td>
+                    <td>{failure.code}</td>
+                    <td>{failure.message}</td>
+                    <td>{failure.retryable ? '是' : '否'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
+        )}
+      </div>
     </section>
   )
 }
