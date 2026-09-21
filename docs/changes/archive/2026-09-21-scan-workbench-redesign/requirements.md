@@ -1,6 +1,6 @@
 ---
 id: CHG-2026-09-21-scan-workbench-redesign
-status: approved
+status: implemented
 approval_status: approved
 authority: proposed
 approved_by: user
