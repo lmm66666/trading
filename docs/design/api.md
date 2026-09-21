@@ -72,7 +72,7 @@ HTTP 请求
   → 统一 JSON 响应
 ```
 
-图表查询在应用层完整历史上下文计算指标后返回裁剪页；API 只保持请求顺序、版本和游标。workbench 手动刷新经 `UpdaterClient` 发送校验后的 DTO；updater 在独立路由中校验 Token，带证券身份时同步调用 `MarketIngestion.Refresh`，缺省时通过 `MarketTrigger` 异步触发股票全市场补全扫描。updater 不开放工作台 API 或静态页面。
+图表查询在应用层完整历史上下文计算指标后返回裁剪页；API 只保持请求顺序、版本和游标。workbench 手动刷新经 `UpdaterClient` 发送校验后的 DTO；updater 在独立路由中校验 Token，带证券身份时同步调用 `MarketIngestion.Refresh`，缺省时通过 `MarketTrigger` 分别异步触发全市场股票与已启用期货，并返回两类独立回执（已运行类别不重复启动）。updater 不开放工作台 API 或静态页面。
 
 ## 6. 失败、取消和一致性语义
 
@@ -117,4 +117,4 @@ go test ./api -cover
 
 ## 更新进度查询
 
-工作台通过 RefreshQueries 查询同一 MySQL 的股票/期货最新摘要、历史、任务详情和失败分页；updater 内部路由提供同组查询，统一 Bearer 验证。工作台仅向固定 updater status 地址读取 futures_enabled，2秒失败降级 unknown，不影响数据库历史读取。所有查询拒绝重复/未知参数，分页有界。新采集受理增加 run_id/progress_available，单证券同步刷新不变。详情见 [HTTP 契约](../standards/http-api.md)。
+工作台通过 RefreshQueries 查询同一 MySQL 的股票/期货最新摘要、历史、任务详情和失败分页；updater 内部路由提供同组查询，统一 Bearer 验证。工作台仅向固定 updater status 地址读取 futures_enabled，2秒失败降级 unknown，不影响数据库历史读取。所有查询拒绝重复/未知参数，分页有界。批量回执为 stock/futures 两项，各自区分 ACCEPTED/ALREADY_RUNNING/DISABLED/FAILED；只有受理项返回 run_id，代理校验状态与字段组合并拒绝旧股票回执，单证券同步刷新不变。详情见 [HTTP 契约](../standards/http-api.md)。

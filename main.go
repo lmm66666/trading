@@ -55,10 +55,11 @@ type kernelRuntime struct {
 type rootMarketTrigger struct {
 	ctx       context.Context
 	scheduler *application.MarketScheduler
+	futures   *application.FuturesScheduler
 }
 
-func (t rootMarketTrigger) TriggerNow(workers int) (port.RefreshReceipt, error) {
-	return t.scheduler.TriggerTracked(t.ctx, workers)
+func (t rootMarketTrigger) TriggerNow(workers int) (port.BatchRefreshReceipt, error) {
+	return application.TriggerMarketRefresh(t.ctx, t.scheduler, t.futures, workers)
 }
 
 func main() {
@@ -156,6 +157,9 @@ func run(ctx context.Context, configPath, service string) error {
 	cancel()
 	if kernel.marketScheduler != nil {
 		kernel.marketScheduler.Wait()
+	}
+	if kernel.futuresScheduler != nil {
+		kernel.futuresScheduler.Wait()
 	}
 	if kernel.progress != nil {
 		flushCtx, stopFlush := context.WithTimeout(context.Background(), 5*time.Second)

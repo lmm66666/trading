@@ -536,10 +536,11 @@ export interface RefreshRun {
 }
 export interface RefreshFailure { id: number; run_id: string; exchange: string; code: string; name?: string; error_code: string; completed_at: string }
 export interface RefreshStatus { stock: RefreshRun | null; futures: RefreshRun | null; futures_enabled: boolean | null }
-export interface RefreshReceipt { status: string; run_id: string; progress_available: boolean }
+export interface RefreshReceipt { status: 'ACCEPTED' | 'ALREADY_RUNNING' | 'DISABLED' | 'FAILED'; run_id?: string; progress_available: boolean; error_code?: string }
+export interface BatchRefreshReceipt { stock: RefreshReceipt; futures: RefreshReceipt }
 const refreshBase = '/api/v1/market/refresh'
 export const getRefreshStatus = (signal?: AbortSignal) => request<RefreshStatus>(`${refreshBase}/status`, { signal })
-export const triggerMarketRefresh = () => request<RefreshReceipt>(refreshBase, { method: 'POST' })
+export const triggerMarketRefresh = () => request<BatchRefreshReceipt>(refreshBase, { method: 'POST' })
 export const listRefreshRuns = (before = 0, signal?: AbortSignal) => request<{ items: RefreshRun[] }>(`${refreshBase}/runs?limit=20&before_id=${before}`, { signal })
 export const getRefreshRun = (id: string, signal?: AbortSignal) => request<RefreshRun>(`${refreshBase}/runs/${encodeURIComponent(id)}`, { signal })
 export const listRefreshFailures = (id: string, after = 0, signal?: AbortSignal) => request<{ items: RefreshFailure[] }>(`${refreshBase}/runs/${encodeURIComponent(id)}/failures?limit=50&after_id=${after}`, { signal })

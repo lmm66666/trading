@@ -65,6 +65,6 @@ func newUpdaterKernel(rootCtx context.Context, db *gorm.DB, cfg *config.Config) 
 	if futuresScheduler != nil {
 		futuresScheduler.SetProgress(progress)
 	}
-	services := api.KernelServices{RefreshQueries: application.NewRefreshQueries(progressStore), FuturesEnabled: &marketSettings.FuturesEnabled, MarketIngestion: ingestion, MarketTrigger: rootMarketTrigger{ctx: rootCtx, scheduler: marketScheduler}, Instruments: marketData, MarketWorkers: workers}
+	services := api.KernelServices{RefreshQueries: application.NewRefreshQueries(progressStore), FuturesEnabled: &marketSettings.FuturesEnabled, MarketIngestion: ingestion, MarketTrigger: rootMarketTrigger{ctx: rootCtx, scheduler: marketScheduler, futures: futuresScheduler}, Instruments: marketData, MarketWorkers: workers}
 	return kernelRuntime{progress: progress, services: services, marketScheduler: marketScheduler, futuresScheduler: futuresScheduler, futuresRefreshInterval: marketSettings.FuturesRefreshInterval}, nil
 }

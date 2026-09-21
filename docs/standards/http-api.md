@@ -46,7 +46,7 @@ related: []
 | 409 | SIGNAL_SNAPSHOT_NOT_READY | 无匹配的已发布快照 |
 | 409 | RUN_RESULT_NOT_READY | 回测结果尚未成功发布，包括失败/取消 |
 | 409 | AMBIGUOUS_INSTRUMENT | 六位代码匹配多个活跃交易所证券 |
-| 429 | MARKET_REFRESH_ALREADY_RUNNING | 已有定时或手工行情刷新运行中（全市场或同一证券） |
+| 429 | MARKET_REFRESH_ALREADY_RUNNING | 单证券刷新已运行；批量请求以每类 ALREADY_RUNNING 回执表示 |
 | 502 | UPDATER_BAD_RESPONSE | 更新服务认证失败、未知错误或响应不合法 |
 | 503 | UPDATER_UNAVAILABLE | 无法连接更新服务或刷新请求已取消 |
 | 504 | UPDATER_TIMEOUT | 等待更新服务超时 |
@@ -216,7 +216,7 @@ curl 'http://localhost:8080/api/v1/market/bars?instrument=SHFE%3AAU.MAIN&timefra
 
 #### 手动刷新行情
 
-`POST /api/v1/market/refresh`：请求体缺省时异步触发一次全市场版本化行情刷新；提供 `exchange`+`code` 时同步刷新单只证券。
+`POST /api/v1/market/refresh`：请求体缺省时分别异步触发全市场股票与已启用期货行情刷新；提供 `exchange`+`code` 时同步刷新单只证券。
 
 ```bash
 # 全量刷新（异步，202）
@@ -229,14 +229,14 @@ curl -X POST http://localhost:8080/api/v1/market/refresh \
 ```
 
 - 请求体可选：`exchange` 与 `code` 必须同时提供或同时缺省，任一单独出现返回400。
-- 全量触发：语义与调度器定时刷新一致；同一进程内定时与手工刷新只允许一个运行实例，运行中返回429；成功受理返回 `202 {"status":"ACCEPTED","run_id":"<id>","progress_available":true}`。
+- 批量触发：每类沿用定时刷新规则和防重 guard，独立尝试启动；返回 `202 {"stock":{"status":"ACCEPTED","run_id":"<stock-id>","progress_available":true},"futures":{"status":"ACCEPTED","run_id":"<futures-id>","progress_available":true}}`。每类 `status` 为 ACCEPTED（有 run_id）、ALREADY_RUNNING（继续原任务）、DISABLED（仅未启用期货）、FAILED（固定 `error_code: REFRESH_UNAVAILABLE`）；后三者无 run_id 且 progress_available=false。某类已运行或启动失败不阻断另一类，不提供整体原子受理保证。单证券运行中仍返回429。旧批量回执不兼容，工作台和更新服务须同步升级。
 - 单证券：`exchange` 合法值为 SSE、SZSE、BSE，`code` 为六位数字；经活跃证券主数据精确解析，零结果或唯一匹配的交易所与请求身份不符返回404，同一代码匹配多个活跃交易所返回409，同一证券正在刷新返回429。成功返回 `{"instrument","version","quality","daily_bars","weekly_bars"}`，与既有刷新结果结构一致。
 - 请求 JSON 限制1MiB，拒绝未知字段和尾随第二个 JSON 值。
 
 
 #### NAS 内部刷新与连接故障
 
-工作台 `/api/v1/market/refresh` 保留上述请求和业务成功/失败语义，改为转发至 updater 的 `POST /internal/v1/market/refresh`；全市场仍指股票调度范围，期货独立定时刷新。NAS 接口只供服务调用，需 `Authorization: Bearer <token>`；缺失或不匹配返回 `401 {"code":401,"message":"UNAUTHORIZED","data":null}`。
+工作台 `/api/v1/market/refresh` 保留上述请求和业务成功/失败语义，改为转发至 updater 的 `POST /internal/v1/market/refresh`；无身份批量请求触发股票与已启用期货，定时周期仍各自独立。NAS 接口只供服务调用，需 `Authorization: Bearer <token>`；缺失或不匹配返回 `401 {"code":401,"message":"UNAUTHORIZED","data":null}`。
 
 工作台固定目标 URL，不传递浏览器 Cookie/认证头；请求/响应上限 1MiB，总超时 40 秒，不重试 POST、不跟随重定向。503 表示连接不可用，504 表示等待超时，502 表示上游认证或响应异常；错误正文统一脱敏。超时可能发生在请求已受理或数据已提交之后，不能推断未执行。已受理的全市场刷新不随电脑关闭或请求断开而取消；单证券请求沿 HTTP context 传播取消。
 

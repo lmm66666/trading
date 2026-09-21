@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"trading/internal/market"
+	"trading/internal/port"
 )
 
 type FuturesScheduler struct {
@@ -20,6 +21,7 @@ type FuturesScheduler struct {
 	started   atomic.Bool
 	mu        sync.RWMutex
 	last      RefreshSummary
+	async     sync.WaitGroup
 }
 
 func DefaultSinaFuturesInstruments() []market.InstrumentID {
@@ -56,18 +58,37 @@ func NewFuturesScheduler(refresher MarketRefresher, ids []market.InstrumentID, l
 func (scheduler *FuturesScheduler) SetProgress(p *RefreshProgress) { scheduler.progress = p }
 
 func (scheduler *FuturesScheduler) RunOnce(ctx context.Context) RefreshSummary {
-	startedAt := time.Now()
-	summary := RefreshSummary{
-		Total:    len(scheduler.ids),
-		Results:  make(map[market.InstrumentID]RefreshResult, len(scheduler.ids)),
-		Failures: make(map[market.InstrumentID]error),
-	}
 	if !scheduler.running.CompareAndSwap(false, true) {
-		summary.Err = ErrRefreshAlreadyRunning
-		return summary
+		return RefreshSummary{Err: ErrRefreshAlreadyRunning}
 	}
 	defer scheduler.running.Store(false)
 	observation, _ := scheduler.progress.Begin(ctx, "FUTURES", "SCHEDULED")
+	return scheduler.runOnce(ctx, observation)
+}
+
+func (scheduler *FuturesScheduler) TriggerTracked(ctx context.Context) (port.RefreshReceipt, error) {
+	if err := ctx.Err(); err != nil {
+		return port.RefreshReceipt{}, err
+	}
+	if !scheduler.running.CompareAndSwap(false, true) {
+		return port.RefreshReceipt{}, ErrRefreshAlreadyRunning
+	}
+	observation, receipt := scheduler.progress.Begin(ctx, "FUTURES", "MANUAL")
+	scheduler.async.Add(1)
+	go func() {
+		defer scheduler.async.Done()
+		defer scheduler.running.Store(false)
+		scheduler.runOnce(ctx, observation)
+	}()
+	return receipt, nil
+}
+
+func (scheduler *FuturesScheduler) Wait() { scheduler.async.Wait() }
+
+func (scheduler *FuturesScheduler) runOnce(ctx context.Context, observation *RefreshObservation) RefreshSummary {
+	startedAt := time.Now()
+	summary := RefreshSummary{Total: len(scheduler.ids), Results: make(map[market.InstrumentID]RefreshResult, len(scheduler.ids)), Failures: make(map[market.InstrumentID]error)}
+
 	observation.Prepared(len(scheduler.ids))
 	defer func() { observation.End(summary.Err) }()
 	defer func() {

@@ -117,7 +117,7 @@ go vet ./...
 
 ## 拆分后的生命周期
 
-每个目标库单个 updater 持续采集；workbench 只执行查询、工作台操作和扫描/回测。两者各自取消并等待所拥有的后台任务退出，最后关闭自身数据库连接。workbench 的刷新请求通过 HTTP 交给 updater，已受理的全市场任务属于 updater 根 context。工作台停机不取消 NAS 更新；计算任务沿用数据库租约恢复，NAS 不领取计算任务。MarketScheduler、FuturesScheduler 启动不立即采集，首个周期后才自动执行；手动股票刷新可立即触发且不重置定时节拍。周期、范围、限频和发布算法不变。
+每个目标库单个 updater 持续采集；workbench 只执行查询、工作台操作和扫描/回测。两者各自取消并等待所拥有的后台任务退出，最后关闭自身数据库连接。workbench 的刷新请求通过 HTTP 交给 updater，已受理的全市场任务属于 updater 根 context。工作台停机不取消 NAS 更新；计算任务沿用数据库租约恢复，NAS 不领取计算任务。MarketScheduler、FuturesScheduler 启动不立即采集，首个周期后才自动执行；手动统一更新可立即触发股票与已启用期货且不重置定时节拍。周期、范围、限频和发布算法不变。
 
 ## 双价格 Z-score
 
@@ -132,3 +132,5 @@ ChartQueryService 的 comparison 限已有八项国内期货。`ZSCORE(period,sm
 `RefreshProgress`、`RefreshObservation` 记录准备、单证券完成与终态事件，`RefreshQueries` 聚合当前股票/期货摘要。股票/期货 scheduler 只增加观察事件，不改变范围、guard、限频、增量窗口或行情写入。已处理=成功+失败；取消和未派发项不计作证券采集失败，终态中断保留最后已处理计数；无变化的成功也计成功。
 
 每 10 秒及状态转换时保存最新绝对计数快照；保存按观察任务串行、带单调 revision，失败继续采集并重试最新观察快照。每次数据库观察操作上限 2 秒，退出刷新总上限 5 秒。pending 上限 64，超限仅禁用新任务观察并告警，不阻断采集。启动恢复固定截止时刻并重试，避免误中断新任务。进度存储和行情事务独立，最后记录可以落后实际行情，不能据此恢复断点。
+
+`TriggerMarketRefresh` 逐类调用股票/期货的 `TriggerTracked`，返回 `BatchRefreshReceipt`；复用各类原 guard，已有任务不重复启动且不阻断另一类。期货手动执行标记 MANUAL，使用根 context 与 WaitGroup，关闭服务在关闭数据库前 Wait 两类任务；单类错误映射固定脱敏回执，不撤回另一类已受理任务。

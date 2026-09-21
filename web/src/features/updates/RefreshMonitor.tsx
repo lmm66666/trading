@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import {
+  ApiError,
   getRefreshStatus,
   triggerMarketRefresh,
   listRefreshRuns,
@@ -8,6 +10,8 @@ import {
   type RefreshRun,
   type RefreshStatus,
   type RefreshFailure,
+  type RefreshReceipt,
+  type BatchRefreshReceipt,
 } from '../../api/client'
 import './updates.css'
 
@@ -29,6 +33,23 @@ const percent = (run: RefreshRun) =>
   run.total
     ? `${Math.floor(((run.succeeded + run.failed) * 100) / run.total)}%`
     : '正在准备'
+
+function receiptLabel(receipt: RefreshReceipt): string {
+  switch (receipt.status) {
+    case 'ACCEPTED': return receipt.progress_available ? '更新已受理' : '更新已受理，进度记录暂不可用，请勿重复提交'
+    case 'ALREADY_RUNNING': return '已有任务运行中'
+    case 'DISABLED': return '未启用，已跳过'
+    case 'FAILED': return '未能启动更新，请检查更新服务后重试'
+  }
+}
+
+// Receipts bridge the delay before progress reaches storage, without locking forever.
+function categoryBusy(run: RefreshRun | null, receipt: RefreshReceipt | undefined, submittedAt: number): boolean {
+  if (run && active(run) && !stale(run)) return true
+  if (receipt?.status !== 'ACCEPTED' && receipt?.status !== 'ALREADY_RUNNING') return false
+  if (receipt.run_id && run?.run_id === receipt.run_id && !active(run)) return false
+  return Date.now() - submittedAt < 60000
+}
 
 function RunSummary({ run }: { run: RefreshRun }) {
   const minutes = Math.max(
@@ -292,11 +313,43 @@ export function RefreshMonitor({ onReload }: { onReload: () => void }) {
   const [pulse, setPulse] = useState(0)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+  const [noticeError, setNoticeError] = useState(false)
+  const [submission, setSubmission] = useState<{ receipt: BatchRefreshReceipt; at: number } | null>(null)
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>({})
+  const panel = useRef<HTMLElement>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const close = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (open) close.current?.focus()
+  useLayoutEffect(() => {
+    if (!open) return
+    const place = () => {
+      const rect = trigger.current!.getBoundingClientRect()
+      const margin = 12
+      const width = Math.min(640, window.innerWidth - margin * 2)
+      const top = Math.max(margin, Math.min(rect.bottom + 8, window.innerHeight - 120))
+      setPanelStyle({
+        left: Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin)),
+        top,
+        width,
+        maxHeight: `calc(100dvh - ${top + margin}px)`,
+      })
+    }
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node &&
+        !panel.current?.contains(event.target) && !trigger.current?.contains(event.target)) {
+        setOpen(false)
+      }
+    }
+    place()
+    close.current?.focus()
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    document.addEventListener('pointerdown', outside)
+    return () => {
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+      document.removeEventListener('pointerdown', outside)
+    }
   }, [open])
   useEffect(() => {
     let stopped = false
@@ -313,7 +366,8 @@ export function RefreshMonitor({ onReload }: { onReload: () => void }) {
         if (stopped || controller.signal.aborted) return
         setStatus(next)
         setError('')
-        if (open && (active(next.stock) || active(next.futures))) delay = 5000
+        if (open && (active(next.stock) || active(next.futures) ||
+          (submission && Date.now() - submission.at < 60000))) delay = 5000
       } catch {
         if (stopped || controller.signal.aborted) return
         setError('无法获取最新进度，以下为最后记录，运行状态待确认。')
@@ -334,7 +388,7 @@ export function RefreshMonitor({ onReload }: { onReload: () => void }) {
       request?.abort()
       document.removeEventListener('visibilitychange', visibility)
     }
-  }, [open, pulse])
+  }, [open, pulse, submission])
   const dismiss = () => {
     setOpen(false)
     trigger.current?.focus()
@@ -342,23 +396,38 @@ export function RefreshMonitor({ onReload }: { onReload: () => void }) {
   const submit = async () => {
     setBusy(true)
     setNotice('')
+    setNoticeError(false)
     try {
       const receipt = await triggerMarketRefresh()
-      setSelected(receipt.run_id)
+      setSubmission({ receipt, at: Date.now() })
+      setSelected(receipt.stock.run_id ?? receipt.futures.run_id ?? null)
+      setNoticeError(receipt.stock.status === 'FAILED' || receipt.futures.status === 'FAILED')
+      setNotice(`股票：${receiptLabel(receipt.stock)}；期货：${receiptLabel(receipt.futures)}。`)
+    } catch (error) {
+      setNoticeError(true)
+      const messages: Record<string, string> = {
+        UPDATER_UNAVAILABLE: '无法连接更新服务，请检查 NAS 服务和网络。提交结果待核实，请先查询进度。',
+        MARKET_REFRESH_ALREADY_RUNNING: '已有股票更新任务正在运行，请查看进度。',
+        UPDATER_TIMEOUT: '等待更新服务响应超时，提交结果待核实，请先查询进度。',
+        UPDATER_BAD_RESPONSE: '更新服务认证或响应异常，请检查服务配置与版本。提交结果待核实。',
+        INVALID_REQUEST: '更新请求未被接受，请刷新页面后重试。',
+      }
       setNotice(
-        receipt.progress_available
-          ? '更新已受理，可关闭页面，NAS 会继续执行。'
-          : '更新已受理，进度记录暂不可用，请勿重复提交。',
-      )
-    } catch {
-      setNotice(
-        '提交结果未确认，正在查询当前任务。不会自动重新提交；发现的运行中任务也可能来自定时更新。',
+        (error instanceof ApiError && messages[error.code]) ||
+        '连接中断或响应异常，提交结果待核实。发现的运行中任务也可能来自定时更新。',
       )
     } finally {
       setBusy(false)
       setPulse((v) => v + 1)
     }
   }
+  const stockBusy = categoryBusy(status?.stock ?? null, submission?.receipt.stock, submission?.at ?? 0)
+  const futuresBusy = categoryBusy(status?.futures ?? null, submission?.receipt.futures, submission?.at ?? 0)
+  const futuresDisabled = status?.futures_enabled === false || (
+    status?.futures_enabled == null && submission?.receipt.futures.status === 'DISABLED' &&
+    Date.now() - submission.at < 60000
+  )
+  const updateDisabled = busy || (!status && !error) || (stockBusy && (futuresDisabled || futuresBusy))
   const running = active(status?.stock ?? null)
     ? status?.stock
     : active(status?.futures ?? null)
@@ -380,8 +449,10 @@ export function RefreshMonitor({ onReload }: { onReload: () => void }) {
             ? ` · ${running.kind === 'STOCK' ? '股票' : '期货'} ${percent(running)}`
             : ''}
       </button>
-      {open && (
+      {open && createPortal(
         <section
+          ref={panel}
+          style={panelStyle}
           className="update-panel"
           role="dialog"
           aria-label="数据更新"
@@ -406,35 +477,40 @@ export function RefreshMonitor({ onReload }: { onReload: () => void }) {
           <p className="update-hint">
             任务在 NAS 执行，关闭页面或电脑不会停止更新。
           </p>
+          <div className="update-toolbar">
+            <div>
+              <strong>全市场股票与已启用期货</strong>
+              <p className="update-hint">已运行的任务继续执行，不会重复启动。</p>
+            </div>
+            <div className="update-toolbar-actions">
+              <button type="button" onClick={() => setPulse((v) => v + 1)}>刷新进度</button>
+              <button
+                type="button"
+                className="update-primary"
+                disabled={updateDisabled}
+                onClick={() => void submit()}
+              >
+                {busy ? '正在提交…' : '立即更新'}
+              </button>
+            </div>
+          </div>
           {error && (
             <p role="alert" className="update-warning">
-              {error}{' '}
-              <button type="button" onClick={() => setPulse((v) => v + 1)}>
-                刷新进度
-              </button>
+              {error}
             </p>
           )}
           {notice && (
-            <p role="status" className="update-notice">
-              {notice}
-            </p>
+            <div role={noticeError ? 'alert' : 'status'} className={noticeError ? 'update-notice update-notice-error' : 'update-notice'}>
+              <p>{notice}</p>
+              <div className="update-notice-actions">
+                {noticeError && <button type="button" onClick={() => setPulse((v) => v + 1)}>重新查询</button>}
+                <button type="button" onClick={() => setNotice('')}>关闭提示</button>
+              </div>
+            </div>
           )}
           <div className="update-grid">
             <section className="update-card">
               <h3>股票行情</h3>
-              <button
-                type="button"
-                className="update-primary"
-                disabled={
-                  busy ||
-                  (!status && !error) ||
-                  (active(status?.stock ?? null) &&
-                    !stale(status?.stock ?? null))
-                }
-                onClick={() => void submit()}
-              >
-                {busy ? '正在提交…' : '更新全部股票'}
-              </button>
               {status?.stock ? (
                 <>
                   <RunSummary run={status.stock} />
@@ -455,8 +531,8 @@ export function RefreshMonitor({ onReload }: { onReload: () => void }) {
                 {status?.futures_enabled === false
                   ? '未启用'
                   : status?.futures_enabled === true
-                    ? '按计划定时更新'
-                    : '启用状态未知'}
+                    ? '已启用 · 支持手动与定时更新'
+                    : '暂时无法读取更新服务状态'}
               </p>
               {status?.futures && (
                 <>
@@ -487,7 +563,8 @@ export function RefreshMonitor({ onReload }: { onReload: () => void }) {
             onSelect={setSelected}
             pulse={`${pulse}:${status?.stock?.run_id}:${status?.stock?.state}:${status?.futures?.run_id}:${status?.futures?.state}`}
           />
-        </section>
+        </section>,
+        document.body,
       )}
     </>
   )

@@ -115,8 +115,8 @@ func (client *UpdaterClient) refresh(ctx context.Context, input marketRefreshReq
 			return 0, nil, bad
 		}
 		if input.Exchange == "" && resp.StatusCode == 202 {
-			var data port.RefreshReceipt
-			if json.Unmarshal(envelope.Data, &data) != nil || data.Status != "ACCEPTED" || port.ValidateIdentity(data.RunID, "run_id", 64, false) != nil {
+			var data port.BatchRefreshReceipt
+			if json.Unmarshal(envelope.Data, &data) != nil || !validRefreshReceipt(data.Stock, false) || !validRefreshReceipt(data.Futures, true) {
 				return 0, nil, bad
 			}
 			return 202, data, nil
@@ -167,4 +167,17 @@ func (client *UpdaterClient) futuresEnabled(ctx context.Context) *bool {
 		return nil
 	}
 	return envelope.Data.FuturesEnabled
+}
+
+func validRefreshReceipt(receipt port.RefreshReceipt, allowDisabled bool) bool {
+	switch receipt.Status {
+	case "ACCEPTED":
+		return port.ValidateIdentity(receipt.RunID, "run_id", 64, false) == nil && receipt.ErrorCode == ""
+	case "ALREADY_RUNNING", "DISABLED":
+		return (receipt.Status != "DISABLED" || allowDisabled) && receipt.RunID == "" && !receipt.ProgressAvailable && receipt.ErrorCode == ""
+	case "FAILED":
+		return receipt.RunID == "" && !receipt.ProgressAvailable && receipt.ErrorCode == "REFRESH_UNAVAILABLE"
+	default:
+		return false
+	}
 }

@@ -33,9 +33,9 @@ type refreshTriggerFake struct {
 	err     error
 }
 
-func (f *refreshTriggerFake) TriggerNow(workers int) (port.RefreshReceipt, error) {
+func (f *refreshTriggerFake) TriggerNow(workers int) (port.BatchRefreshReceipt, error) {
 	f.workers = workers
-	return port.RefreshReceipt{Status: "ACCEPTED", RunID: "run-1", ProgressAvailable: true}, f.err
+	return port.BatchRefreshReceipt{Stock: port.RefreshReceipt{Status: "ACCEPTED", RunID: "run-1", ProgressAvailable: true}, Futures: port.RefreshReceipt{Status: "DISABLED"}}, f.err
 }
 
 type refreshLookupFake struct {

@@ -86,8 +86,9 @@ func (s RefreshSnapshot) Validate() error {
 
 type RefreshReceipt struct {
 	Status            string `json:"status"`
-	RunID             string `json:"run_id"`
+	RunID             string `json:"run_id,omitempty"`
 	ProgressAvailable bool   `json:"progress_available"`
+	ErrorCode         string `json:"error_code,omitempty"`
 }
 type RefreshProgressWriter interface {
 	SaveRefresh(context.Context, RefreshSnapshot) error
@@ -97,4 +98,10 @@ type RefreshProgressReader interface {
 	ListRefreshRuns(context.Context, string, uint64, int) ([]RefreshRun, error)
 	GetRefreshRun(context.Context, string) (RefreshRun, error)
 	ListRefreshFailures(context.Context, string, uint64, int) ([]RefreshFailure, error)
+}
+
+// BatchRefreshReceipt reports each category independently; there is no parent job.
+type BatchRefreshReceipt struct {
+	Stock   RefreshReceipt `json:"stock"`
+	Futures RefreshReceipt `json:"futures"`
 }

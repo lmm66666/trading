@@ -138,3 +138,7 @@ go test ./internal/port -cover
 ## 更新进度端口
 
 `RefreshProgressWriter.SaveRefresh` 接收独立观察快照，不决定执行范围。`RefreshProgressReader` 提供 LatestRefreshRun、ListRefreshRuns、GetRefreshRun、ListRefreshFailures；最新按实际开始时间，历史按持久化 id 分页。`RefreshRun` 保存批量任务状态/数量/时间，`RefreshFailure` 只暴露证券身份和稳定错误码，`RefreshReceipt` 返回 ACCEPTED、run_id 与 progress_available。证券失败明细与失败数量必须一致、身份唯一且符合范围上限；准备中 total 可为空，状态与结束时间匹配。此端口与计算 Run/租约系统相互独立。
+
+## 批量刷新回执
+
+`BatchRefreshReceipt` 包含 stock/futures 两个 `RefreshReceipt`，每类 status 为 ACCEPTED、ALREADY_RUNNING、DISABLED（仅期货）或 FAILED。仅 ACCEPTED 有 run_id，progress_available 描述观察存储是否可用；FAILED 只有固定 REFRESH_UNAVAILABLE 错误码。此 DTO 不创建父任务或改变进度存储关系。

@@ -14,7 +14,7 @@ import (
 	"trading/internal/port"
 )
 
-// MarketRefresh 手动刷新行情数据：请求体缺省时异步触发全量补全扫描（202）；
+// MarketRefresh 手动刷新行情数据：请求体缺省时分别触发股票与已启用期货（202 联合回执）；
 // 提供 exchange+code 时解析唯一匹配证券并同步刷新（200）。
 func (h *StockHandler) MarketRefresh(c *gin.Context) {
 	var req marketRefreshRequest

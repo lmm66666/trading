@@ -85,7 +85,7 @@ func TestRemoteRefreshSanitizesUpstreamFailures(t *testing.T) {
 		{400, `{"code":400,"message":"secret SQL","data":null}`, 502, "UPDATER_BAD_RESPONSE"},
 		{200, `{"code":0,"message":"success","data":{}}`, 502, "UPDATER_BAD_RESPONSE"},
 		{202, `{"code":0,"message":"success","data":{"status":"bad"}}`, 502, "UPDATER_BAD_RESPONSE"},
-		{202, `{"code":0,"message":"success","data":{"status":"ACCEPTED","run_id":"run-1","progress_available":true}} {}`, 502, "UPDATER_BAD_RESPONSE"},
+		{202, `{"code":0,"message":"success","data":{"stock":{"status":"ACCEPTED","run_id":"run-1","progress_available":true},"futures":{"status":"DISABLED"}}} {}`, 502, "UPDATER_BAD_RESPONSE"},
 		{202, strings.Repeat(" ", 1<<20) + `{}`, 502, "UPDATER_BAD_RESPONSE"},
 	} {
 		t.Run(fmt.Sprintf("%d-%s", tc.status, tc.body[:min(len(tc.body), 40)]), func(t *testing.T) {
@@ -191,7 +191,7 @@ func TestRemoteRefreshDoesNotReplayOnReusedConnectionFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
 		w.WriteHeader(202)
-		fmt.Fprint(w, `{"code":0,"message":"success","data":{"status":"ACCEPTED","run_id":"run-1","progress_available":true}}`)
+		fmt.Fprint(w, `{"code":0,"message":"success","data":{"stock":{"status":"ACCEPTED","run_id":"run-1","progress_available":true},"futures":{"status":"DISABLED"}}}`)
 	}))
 	defer server.Close()
 	client, err := NewUpdaterClient(server.URL, testUpdaterToken)
@@ -228,7 +228,7 @@ func TestRemoteRefreshUsesHTTP1EvenWhenServerOffersHTTP2(t *testing.T) {
 		protocol.Store(int32(r.ProtoMajor))
 		io.Copy(io.Discard, r.Body)
 		w.WriteHeader(202)
-		fmt.Fprint(w, `{"code":0,"message":"success","data":{"status":"ACCEPTED","run_id":"run-1","progress_available":true}}`)
+		fmt.Fprint(w, `{"code":0,"message":"success","data":{"stock":{"status":"ACCEPTED","run_id":"run-1","progress_available":true},"futures":{"status":"DISABLED"}}}`)
 	}))
 	server.EnableHTTP2 = true
 	server.StartTLS()
@@ -245,4 +245,41 @@ func TestRemoteRefreshUsesHTTP1EvenWhenServerOffersHTTP2(t *testing.T) {
 	_, _, err = client.refresh(context.Background(), marketRefreshRequest{})
 	require.NoError(t, err)
 	require.Equal(t, int32(1), protocol.Load(), "HTTP/2 may replay POST after protocol errors")
+}
+
+func TestRemoteRefreshValidatesBothCategoryReceipts(t *testing.T) {
+	for _, data := range []string{
+		`{"stock":{"status":"ACCEPTED","run_id":"stock-1"},"futures":{"status":"ACCEPTED"}}`,
+		`{"stock":{"status":"DISABLED"},"futures":{"status":"DISABLED"}}`,
+		`{"stock":{"status":"ALREADY_RUNNING","run_id":"wrong"},"futures":{"status":"DISABLED"}}`,
+		`{"stock":{"status":"FAILED","error_code":"secret"},"futures":{"status":"DISABLED"}}`,
+		`{"status":"ACCEPTED","run_id":"old-receipt","progress_available":true}`,
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(202)
+			fmt.Fprintf(w, `{"code":0,"message":"success","data":%s}`, data)
+		}))
+		client, err := NewUpdaterClient(server.URL, testUpdaterToken)
+		require.NoError(t, err)
+		w := refreshRequest(t, NewRouter(KernelServices{RemoteRefresh: client}), "")
+		server.Close()
+		require.Equal(t, 502, w.Code)
+		require.NotContains(t, w.Body.String(), "secret")
+	}
+	for _, status := range []string{"ALREADY_RUNNING", "FAILED"} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(202)
+			if status == "FAILED" {
+				fmt.Fprint(w, `{"code":0,"message":"success","data":{"stock":{"status":"FAILED","error_code":"REFRESH_UNAVAILABLE"},"futures":{"status":"ACCEPTED","run_id":"future-1","progress_available":false}}}`)
+			} else {
+				fmt.Fprint(w, `{"code":0,"message":"success","data":{"stock":{"status":"ALREADY_RUNNING"},"futures":{"status":"ALREADY_RUNNING"}}}`)
+			}
+		}))
+		client, err := NewUpdaterClient(server.URL, testUpdaterToken)
+		require.NoError(t, err)
+		w := refreshRequest(t, NewRouter(KernelServices{RemoteRefresh: client}), "")
+		server.Close()
+		require.Equal(t, 202, w.Code, w.Body.String())
+		require.Contains(t, w.Body.String(), status)
+	}
 }

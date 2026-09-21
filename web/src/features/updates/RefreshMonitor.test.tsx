@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RefreshMonitor } from './RefreshMonitor'
 import * as api from '../../api/client'
-vi.mock('../../api/client', () => ({
+vi.mock('../../api/client', async (importOriginal) => ({
+  ...await importOriginal<typeof api>(),
   getRefreshStatus: vi.fn(),
   listRefreshRuns: vi.fn(),
   getRefreshRun: vi.fn(),
@@ -36,9 +37,8 @@ beforeEach(() => {
   vi.mocked(api.listRefreshFailures).mockResolvedValue({ items: [] })
   vi.mocked(api.getRefreshRun).mockResolvedValue(run)
   vi.mocked(api.triggerMarketRefresh).mockResolvedValue({
-    status: 'ACCEPTED',
-    run_id: 'run-1',
-    progress_available: true,
+    stock: { status: 'ACCEPTED', run_id: 'run-1', progress_available: true },
+    futures: { status: 'DISABLED', progress_available: false },
   })
 })
 describe('数据更新面板', () => {
@@ -46,7 +46,7 @@ describe('数据更新面板', () => {
     render(<RefreshMonitor onReload={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: /数据更新/ }))
     await screen.findByText('未启用')
-    fireEvent.click(screen.getByRole('button', { name: '更新全部股票' }))
+    fireEvent.click(screen.getByRole('button', { name: '立即更新' }))
     await screen.findByText(/更新已受理/)
     expect(api.triggerMarketRefresh).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: '关闭数据更新' }))
@@ -56,12 +56,12 @@ describe('数据更新面板', () => {
     vi.mocked(api.getRefreshStatus).mockResolvedValue({
       stock: run,
       futures: null,
-      futures_enabled: true,
+      futures_enabled: false,
     })
     render(<RefreshMonitor onReload={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: /数据更新/ }))
     await screen.findByText('已处理 4 / 10')
-    expect(screen.getByRole('button', { name: '更新全部股票' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '立即更新' })).toBeDisabled()
     expect(screen.getByRole('progressbar')).toHaveAttribute('value', '4')
   })
   it('提交结果未知时只查询，不重发', async () => {
@@ -69,8 +69,8 @@ describe('数据更新面板', () => {
     render(<RefreshMonitor onReload={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: /数据更新/ }))
     await screen.findByText('未启用')
-    fireEvent.click(screen.getByRole('button', { name: '更新全部股票' }))
-    await screen.findByText(/提交结果未确认/)
+    fireEvent.click(screen.getByRole('button', { name: '立即更新' }))
+    await screen.findByText(/提交结果待核实/)
     expect(api.triggerMarketRefresh).toHaveBeenCalledTimes(1)
   })
   it('历史结果可以查看失败明细，加载最新行情由用户决定', async () => {
@@ -103,7 +103,7 @@ describe('数据更新面板', () => {
     const reload = vi.fn()
     render(<RefreshMonitor onReload={reload} />)
     fireEvent.click(screen.getByRole('button', { name: /数据更新/ }))
-    await screen.findByText('启用状态未知')
+    await screen.findByText('暂时无法读取更新服务状态')
     fireEvent.click(screen.getByRole('button', { name: /查看任务 run-1/ }))
     await screen.findByText(/浦发银行/)
     expect(reload).not.toHaveBeenCalled()
@@ -157,14 +157,13 @@ it('过期心跳不变成失败，详情和历史故障可重试', async () => {
 })
 it('存储不可用的受理仍不重复提交，查询错误保留提示', async () => {
   vi.mocked(api.triggerMarketRefresh).mockResolvedValue({
-    status: 'ACCEPTED',
-    run_id: 'run-1',
-    progress_available: false,
+    stock: { status: 'ACCEPTED', run_id: 'run-1', progress_available: false },
+    futures: { status: 'DISABLED', progress_available: false },
   })
   render(<RefreshMonitor onReload={vi.fn()} />)
   fireEvent.click(screen.getByRole('button', { name: /数据更新/ }))
   await screen.findByText('未启用')
-  fireEvent.click(screen.getByRole('button', { name: '更新全部股票' }))
+  fireEvent.click(screen.getByRole('button', { name: '立即更新' }))
   await screen.findByText(/更新已受理，进度记录暂不可用/)
   expect(api.triggerMarketRefresh).toHaveBeenCalledTimes(1)
 })
@@ -274,7 +273,7 @@ it('过期的运行记录允许显式尝试更新，由服务端防重', async (
   render(<RefreshMonitor onReload={vi.fn()} />)
   fireEvent.click(screen.getByRole('button', { name: /数据更新/ }))
   await screen.findByText(/进度记录已过期/)
-  expect(screen.getByRole('button', { name: '更新全部股票' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: '立即更新' })).toBeEnabled()
 })
 it('长时间查询失败后仍刷新时钟并解除过期记录的按钮锁定', async () => {
   vi.useFakeTimers()
@@ -285,7 +284,7 @@ it('长时间查询失败后仍刷新时钟并解除过期记录的按钮锁定'
       .mockResolvedValueOnce({
         stock: { ...run, heartbeat_at: now.toISOString() },
         futures: null,
-        futures_enabled: true,
+        futures_enabled: false,
       })
       .mockRejectedValue(new Error('offline'))
     const { act } = await import('@testing-library/react')
@@ -297,12 +296,127 @@ it('长时间查询失败后仍刷新时钟并解除过期记录的按钮锁定'
     await act(async () => {
       await Promise.resolve()
     })
-    expect(screen.getByRole('button', { name: '更新全部股票' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '立即更新' })).toBeDisabled()
     await act(async () => {
       await vi.advanceTimersByTimeAsync(90000)
     })
-    expect(screen.getByRole('button', { name: '更新全部股票' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '立即更新' })).toBeEnabled()
   } finally {
     vi.useRealTimers()
   }
+})
+
+// A service failure must not be presented as a pending user confirmation.
+it.each([
+  [503, 'UPDATER_UNAVAILABLE', '无法连接更新服务'],
+  [429, 'MARKET_REFRESH_ALREADY_RUNNING', '已有股票更新任务正在运行'],
+  [504, 'UPDATER_TIMEOUT', '等待更新服务响应超时'],
+  [502, 'UPDATER_BAD_RESPONSE', '更新服务认证或响应异常'],
+  [400, 'INVALID_REQUEST', '更新请求未被接受'],
+])('区分提交错误 %s，重新查询不重复提交', async (status, code, message) => {
+  vi.mocked(api.triggerMarketRefresh).mockRejectedValue(new api.ApiError(status, code))
+  render(<RefreshMonitor onReload={vi.fn()} />)
+  fireEvent.click(screen.getByRole('button', { name: /数据更新/ }))
+  await screen.findByText('未启用')
+  fireEvent.click(screen.getByRole('button', { name: '立即更新' }))
+  const alert = await screen.findByRole('alert')
+  expect(alert).toHaveTextContent(message)
+  expect(alert).not.toHaveTextContent('正在查询')
+  fireEvent.click(within(alert).getByRole('button', { name: '重新查询' }))
+  await waitFor(() => expect(vi.mocked(api.getRefreshStatus).mock.calls.length).toBeGreaterThan(2))
+  expect(api.triggerMarketRefresh).toHaveBeenCalledTimes(1)
+  fireEvent.click(within(alert).getByRole('button', { name: '关闭提示' }))
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+it('断线后发现其他任务不能冒认为本次提交已受理', async () => {
+  vi.mocked(api.triggerMarketRefresh).mockImplementation(async () => {
+    vi.mocked(api.getRefreshStatus).mockResolvedValue({ stock: run, futures: null, futures_enabled: true })
+    throw new api.ConnectivityError('offline')
+  })
+  render(<RefreshMonitor onReload={vi.fn()} />)
+  fireEvent.click(screen.getByRole('button', { name: /数据更新/ }))
+  await screen.findByText('未启用')
+  fireEvent.click(screen.getByRole('button', { name: '立即更新' }))
+  await screen.findByText('已处理 4 / 10')
+  expect(screen.getByRole('alert')).toHaveTextContent('提交结果待核实')
+  expect(screen.queryByText(/更新已受理/)).not.toBeInTheDocument()
+})
+it('受理后状态记录尚未出现时防止重复点击', async () => {
+  vi.mocked(api.getRefreshRun).mockResolvedValue({ ...run, state: 'PREPARING', total: null })
+  render(<RefreshMonitor onReload={vi.fn()} />)
+  fireEvent.click(screen.getByRole('button', { name: /数据更新/ }))
+  await screen.findByText('未启用')
+  fireEvent.click(screen.getByRole('button', { name: '立即更新' }))
+  await screen.findByText(/更新已受理/)
+  expect(screen.getByRole('button', { name: '立即更新' })).toBeDisabled()
+})
+it('面板跟随入口位置并在窗口变窄后避让边缘，外部点击关闭', async () => {
+  const { unmount } = render(<RefreshMonitor onReload={vi.fn()} />)
+  const entry = screen.getByRole('button', { name: /数据更新/ })
+  vi.spyOn(entry, 'getBoundingClientRect').mockReturnValue({ left: 300, bottom: 48, top: 16, right: 380, width: 80, height: 32, x: 300, y: 16, toJSON: () => ({}) })
+  vi.stubGlobal('innerWidth', 1440)
+  fireEvent.click(entry)
+  await screen.findByText('未启用')
+  const panel = screen.getByRole('dialog')
+  expect(panel).toHaveStyle({ left: '300px', top: '56px' })
+  expect(panel).toHaveTextContent('全市场股票与已启用期货')
+  expect(screen.getAllByRole('button', { name: '立即更新' })).toHaveLength(1)
+  vi.stubGlobal('innerWidth', 375)
+  fireEvent(window, new Event('resize'))
+  expect(panel).toHaveStyle({ left: '12px', width: '351px' })
+  fireEvent.pointerDown(panel)
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
+  fireEvent.pointerDown(document.body)
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  unmount()
+  vi.unstubAllGlobals()
+})
+
+it('一个按钮同时展示股票与期货回执，股票运行时仍可启动期货', async () => {
+ vi.mocked(api.getRefreshStatus).mockResolvedValue({ stock: run, futures: null, futures_enabled: true })
+ vi.mocked(api.triggerMarketRefresh).mockResolvedValue({ stock: { status: 'ALREADY_RUNNING', progress_available: false }, futures: { status: 'ACCEPTED', run_id: 'future-1', progress_available: true } })
+ render(<RefreshMonitor onReload={vi.fn()} />)
+ fireEvent.click(screen.getByRole('button', { name: /数据更新/ }))
+ await screen.findByText('已处理 4 / 10')
+ const button = screen.getByRole('button', { name: '立即更新' })
+ expect(button).toBeEnabled()
+ fireEvent.click(button)
+ await screen.findByText(/期货：更新已受理/)
+ expect(screen.getByRole('status')).toHaveTextContent('股票：已有任务运行中')
+ expect(button).toBeDisabled()
+ expect(api.triggerMarketRefresh).toHaveBeenCalledTimes(1)
+})
+it('部分受理失败独立展示，不掩盖另一类已受理', async () => {
+ vi.mocked(api.triggerMarketRefresh).mockResolvedValue({ stock: { status: 'ACCEPTED', run_id: 'run-1', progress_available: true }, futures: { status: 'FAILED', error_code: 'REFRESH_UNAVAILABLE', progress_available: false } })
+ render(<RefreshMonitor onReload={vi.fn()} />)
+ fireEvent.click(screen.getByRole('button', { name: /数据更新/ }))
+ await screen.findByText('未启用')
+ fireEvent.click(screen.getByRole('button', { name: '立即更新' }))
+ const notice = await screen.findByRole('alert')
+ expect(notice).toHaveTextContent('股票：更新已受理')
+ expect(notice).toHaveTextContent('期货：未能启动更新')
+})
+it('本次任务终态解除短暂防重，不被其他类别回执阻塞', async () => {
+ render(<RefreshMonitor onReload={vi.fn()} />)
+ fireEvent.click(screen.getByRole('button', { name: /数据更新/ }))
+ await screen.findByText('未启用')
+ fireEvent.click(screen.getByRole('button', { name: '立即更新' }))
+ await screen.findByText(/更新已受理/)
+ expect(screen.getByRole('button', { name: '立即更新' })).toBeDisabled()
+ vi.mocked(api.getRefreshStatus).mockResolvedValue({ stock: { ...run, state: 'SUCCEEDED' }, futures: null, futures_enabled: false })
+ fireEvent.click(screen.getByRole('button', { name: '刷新进度' }))
+ await screen.findByText('全部成功')
+ expect(screen.getByRole('button', { name: '立即更新' })).toBeEnabled()
+})
+
+it('期货从未启用恢复为启用后，旧跳过回执不阻止更新', async () => {
+ render(<RefreshMonitor onReload={vi.fn()} />)
+ fireEvent.click(screen.getByRole('button', { name: /数据更新/ }))
+ await screen.findByText('未启用')
+ fireEvent.click(screen.getByRole('button', { name: '立即更新' }))
+ await screen.findByText(/未启用，已跳过/)
+ vi.mocked(api.getRefreshStatus).mockResolvedValue({ stock: run, futures: null, futures_enabled: true })
+ fireEvent.click(screen.getByRole('button', { name: '刷新进度' }))
+ await screen.findByText('已启用 · 支持手动与定时更新')
+ expect(screen.getByRole('button', { name: '立即更新' })).toBeEnabled()
 })

@@ -30,7 +30,7 @@ type MarketIngestion interface {
 	Refresh(context.Context, market.InstrumentID) (application.RefreshResult, error)
 }
 type MarketTrigger interface {
-	TriggerNow(workers int) (port.RefreshReceipt, error)
+	TriggerNow(workers int) (port.BatchRefreshReceipt, error)
 }
 type MarketQueries interface {
 	Prices(context.Context, application.PriceQuery) (application.PriceResult, error)

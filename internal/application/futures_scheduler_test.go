@@ -103,3 +103,35 @@ func TestFuturesSchedulerStartRunsOnIntervalAndStops(t *testing.T) {
 	cancel()
 	require.ErrorIs(t, <-done, context.Canceled)
 }
+
+func TestFuturesManualRefreshSharesScheduledGuardAndWaitsForCompletion(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	fake := &futuresRefresherFake{started: make(chan struct{}, 1), release: make(chan struct{})}
+	scheduler, err := NewFuturesScheduler(fake, DefaultSinaFuturesInstruments()[:1], slog.Default())
+	require.NoError(t, err)
+	defer func() { cancel(); scheduler.Wait() }()
+	receipt, err := scheduler.TriggerTracked(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ACCEPTED", receipt.Status)
+	<-fake.started
+	_, err = scheduler.TriggerTracked(ctx)
+	require.ErrorIs(t, err, ErrRefreshAlreadyRunning)
+	require.ErrorIs(t, scheduler.RunOnce(ctx).Err, ErrRefreshAlreadyRunning)
+	done := make(chan struct{})
+	go func() { scheduler.Wait(); close(done) }()
+	select {
+	case <-done:
+		t.Fatal("Wait returned before work completed")
+	case <-time.After(10 * time.Millisecond):
+	}
+	close(fake.release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Wait did not return")
+	}
+	require.Len(t, scheduler.LastSummary().Results, 1)
+	cancel()
+	_, err = scheduler.TriggerTracked(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+}
