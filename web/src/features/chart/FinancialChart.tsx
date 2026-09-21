@@ -314,7 +314,16 @@ export function FinancialChart({
       wickUpColor: UP_COLOR,
       wickDownColor: DOWN_COLOR,
       priceLineColor: UP_COLOR,
-      priceFormat: { type: 'custom', formatter: (v: number) => `${v.toFixed(2)}%`, minMove: 0.01 },
+      // 纵轴高度按涨跌幅等比（candles 数据已是相对基准的百分比）；
+      // 无同图叠加时轴标签按当前基准还原为价格，有叠加时两个品种基准不同、只能显示百分比
+      priceFormat: {
+        type: 'custom',
+        formatter: (v: number) =>
+          comparisonLabel || !displayBasisRef.current
+            ? `${v.toFixed(2)}%`
+            : (displayBasisRef.current.main * (1 + v / 100)).toFixed(2),
+        minMove: 0.01,
+      },
     })
     candlesRef.current = candles
 
